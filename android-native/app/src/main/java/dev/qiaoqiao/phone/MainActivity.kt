@@ -113,8 +113,17 @@ class MainActivity : AppCompatActivity() {
     private fun setupWebView() {
         // WebViewAssetLoader: 用 AssetsPathHandler 把 /assets/ 映射到 APK assets 目录.
         // 它内部会自动设置正确的 MIME type (.js → text/javascript, .css → text/css 等).
+        // v1.10.233 FIX: index.html 本身也在 APK 的 assets/ 下, Vite 的相对引用 ./assets/main.js
+        // 会被浏览器解析成 /assets/assets/main.js (多一层), 导致 JS/CSS/chunk 全部 404,
+        // Vue 永不挂载, splash 永远转圈. 这里自定义 handler 把多余的 "assets/" 前缀剥掉,
+        // 正确映射到 assets/main.js 等. main.js 内部 import 的 chunk 同样是 ./assets/... 也一并修复.
+        // PWA 网页版 (pages.dev 根路径) 是单层引用, 不受此 handler 影响.
+        val assetsHandler = WebViewAssetLoader.AssetsPathHandler(this)
         assetLoader = WebViewAssetLoader.Builder()
-            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .addPathHandler("/assets/") { path ->
+                val normalized = path.removePrefix("assets/")
+                assetsHandler.handle(normalized)
+            }
             .addPathHandler("/res/", WebViewAssetLoader.ResourcesPathHandler(this))
             .build()
 
@@ -201,6 +210,16 @@ class MainActivity : AppCompatActivity() {
                 val msg = "url=${request.url} code=${error.errorCode} desc=${error.description}"
                 Log.e(TAG, "WebView onReceivedError: $msg")
                 AppPrefs.lastLoadError = msg
+                // v1.10.233: 第一次资源加载失败立刻 Toast (不依赖下次启动), 让用户马上看到原因
+                if (resourceErrorCount == 1) {
+                    runOnUiThread {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "资源加载失败:\n${msg}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
             }
 
             override fun onReceivedHttpError(
