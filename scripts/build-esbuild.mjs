@@ -18,6 +18,17 @@ const publicDir = path.join(root, 'public')
 console.log('[build-esbuild] starting...')
 console.log('[build-esbuild] root:', root)
 
+// v1.10.234+: 强制以 src/version.json 为准, 覆盖 public/version.json + dist/version.json
+// 历史教训: v1.10.223~233 bump 版本只改 src/, 漏改 public/, build 复制 public/ 后
+//   dist/version.json 永远停在 1.10.222, PWA splash 显示旧版本号, 误以为 PWA 没更新
+// (实际上 dist/assets/main.js 是 src/ esbuild 编译来的, 实际代码是新的; 但 version 标记过期)
+const srcVersionPath = path.join(root, 'src/version.json')
+if (fs.existsSync(srcVersionPath)) {
+  const versionData = fs.readFileSync(srcVersionPath, 'utf8')
+  fs.writeFileSync(path.join(publicDir, 'version.json'), versionData)
+  console.log('[build-esbuild] synced public/version.json from src/version.json')
+}
+
 // 准备 dist 目录
 if (fs.existsSync(distDir)) {
   fs.rmSync(distDir, { recursive: true, force: true })
