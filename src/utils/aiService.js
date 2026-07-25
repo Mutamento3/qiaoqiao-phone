@@ -14,6 +14,7 @@ import { buildMCPPromptSection } from './mcpService'
 
 import { SYSTEM_PROMPT_TEMPLATE, CALL_SYSTEM_PROMPT_TEMPLATE, GROUP_MEMBER_GENERATOR_PROMPT } from './ai/prompts'
 import { recallOriginalMessages, getMemorySummary } from './memoryLog'
+import { retrieveRelevantMemories } from './memoryRetrieval'
 import { RequestQueue } from './ai/requestQueue'
 import { ensureString, getLastNTurns } from './common'
 import { getOrFetchAvatarDesc } from './avatarDescCache'
@@ -433,9 +434,10 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             }
         }
 
-        // 2. Memory Log Fragments (记忆日志碎片 - recent events)
-        // This is supplementary - auto-extracted from conversations
-        const memorySummary = getMemorySummary(charId)  // Send ALL memory fragments
+        // 2. Memory Log Fragments —— Agent 记忆自动选择 (0 token 额外调用)
+        //    原 getMemorySummary 会把全部 memoryLog (最多1500条) 全量发给模型, 既费 token 又不智能。
+        //    改为代码层语义检索 top-K 相关片段注入, 省 token 且只给模型看相关的。
+        const memorySummary = retrieveRelevantMemories(charId, lastUserMsg?.content || '', { limit: 8 })
         if (memorySummary) {
             memoryParts.push(memorySummary)
         }
