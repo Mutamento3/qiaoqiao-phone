@@ -15,6 +15,7 @@ import { buildMCPPromptSection } from './mcpService'
 import { SYSTEM_PROMPT_TEMPLATE, CALL_SYSTEM_PROMPT_TEMPLATE, GROUP_MEMBER_GENERATOR_PROMPT } from './ai/prompts'
 import { recallOriginalMessages, getMemorySummary } from './memoryLog'
 import { retrieveRelevantMemories } from './memoryRetrieval'
+import { getActionCatalogMarkdown } from './agentActions'
 import { RequestQueue } from './ai/requestQueue'
 import { ensureString, getLastNTurns } from './common'
 import { getOrFetchAvatarDesc } from './avatarDescCache'
@@ -846,6 +847,11 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             if (mcpSection) {
                 promptContent += '\n' + mcpSection
             }
+        }
+
+        // Agent 能力菜单：告诉 AI 可用 [[action:...]] 动作（执行 0 额外 token）
+        if (!options.isCall) {
+            promptContent += '\n\n' + getActionCatalogMarkdown()
         }
 
         systemMsg = {

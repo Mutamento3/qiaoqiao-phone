@@ -12,6 +12,13 @@ import { useCallStore } from './callStore'
 import { processTaskCommands } from '../utils/taskUtils'
 import { processBioUpdate } from '../utils/bioUtils'
 import { usePhoneInspectionStore } from './phoneInspectionStore'
+import { parseAgentActions } from '../utils/agentActions'
+import { useForumStore } from './forumStore'
+import { useWeiboStore } from './weiboStore'
+import { useLoveSpaceStore } from './loveSpaceStore'
+import { useCalendarStore } from './calendarStore'
+import { useWalletStore } from './walletStore'
+import router from '../router'
 import { appendLog } from '../utils/memoryLog'
 import { backgroundManager } from '../utils/backgroundManager'
 import autoBackup from '../utils/autoBackup'
@@ -29,6 +36,67 @@ localforage.config({
 
 // 向后兼容：保留旧式 export（其他模块可能 import）
 export { ensureString, getRandomAvatar, DEFAULT_AVATARS }
+
+// --- Agent 动作执行（[[action:动词:{参数JSON}]] 标记） ---
+// 在 addMessage 的 AI 消息后处理中调用。此处所有 store 与 addMessage 均在作用域，
+// 执行真实应用操作，全程 0 额外 token。系统级配置（如世界书设置）不在动作之列。
+async function runAgentAction(act, ctx) {
+    const { chatId, chat, addMessage } = ctx
+    const p = act.params || {}
+    switch (act.verb) {
+        case 'publish_moment': {
+            useMomentsStore().addMoment({ authorId: chatId, content: p.content || '', images: p.images || [] })
+            return `${chat?.name || 'TA'} 发了一条朋友圈：${p.content || ''}`
+        }
+        case 'send_forum_post': {
+            const fs = useForumStore()
+            if (p.forumId) fs.currentForumId = p.forumId
+            fs.sendPost(p.title || '无标题', p.content || '')
+            return `已在论坛发帖：《${p.title || ''}》`
+        }
+        case 'send_forum_comment': {
+            useForumStore().sendComment(p.postId, p.content || '')
+            return `已回复论坛帖子`
+        }
+        case 'publish_weibo': {
+            useWeiboStore().addPost({ content: p.content || '', images: p.images || [] })
+            return `已发微博：${p.content || ''}`
+        }
+        case 'add_couple_diary': {
+            await useLoveSpaceStore().addDiary({ title: p.title || '', content: p.content || '' })
+            return `已在情侣空间写下日记`
+        }
+        case 'add_couple_letter': {
+            await useLoveSpaceStore().addLetter({ title: p.title || '', content: p.content || '' })
+            return `已在情侣空间写下一封信`
+        }
+        case 'add_calendar_event': {
+            useCalendarStore().addEvent({ title: p.title || '事件', date: p.date || '', time: p.time || '', note: p.note || '' })
+            return `已添加日历日程：${p.title || ''}`
+        }
+        case 'send_redpacket': {
+            const amount = parseFloat(p.amount) || 0
+            const note = p.note || '恭喜发财，大吉大利'
+            const payId = `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
+            useWalletStore().decreaseBalance(amount, note)
+            addMessage(chatId, { role: 'ai', type: 'redpacket', amount, note, paymentId: payId, content: `[红包:${amount}:${note}:${payId}]` })
+            return `已发送红包 ¥${amount}（${note}）`
+        }
+        case 'inspect_phone': {
+            await usePhoneInspectionStore().startInspection(chatId)
+            return `已刷新 ${chat?.name || 'TA'} 的手机内容`
+        }
+        case 'open_app': {
+            const map = { moments: 'moments', forum: 'forum', shopping: 'shopping', weibo: 'weibo', wallet: 'wallet', calendar: 'calendar', couple: 'couple', 'phone-inspection': 'phone-inspection' }
+            const name = map[p.app] || p.app
+            const target = name === 'phone-inspection' ? { name: 'phone-inspection', params: { charId: chatId } } : { name }
+            router.push(target)
+            return `已打开${p.app}`
+        }
+        default:
+            return `未知动作：${act.verb}`
+    }
+}
 
 export const useChatStore = defineStore('chat', () => {
     // State
@@ -1493,6 +1561,27 @@ export const useChatStore = defineStore('chat', () => {
                         triggerToast(`MCP 工具 [${toolName}] 调用异常: ${mcpErr.message}`, 'error')
                     }
                 })
+            }
+        }
+
+        // --- Agent Action Detection ([[action:verb:{json}]]) ---
+        if (newMsg.role === 'ai' && newMsg.type === 'text') {
+            const agentActions = parseAgentActions(newMsg.content)
+            for (const act of agentActions) {
+                try {
+                    const resultText = await runAgentAction(act, { chatId, chat, addMessage })
+                    newMsg.content = newMsg.content.replace(act.raw, '')
+                    if (resultText) {
+                        addMessage(chatId, { role: 'system', type: 'system', content: resultText })
+                    }
+                } catch (e) {
+                    console.error('[ChatStore] agent action failed:', act.verb, e)
+                    addMessage(chatId, { role: 'system', type: 'system', content: `操作 [${act.verb}] 执行失败：${e.message}` })
+                }
+            }
+            // 若执行完动作后文本变空，给个占位，避免被内容过滤器拒掉
+            if (!newMsg.content || !newMsg.content.trim()) {
+                newMsg.content = '（已经帮你处理好啦）'
             }
         }
 
