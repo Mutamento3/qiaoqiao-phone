@@ -54,7 +54,15 @@ async function runAgentAction(act, ctx) {
             return `已在论坛发帖：《${p.title || ''}》`
         }
         case 'send_forum_comment': {
-            useForumStore().sendComment(p.postId, p.content || '')
+            const fs = useForumStore()
+            // AI 拿到的 postId 来自社交上下文（收集所有论坛），可能不在当前浏览的论坛。
+            // 先定位 postId 所属论坛，否则 sendComment 因 currentForumId 不对而找不到帖子/报错。
+            let targetFid = fs.currentForumId
+            for (const fid in (fs.posts || {})) {
+                if ((fs.posts[fid] || []).some((pp) => pp.id === p.postId)) { targetFid = fid; break }
+            }
+            if (targetFid !== fs.currentForumId) fs.currentForumId = targetFid
+            fs.sendComment(p.postId, p.content || '')
             return `已回复论坛帖子`
         }
         case 'publish_weibo': {
@@ -76,8 +84,10 @@ async function runAgentAction(act, ctx) {
         case 'send_redpacket': {
             const amount = parseFloat(p.amount) || 0
             const note = p.note || '恭喜发财，大吉大利'
+            if (!(amount > 0)) return `红包金额无效：${p.amount}`
             const payId = `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
-            useWalletStore().decreaseBalance(amount, note)
+            const paid = useWalletStore().decreaseBalance(amount, note)
+            if (!paid) return `发送红包失败：余额不足或金额无效（¥${amount}）`
             addMessage(chatId, { role: 'ai', type: 'redpacket', amount, note, paymentId: payId, content: `[红包:${amount}:${note}:${payId}]` })
             return `已发送红包 ¥${amount}（${note}）`
         }
