@@ -19,7 +19,7 @@ import { ensureString, getLastNTurns } from './common'
 import { getOrFetchAvatarDesc } from './avatarDescCache'
 import { fixJsonStringValues, _repairJsonStrings, reconstructMomentsJSON, reconstructInteractionsJSON, extractInnerVoiceJson, deepRemoveTrailingCommas } from './jsonUtils'
 
-const apiQueue = new RequestQueue(10, 60000); // Strict: 10 requests per 60 seconds as requested by the user
+export const apiQueue = new RequestQueue(3, 60000, 1); // 公益站硬限: 3次/分钟 + 禁并发(并发1); 命中429自动熔断30s
 
 // ensureString / fixJsonStringValues / _repairJsonStrings / reconstructMomentsJSON / extractInnerVoiceJson
 // 已统一从 ./common 和 ./jsonUtils 引入，此处删除本地重复定义

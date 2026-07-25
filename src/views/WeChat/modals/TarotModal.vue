@@ -264,6 +264,7 @@
 import { ref, watch, onBeforeUnmount } from 'vue'
 import { tarotSpreads, getRandomCards, getSpread, generateTarotPrompt } from '../../../utils/tarotData'
 import { useSettingsStore } from '../../../stores/settingsStore'
+import { apiQueue } from '../../../utils/aiService'
 
 const props = defineProps({
   show: { type: Boolean, default: false }
@@ -436,29 +437,30 @@ const startInterpret = async () => {
     // 调用AI解牌
     const prompt = generateTarotPrompt(question.value, drawnCards.value, selectedSpread.value.name)
 
-    const response = await fetch(aiConfig.endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${aiConfig.apiKey}`
-      },
-      body: JSON.stringify({
-        model: aiConfig.model,
-        messages: [
-          { role: 'system', content: '你是一位经验丰富的塔罗牌解牌师，擅长提供专业、温暖且富有洞察力的解牌。' },
-          { role: 'user', content: prompt }
-        ],
-        max_tokens: 1500,
-        temperature: 0.8
+    // 走统一请求队列: 限流(3/min) + 禁并发 + 429自动熔断, 与其他AI调用共享同一额度
+    const aiText = await apiQueue.enqueue(async () => {
+      const response = await fetch(aiConfig.endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${aiConfig.apiKey}`
+        },
+        body: JSON.stringify({
+          model: aiConfig.model,
+          messages: [
+            { role: 'system', content: '你是一位经验丰富的塔罗牌解牌师，擅长提供专业、温暖且富有洞察力的解牌。' },
+            { role: 'user', content: prompt }
+          ],
+          max_tokens: 1500,
+          temperature: 0.8
+        })
       })
-    })
-
-    if (response.ok) {
+      if (!response.ok) throw new Error(`Tarot API ${response.status}`)
       const data = await response.json()
-      interpretation.value = data.choices?.[0]?.message?.content || generateLocalInterpretation()
-    } else {
-      interpretation.value = generateLocalInterpretation()
-    }
+      return data.choices?.[0]?.message?.content
+    }, [])
+
+    interpretation.value = aiText || generateLocalInterpretation()
   } catch (error) {
     console.error('解牌失败:', error)
     interpretation.value = generateLocalInterpretation()
