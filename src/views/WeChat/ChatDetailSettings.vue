@@ -2347,7 +2347,6 @@ const localData = ref({
     momentsMemoryLimit: 5,
     userGender: '无', // Add User Gender
     gender: '无',    // Add Char Gender
-    avatarShape: 'square', // 'circle' or 'square'
     avatarFrame: null, // { id, url, name, scale, offsetX, offsetY }
     userAvatarFrame: null,
     callAvatarChar: '', // New Call Avatar Fields

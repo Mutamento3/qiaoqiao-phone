@@ -1803,11 +1803,12 @@ const speak = async (actionType, playerIndex) => {
             }
             break;
         case 'hu':
-        case 'zimo':
+        case 'zimo': {
             const winType = mahjongStore.gameState?.roundResult?.type || '平胡';
             const prefix = actionType === 'zimo' ? '自摸！' : '胡了！';
             text = winType === '平胡' ? prefix : `${prefix} ${winType}！`;
             break;
+        }
         default:
             if (tileNames[actionType]) {
                 text = tileNames[actionType];

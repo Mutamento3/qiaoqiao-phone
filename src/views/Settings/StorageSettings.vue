@@ -86,7 +86,7 @@ const calculateStorage = async () => {
         // 1. Calculate LocalStorage usage (safe, always works)
         try {
             for (let key in localStorage) {
-                if (localStorage.hasOwnProperty(key)) {
+                if (Object.prototype.hasOwnProperty.call(localStorage, key)) {
                     const value = localStorage[key]
                     if (!value) continue
                     const size = getSize(value) + key.length

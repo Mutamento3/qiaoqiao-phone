@@ -78,6 +78,9 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
+          # 注意: cache key 不再 hash .kt 源 (改 .kt 必须靠 ./gradlew clean 兜底重编译,
+          #       见下方 assembleRelease 前的 clean 步骤)。这里只 hash 构建配置/依赖描述,
+          #       保证依赖下载缓存稳定命中, 避免重复下载。
           key: ${{ runner.os }}-gradle-${{ hashFiles('android-native/**/build.gradle.kts', 'android-native/**/settings.gradle.kts', 'android-native/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
@@ -152,6 +155,12 @@ jobs:
           chmod +x gradlew
           ./gradlew --version 2>&1 || echo "wrapper gradlew broken"
           echo "===== /ENV DIAG ====="
+
+          # === 强制 clean: 修复 CI 增量编译缓存导致的 /assets/assets/ 多层路径错 ===
+          # 根因: 上方 actions/cache 的 key 只 hash build.gradle.kts, 不含 MainActivity.kt。
+          #       .kt 改动后 Gradle 增量编译缓存仍命中旧 build 输出, 旧 MainActivity 进包。
+          #       加 clean 强制清空 build/ 全量重编译, 确保最新 .kt 一定进 APK。
+          ./gradlew clean --no-daemon
 
           # === 关键: 用项目自带的 ./gradlew (wrapper 锁了 Gradle 8.5, 跟 AGP 8.2.2 严格匹配) ===
           ./gradlew assembleRelease --no-daemon --stacktrace 2>&1 | tee gradle-build.log

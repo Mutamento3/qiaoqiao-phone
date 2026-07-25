@@ -1204,16 +1204,6 @@
                             <MomentShareCard :data="momentDataValue" />
                         </div>
 
-                        <!-- CASE: Link Share Card (v1.10.169, 通用分支) -->
-                        <div v-else-if="msg.type === 'link_card'"
-                            class="max-w-[260px] animate-fade-in mt-1 overflow-hidden"
-                            :class="msg.role === 'user' ? 'mr-1' : 'ml-1'"
-                            @contextmenu.prevent="emitContextMenu"
-                            @touchstart="startLongPress" @touchend="cancelLongPress" @touchmove="cancelLongPress"
-                            @mousedown="startLongPress" @mouseup="cancelLongPress" @mouseleave="cancelLongPress">
-                            <LinkShareCard :data="msg.content" />
-                        </div>
-
                         <!-- CASE: Location / Scene Tag (Premium Glassmorphism) -->
                         <div v-else-if="msg.type === 'location'"
                             class="w-full flex justify-center my-6 px-4 animate-scale-in"

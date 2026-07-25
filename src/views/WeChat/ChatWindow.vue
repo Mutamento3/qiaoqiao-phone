@@ -2449,6 +2449,8 @@ const getCleanSpeechText = (text) => {
     const markdownLinksRegex = /\[(.*?)\]\(.*?\)/g;
     const htmlTagsRegex = /<[^>]*>/g;
     const parenthesesRegex = /[\(（][^\)）]*[\)）]/g;
+    // 故意包含不同的零宽字符(零宽空格/连字/连接/不换行空格), 需全部剥离; 字符互不可见故 lint 误报误导, 此处为预期行为
+    // eslint-disable-next-line no-misleading-character-class
     const zeroWidthRegex = /[\u200b\u200c\u200d\ufeff]/g;
 
     // 1. Remove Inner Voice Protocol

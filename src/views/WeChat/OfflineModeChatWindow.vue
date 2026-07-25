@@ -1443,7 +1443,7 @@ const handleMenuAction = (action) => {
         chatStore.saveChats()
       }
       break
-    case 'fav':
+    case 'fav': {
       // [BUG FIX] localStorage 值可能损坏/非 JSON, JSON.parse 会抛错中断操作
       let favorites = []
       try { favorites = JSON.parse(localStorage.getItem('favorites') || '[]') } catch (e) { favorites = [] }
@@ -1458,12 +1458,14 @@ const handleMenuAction = (action) => {
       localStorage.setItem('favorites', JSON.stringify(favorites))
       showToast('已收藏')
       break
-    case 'listen':
+    }
+    case 'listen': {
       // TTS 听音功能
       const utterance = new SpeechSynthesisUtterance(ensureString(selectedMsg.value.content))
       utterance.lang = 'zh-CN'
       speechSynthesis.speak(utterance)
       break
+    }
     case 'multi':
       isMultiSelectMode.value = true
       selectedMsgIds.value.add(selectedMsg.value.id)

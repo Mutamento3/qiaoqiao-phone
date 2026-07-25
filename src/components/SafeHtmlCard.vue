@@ -115,8 +115,8 @@ const fullContent = computed(() => {
     <\/script>
   `
 
-  if (content.trim().toLowerCase().startsWith('<!doctype') || content.trim().toLowerCase().startsWith('<html')) {
-    isFullPage.value = true
+  const isFullDoc = content.trim().toLowerCase().startsWith('<!doctype') || content.trim().toLowerCase().startsWith('<html')
+  if (isFullDoc) {
     let processed = content
     if (!/charset=["']?UTF-8["']?/i.test(processed)) {
       if (/<head>/i.test(processed)) {
@@ -149,6 +149,17 @@ const fullContent = computed(() => {
     </html>
   `
 })
+
+// v1.10.x: isFullPage 改为由 content 监听驱动, 避免 computed 副作用(原在 fullContent computed 内赋值, 会触发响应式副作用警告)
+// 同时修复潜伏 bug: 之前 content 从全屏 HTML 切回片段时 isFullPage 不会复位为 false
+watch(
+  () => props.content,
+  (val) => {
+    const c = (val || '').trim().toLowerCase()
+    isFullPage.value = c.startsWith('<!doctype') || c.startsWith('<html')
+  },
+  { immediate: true }
+)
 
 const allowScroll = computed(() => isFullPage.value)
 

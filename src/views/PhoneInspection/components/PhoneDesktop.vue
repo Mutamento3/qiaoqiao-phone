@@ -44,7 +44,7 @@
 
           <!-- App Grid Page 1 -->
           <div class="app-grid mt-10">
-            <div v-for="(app, index) in page1Apps" :key="app.id" class="app-item group" @click="handleOpenApp(app.id)">
+            <div v-for="app in page1Apps" :key="app.id" class="app-item group" @click="handleOpenApp(app.id)">
               <div class="app-icon-container">
                 <div class="app-icon" :style="getIconStyle(app)">
                   <div class="icon-inner-shadow"></div>
@@ -75,7 +75,7 @@
 
           <!-- App Grid Page 2 -->
           <div class="app-grid mt-10">
-            <div v-for="(app, index) in page2Apps" :key="app.id" class="app-item group" @click="handleOpenApp(app.id)">
+            <div v-for="app in page2Apps" :key="app.id" class="app-item group" @click="handleOpenApp(app.id)">
               <div class="app-icon-container">
                 <div class="app-icon" :style="getIconStyle(app)">
                   <div class="icon-inner-shadow"></div>

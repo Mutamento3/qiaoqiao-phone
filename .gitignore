@@ -62,3 +62,13 @@ android-native/keystore.b64
 android-native/captures/
 android-native/.externalNativeBuild/
 android-native/app/release/
+
+# WorkBuddy runtime temp / ephemeral files (not project knowledge, regenerate each session)
+.workbuddy/expert-history.json
+.workbuddy/failed_jobs.json
+.workbuddy/failed_steps.txt
+.workbuddy/logs.zip
+.workbuddy/native_runs.json
+.workbuddy/runs.json
+.workbuddy/wf.json
+.workbuddy/wf3.json

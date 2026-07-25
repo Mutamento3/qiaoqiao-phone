@@ -57,7 +57,7 @@
                     <div v-if="history.length === 0" class="text-center py-6 text-xs text-gray-400 italic">
                         暂无历史公告
                     </div>
-                    <div v-for="(item, idx) in history" :key="item.id"
+                    <div v-for="item in history" :key="item.id"
                         class="bg-gray-50 rounded-2xl p-4 border border-gray-100 group relative">
                         <div class="text-sm text-gray-700 leading-normal whitespace-pre-wrap">{{ item.content }}</div>
                         <div class="mt-2 flex items-center justify-between text-[10px] text-gray-400">

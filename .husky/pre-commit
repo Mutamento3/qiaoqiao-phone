@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# 质量门禁: 只校验本次暂存的文件, 自动修复可修项 (eslint --fix + prettier --write)
+# 前向拦截 —— 新代码过不了 lint 不准合, 不碰存量文件
+npx lint-staged

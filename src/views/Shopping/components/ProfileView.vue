@@ -146,7 +146,7 @@
 
                 <!-- 地址管理 -->
                 <div v-else-if="activeSubView === 'address'" class="space-y-3">
-                    <div v-for="(addr, idx) in store.addresses" :key="addr.id"
+                    <div v-for="addr in store.addresses" :key="addr.id"
                         class="bg-white border rounded-3xl p-4 relative">
                         <div class="flex gap-3">
                             <div class="w-10 h-10 bg-gray-100 rounded-2xl flex items-center justify-center shrink-0">📍</div>

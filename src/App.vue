@@ -457,7 +457,7 @@ const handleGlobalPromptCancel = () => {
         :style="[globalStyles, { paddingBottom: 'var(--safe-area-inset-bottom)' }]"
         :data-theme="store.personalization.theme" style="margin: 0 auto;">
         <!-- Dynamic Styles Block -->
-        <component is="style" v-if="customCss">{{ customCss }}</component>
+        <component :is="'style'" v-if="customCss">{{ customCss }}</component>
 
         <!-- Wallpaper Layer (only show on home page) -->
         <div id="wallpaper-layer" v-if="route.name === 'home'" :style="wallpaperStyle"></div>

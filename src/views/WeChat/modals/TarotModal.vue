@@ -226,12 +226,12 @@
 
           <!-- 牌面缩略图 -->
           <div class="flex justify-center gap-2">
-            <div
-              v-for="(card, index) in drawnCards"
-              :key="card.uuid"
-              class="w-10 h-14 rounded-lg border border-purple-400/30"
-              :class="'bg-gradient-to-br ' + getCardColorClass(card)"
-            >
+        <div
+          v-for="card in drawnCards"
+          :key="card.uuid"
+          class="w-10 h-14 rounded-lg border border-purple-400/30"
+          :class="'bg-gradient-to-br ' + getCardColorClass(card)"
+        >
               <div class="w-full h-full flex items-center justify-center">
                 <span class="text-sm">{{ getCardIcon(card) }}</span>
               </div>

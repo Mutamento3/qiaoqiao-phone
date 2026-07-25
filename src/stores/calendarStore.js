@@ -1198,7 +1198,6 @@ export const useCalendarStore = defineStore('calendar', () => {
     setWeatherData,
     getPeriodReminders,
     updatePeriodReminderSettings,
-    updatePeriodSettings,
     formatDateStr,
     getEventsForDate,
     getPeriodStatus,

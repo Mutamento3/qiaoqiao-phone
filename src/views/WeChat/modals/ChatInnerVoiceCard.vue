@@ -275,7 +275,7 @@
                 <!-- History View -->
                 <div v-else id="voice-history-view" class="animate-fade-in">
                     <div id="voice-history-list" class="flex flex-col gap-2">
-                        <div v-for="(item, idx) in sortedHistory" :key="item.id" class="voice-history-card"
+                        <div v-for="item in sortedHistory" :key="item.id" class="voice-history-card"
                             @click="loadFromHistory(item.originalIndex)">
                             <div class="voice-history-time">{{ formatTime(item.timestamp) }}</div>
                             <div class="voice-history-preview">{{ item.preview }}</div>

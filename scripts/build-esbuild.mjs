@@ -177,7 +177,11 @@ try {
     format: 'esm',
     platform: 'browser',
     target: 'esnext',
-    minify: false,
+    // v1.10.234: 重新开启 minify。v1.10.218 排查 build 栈溢出时临时关掉 (当时是
+    //   inlineDynamicImports=true + Node 25 + Windows 触发的 STATUS_STACK_BUFFER_OVERRUN,
+    //   跟 minify 无关)。当前 managed Node 22 + splitting:false, 开启 minify 安全。
+    // 效果: main.js 8.5MB(未压缩) -> ~2.5MB, PWA 首屏冷启快 ~3 倍。Cloudflare 再 brotli 到 ~700KB
+    minify: true,
     sourcemap: false,
     define: {
       'process.env.NODE_ENV': '"production"',

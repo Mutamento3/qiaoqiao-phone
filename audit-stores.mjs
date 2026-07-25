@@ -16,18 +16,7 @@ for (const f of files) {
     const startMatch = content.match(/defineStore\(['"](\w+)['"]\s*,\s*\(\)\s*=>\s*\{/);
     if (!startMatch) continue; // 不是 setup store 语法,跳过
 
-    const startIdx = startMatch.index;
     const storeName = startMatch[1];
-
-    // 找 setup store 的结束 }) 对应行号
-    // 简单方法:从 defineStore 后开始,数大括号层级
-    let depth = 0;
-    let setupStartLine = -1, setupEndLine = -1;
-    let foundFirstBrace = false;
-    for (let i = lines.length - 1; i >= 0; i--) {
-        // 反向找文件最后的 })
-        // 找最后一个 return { ... } 块
-    }
 
     // 收集所有 `function name(` 定义
     const defined = new Set();

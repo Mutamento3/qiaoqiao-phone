@@ -983,24 +983,6 @@ JSON 结构样例：
   }
 
   /**
-   * 修复常见 JSON 错误并提取内容
-   */
-  function fixCommonJsonErrors(json) {
-    if (!json) return '{}'
-    // 1. 剥离 Markdown 代码块
-    let cleaned = json.replace(/```json/gi, '').replace(/```/g, '').trim()
-    // 2. 移除开头和结尾的非 JSON 字符
-    const firstBrace = cleaned.indexOf('{')
-    const lastBrace = cleaned.lastIndexOf('}')
-    if (firstBrace !== -1 && lastBrace !== -1) {
-      cleaned = cleaned.substring(firstBrace, lastBrace + 1)
-    }
-    // 3. 修复末尾逗号
-    cleaned = cleaned.replace(/,(\s*[}\]])/g, '$1')
-    return cleaned
-  }
-
-  /**
    * 请求查手机权限（在聊天中触发）
    */
   async function requestPermission(charId) {

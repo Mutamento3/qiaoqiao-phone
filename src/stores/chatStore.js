@@ -1358,11 +1358,6 @@ export const useChatStore = defineStore('chat', () => {
                         depth--
                         if (depth < 0) { payloadEnd = i; break } // 找到闭合的 ] 或 }
                     }
-                    else if (depth === 0 && ch === ']') {
-                        // 标签结束符 ]
-                        payloadEnd = i - 1 // 不包含 ]
-                        break
-                    }
                 }
 
                 if (payloadEnd >= payloadStart) {
@@ -5996,7 +5991,7 @@ export const useChatStore = defineStore('chat', () => {
         sendMessageToAI, saveChats, getTokenCount, getTokenBreakdown, addSystemMessage, estimateTokens,
         getDisplayedMessages, loadMoreMessages, resetPagination, hasMoreMessages, resetCharacter,
         getPreviewContext, isLoaded,
-        isProfileProcessing, createChat, createGroupChat, updateGroupProfile, updateGroupParticipants, updateGroupSettings,
+        isProfileProcessing, createGroupChat, updateGroupProfile, updateGroupParticipants, updateGroupSettings,
         getMemberTitle, calculateMemberLevel, castVote, endVote,
         streamingState, setStreamingMessage, updateStreamingContent, markStreamingComplete, recoverStreamingMessages: loadStreamingState,
         compressAllChatImages,
