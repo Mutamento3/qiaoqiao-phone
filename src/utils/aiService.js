@@ -858,7 +858,12 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
         // 社交平台近况：代码层本地检索/压缩/差量注入（0 额外调用；仅主聊天路径）
         // 排除 isSimpleTask/skipProcessing（论坛/微博等辅助生成，避免污染与额外 token）
         if (!options.isCall && !options.isSimpleTask && !options.skipProcessing) {
-            const socialCtx = buildSocialContext(lastUserMsg?.content || '', charId)
+            // [BUG FIX] 上一版 1.10.241 这里直接引用了 line 402 的 `const lastUserMsg`,
+            //   但那个 const 是块级作用域(在 if (charId && !isSimpleTask && ...) {...} 内),
+            //   出块(line 457)后就消失了,到此处变成未声明变量 → ReferenceError,整个聊天就废了。
+            //   这里现场再算一次(与 line 402 同样的查法),避免改动记忆模块的现有逻辑。
+            const _lastUserText = ([...(messages || [])].reverse().find(m => m.role === 'user')?.content) || ''
+            const socialCtx = buildSocialContext(_lastUserText, charId)
             if (socialCtx) {
                 promptContent += '\n\n' + socialCtx
             }
