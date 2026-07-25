@@ -8,8 +8,11 @@
 // - 系统级配置（如世界书设置 worldBook）不在此列 —— 按需求由用户/配置控制。
 
 // 可用动作目录。desc 用中文，方便 AI 理解；params 是给 AI 的 JSON 示例。
+//
+// 注意：发朋友圈(publish_moment) 故意不在这里 —— 朋友圈有专用通道
+// `[MOMENT_SHARE:文字]` / `[分享朋友圈:文字]`（见 prompts_private.js），
+// 若再在此列一个冲突格式，AI 会两条指令打架导致朋友圈解析失败。
 export const AGENT_ACTIONS = [
-  { verb: 'publish_moment', desc: '发一条朋友圈', params: '{ "content": "朋友圈文字", "images": ["图片url可选"] }' },
   { verb: 'send_forum_post', desc: '在论坛发帖', params: '{ "title": "标题", "content": "正文", "forumId": "论坛id可选" }' },
   { verb: 'send_forum_comment', desc: '回复某个论坛帖子', params: '{ "postId": "帖子id", "content": "回复内容" }' },
   { verb: 'publish_weibo', desc: '发一条微博', params: '{ "content": "微博内容", "images": ["图片url可选"] }' },
@@ -88,7 +91,17 @@ export function parseAgentActions(content) {
       actions.push({ verb, params, raw })
       idx = closeIdx !== -1 ? closeIdx + 2 : jsonEnd + 1
     } else {
-      idx = colonIdx + 1
+      // 兼容 AI 输出不带 JSON 花括号的简写：[[action:verb:纯文本]]
+      // 例：[[action:publish_moment:今天天气真好]] → params = { content: '今天天气真好' }
+      const close2 = content.indexOf(']]', colonIdx + 1)
+      if (close2 !== -1) {
+        const text = content.slice(colonIdx + 1, close2).trim()
+        const raw = content.slice(idx, close2 + 2)
+        actions.push({ verb, params: { content: text }, raw })
+        idx = close2 + 2
+      } else {
+        idx = colonIdx + 1
+      }
     }
     idx = content.indexOf(marker, idx)
   }
