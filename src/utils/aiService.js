@@ -16,6 +16,7 @@ import { SYSTEM_PROMPT_TEMPLATE, CALL_SYSTEM_PROMPT_TEMPLATE, GROUP_MEMBER_GENER
 import { recallOriginalMessages } from './memoryLog'
 import { retrieveRelevantMemories } from './memoryRetrieval'
 import { getActionCatalogMarkdown } from './agentActions'
+import { buildSocialContext } from './socialContext'
 import { RequestQueue } from './ai/requestQueue'
 import { ensureString, getLastNTurns } from './common'
 import { getOrFetchAvatarDesc } from './avatarDescCache'
@@ -852,6 +853,15 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
         // Agent 能力菜单：告诉 AI 可用 [[action:...]] 动作（执行 0 额外 token）
         if (!options.isCall) {
             promptContent += '\n\n' + getActionCatalogMarkdown()
+        }
+
+        // 社交平台近况：代码层本地检索/压缩/差量注入（0 额外调用；仅主聊天路径）
+        // 排除 isSimpleTask/skipProcessing（论坛/微博等辅助生成，避免污染与额外 token）
+        if (!options.isCall && !options.isSimpleTask && !options.skipProcessing) {
+            const socialCtx = buildSocialContext(lastUserMsg?.content || '', charId)
+            if (socialCtx) {
+                promptContent += '\n\n' + socialCtx
+            }
         }
 
         systemMsg = {
