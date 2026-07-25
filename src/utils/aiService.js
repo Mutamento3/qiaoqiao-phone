@@ -13,7 +13,7 @@ import { batteryMonitor } from './batteryMonitor'
 import { buildMCPPromptSection } from './mcpService'
 
 import { SYSTEM_PROMPT_TEMPLATE, CALL_SYSTEM_PROMPT_TEMPLATE, GROUP_MEMBER_GENERATOR_PROMPT } from './ai/prompts'
-import { recallOriginalMessages, getMemorySummary } from './memoryLog'
+import { recallOriginalMessages } from './memoryLog'
 import { retrieveRelevantMemories } from './memoryRetrieval'
 import { getActionCatalogMarkdown } from './agentActions'
 import { RequestQueue } from './ai/requestQueue'

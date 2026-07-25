@@ -44,10 +44,9 @@ async function runAgentAction(act, ctx) {
     const { chatId, chat, addMessage } = ctx
     const p = act.params || {}
     switch (act.verb) {
-        case 'publish_moment': {
-            useMomentsStore().addMoment({ authorId: chatId, content: p.content || '', images: p.images || [] })
-            return `${chat?.name || 'TA'} 发了一条朋友圈：${p.content || ''}`
-        }
+        // 注意: 发朋友圈(publish_moment) 故意不在此处理 —— 朋友圈有专用通道
+        // [MOMENT_SHARE:...] / [分享朋友圈:...] (L1408), 若在此留分支会与专用通道
+        // 双触发导致角色连发两条朋友圈。朋友圈一律走专用通道, authorId=chatId 即角色本人。
         case 'send_forum_post': {
             const fs = useForumStore()
             if (p.forumId) fs.currentForumId = p.forumId

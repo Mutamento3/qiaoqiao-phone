@@ -20,6 +20,7 @@
 - **核实远端用 `git ls-remote`**，别凭本地 stale `origin/main` 判断"推没推上"（曾误判 d81bb48 没推，其实推了）。
 - **本地 .git 损坏（refs 被删/对象缺失）**：别在坏仓库硬 rebase/stash（对象缺失必炸）。直接 `git clone` 健康远端 → 只复制自己改的精确文件清单进 clone（绝不全量 tar 覆盖，会带无关脏改动）→ commit 重放 → push。PAT 用完即弃，clone 后立刻 `git remote set-url` 去 token。
 - husky 本地 hook 在 Windows Git Bash 有路径 bug → 提交用 `--no-verify` 绕过，CI `lint.yml` 兜底卡门禁。
+- **agent 动作协议（[[action:verb]]）维护铁律**：从 `agentActions.js` 目录摘除某 verb 时，**`chatStore.runAgentAction` 的 switch 分支必须同步删除**。曾因只删目录、漏删执行层分支，导致 AI 幻觉输出 `[[action:publish_moment]]` 仍被接住、与 `[MOMENT_SHARE:]` 专用通道双发朋友圈的同类 bug。
 
 ## 用户偏好
 - 中文沟通；直接、针对性方案优于兜底；回归 bug 多，习惯截图+简短吐槽反馈。
@@ -45,7 +46,7 @@
 - **MVP-2 工具层（agent 用应用）已落地（1.10.237 / 本地 commit 57cfd4c0，未 push）**：
   - 新增 `src/utils/agentActions.js`：动作目录 `AGENT_ACTIONS`（给 AI 看的描述）+ `parseAgentActions`（花括号平衡解析 `[[action:verb:{JSON}]]`，支持嵌套）。
   - `chatStore.addMessage` 的 AI 消息后处理块（照抄 MCP 块范式，L1497 后）：解析标记→`runAgentAction` 调真实 store 方法→从回复剥离标记→回系统消息（执行结果）。
-  - 已接动作(10)：publish_moment / send_forum_post+send_forum_comment / publish_weibo / add_couple_diary+add_couple_letter / add_calendar_event / send_redpacket(扣款+构造红包消息) / inspect_phone / open_app(路由跳转)。
+  - 已接动作(9，publish_moment 已移出目录+执行层)：send_forum_post+send_forum_comment / publish_weibo / add_couple_diary+add_couple_letter / add_calendar_event / send_redpacket(扣款+构造红包消息) / inspect_phone / open_app(路由跳转)。**朋友圈走专用 `[MOMENT_SHARE:...]` 通道（authorId=chatId 即角色本人），不占 agent 框架**——避免与系统提示的 MOMENT_SHARE 指令打架致双发。
   - `aiService` 系统提示注入 `getActionCatalogMarkdown()`（告诉 AI 可用动作）。**全部代码层执行，0 额外 token**。
   - **MCP 沿用现有 `[MCP:serverId:{...}]` 机制**（chatStore L1457 + mcpService.callMCPTool）——用户"会用 MCP"要求已满足，无需重造。
   - 未接：购物加购物车（AI 不知商品 id，MVP 仅 open_app:shopping 导航）；世界书设置（系统级，按用户要求排除）。
