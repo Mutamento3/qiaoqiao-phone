@@ -9,6 +9,12 @@
 
 ## 版本号规则（v1.10.234 后）
 - **只改 `src/version.json`** 两处（version + buildTime），build 自动 sync 到 `public/version.json`（覆盖回写）。CI 自动注入 android-native gradle versionCode/Name。
+- **本地攒改动（未 push）期间不要 bump 版本号**，保持最后一个已 push 基线（当前 `1.10.236`，已推 main）。版本号只在 `git push` 那一步统一 bump 一次——避免中间每个本地 commit 都更易版本号导致无意义的递增/跳跃。若一批 push 含多个本地 commit，最终只 bump 一次即可。
+
+## Git 仓库与 push（易踩拼写坑）
+- **正确仓库全名：`chilly520/qiaoqiao-phone`（双 q，q-i-a-o-q-i-a-o）**。本地 remote 已修正。注意不是 `qiaqiao-phone`（少一个 i，会 404）。
+- push 用内联临时 PAT：`git push https://ghp_xxx@github.com/chilly520/qiaoqiao-phone.git HEAD:main`（沙箱 GCM 读不到 Windows 凭据，必须内联）。
+- **push 报 `Repository not found` 时不要想当然归咎 token 失效**——GitHub 对"路径错/无权限"统一返回此信息，无法区分。先诊断：① `curl -H "Authorization: token <PAT>" https://api.github.com/user` 验 token（200=有效）；② `GET /user/repos?affiliation=owner` 查真实仓库全名（拼写/owner 是否写错）。本沙箱 Bash 与 Write 文件系统隔离，测试脚本用 heredoc 拆短写或用 esbuild onResolve 空桩，避免长 heredoc 引号被吞。
 - 历史坑：漏改 public/version.json 会让 PWA splash 卡旧号（v1.10.222 踩过）。诊断：`curl .../version.json` 对不上就看 build 脚本。
 
 ## 字体（v1.10.231 本地化）
@@ -44,11 +50,13 @@
   - `aiService._generateReplyInternal` 原 `getMemorySummary`（全量发最多1500条 memoryLog）替换为 `retrieveRelevantMemories` → **0 token 额外调用**，省 token 且只注入相关记忆。
   - 构建通过，ESLint 0 error。未 push（行为变更先本地验证）。
 - **MVP-2 工具层（agent 用应用）已落地（1.10.237 / 本地 commit 57cfd4c0，未 push）**：
-  - 新增 `src/utils/agentActions.js`：动作目录 `AGENT_ACTIONS`（给 AI 看的描述）+ `parseAgentActions`（花括号平衡解析 `[[action:verb:{JSON}]]`，支持嵌套）。
+  - 新增 `src/utils/agentActions.js`：动作目录 `AGENT_ACTIONS`（给 AI 看的描述 + 各动作 `num` 序号）+ 应用注册表 `FEATURES`（9 项：num/id/name/route/verbs/channel）+ `parseAgentActions`（花括号平衡解析 `[[action:verb:{JSON}]]`，支持嵌套 + 支持序号 `[[action:1:{...}]]`）。
   - `chatStore.addMessage` 的 AI 消息后处理块（照抄 MCP 块范式，L1497 后）：解析标记→`runAgentAction` 调真实 store 方法→从回复剥离标记→回系统消息（执行结果）。
   - 已接动作(9，publish_moment 已移出目录+执行层)：send_forum_post+send_forum_comment / publish_weibo / add_couple_diary+add_couple_letter / add_calendar_event / send_redpacket(扣款+构造红包消息) / inspect_phone / open_app(路由跳转)。**朋友圈走专用 `[MOMENT_SHARE:...]` 通道（authorId=chatId 即角色本人），不占 agent 框架**——避免与系统提示的 MOMENT_SHARE 指令打架致双发。
+  - **ID 点名机制（1.10.240 / commit 30ac85d9，本地未推）**：AI 可凭「数字序号/功能id/中文名」精准定位应用，不再依赖拼对英文路由名。`[[action:open_app:{"app":7}]]`=打开购物；`[[action:9:{"app":"论坛"}]]` 等写法均被解析。辅助函数 `resolveFeature(ref)` + `resolveActionVerb(key)`。`getActionCatalogMarkdown()` 注入带 ID 的功能清单+动作序号菜单。
   - `aiService` 系统提示注入 `getActionCatalogMarkdown()`（告诉 AI 可用动作）。**全部代码层执行，0 额外 token**。
   - **MCP 沿用现有 `[MCP:serverId:{...}]` 机制**（chatStore L1457 + mcpService.callMCPTool）——用户"会用 MCP"要求已满足，无需重造。
   - 未接：购物加购物车（AI 不知商品 id，MVP 仅 open_app:shopping 导航）；世界书设置（系统级，按用户要求排除）。
   - 构建通过，ESLint 0 error。未 push（同 MVP-1，待 web 自测）。
+- **社交平台近况零额外调用注入（1.10.241 / commit a7af1d91，本地未推）**：新增 `src/utils/socialContext.js`——调用 LLM 前本地检索/压缩/差量社交内容（论坛/朋友圈/微博/情侣空间/日历），注入同一次调用的 prompt。四招：本地预检索(近期N=5)+压缩(id+摘要)+差量(SEEN 按 charId:source 记已展示id)+事件驱动(关键词或新增才注入)。`buildSocialContext(userText,charId,{getters})` 主入口；`aiService.generateReply` 系统提示段在能力菜单后追加，守卫 `!isCall && !isSimpleTask && !skipProcessing`。验证 7 断言全过。
 - **本地反射层（0 token 规则拦截简单意图）可后续加**。
