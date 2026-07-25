@@ -12,7 +12,7 @@ import { useCallStore } from './callStore'
 import { processTaskCommands } from '../utils/taskUtils'
 import { processBioUpdate } from '../utils/bioUtils'
 import { usePhoneInspectionStore } from './phoneInspectionStore'
-import { parseAgentActions } from '../utils/agentActions'
+import { parseAgentActions, resolveFeature } from '../utils/agentActions'
 import { useForumStore } from './forumStore'
 import { useWeiboStore } from './weiboStore'
 import { useLoveSpaceStore } from './loveSpaceStore'
@@ -86,11 +86,11 @@ async function runAgentAction(act, ctx) {
             return `已刷新 ${chat?.name || 'TA'} 的手机内容`
         }
         case 'open_app': {
-            const map = { moments: 'moments', forum: 'forum', shopping: 'shopping', weibo: 'weibo', wallet: 'wallet', calendar: 'calendar', couple: 'couple', 'phone-inspection': 'phone-inspection' }
-            const name = map[p.app] || p.app
-            const target = name === 'phone-inspection' ? { name: 'phone-inspection', params: { charId: chatId } } : { name }
+            const f = resolveFeature(p.app)
+            if (!f || !f.route) return `无法识别应用：${p.app}（可用功能见能力清单，如 1=朋友圈 7=购物）`
+            const target = f.route === 'phone-inspection' ? { name: 'phone-inspection', params: { charId: chatId } } : { name: f.route }
             router.push(target)
-            return `已打开${p.app}`
+            return `已打开${f.name}`
         }
         default:
             return `未知动作：${act.verb}`
