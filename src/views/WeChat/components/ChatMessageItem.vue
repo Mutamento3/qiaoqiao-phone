@@ -833,6 +833,22 @@
                             </div>
                         </div>
 
+                        <!-- MCP Tool Call (same glass pill language as search, emerald theme) -->
+                        <div v-else-if="msg.type === 'mcp'" class="w-full flex justify-center px-3 my-1.5">
+                            <div class="search-bubble flex items-center gap-2.5 max-w-[88%] px-3.5 py-2 rounded-2xl border border-white/50"
+                                style="background: linear-gradient(135deg, rgba(16,185,129,0.16), rgba(45,212,191,0.16)); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 8px 24px -8px rgba(16,185,129,0.45);">
+                                <span class="search-bubble__icon flex items-center justify-center w-7 h-7 shrink-0 rounded-full text-white shadow-md"
+                                    style="background: linear-gradient(135deg, #10b981, #2dd4bf); box-shadow: 0 2px 8px -1px rgba(16,185,129,0.6);">
+                                    <i class="fa-solid fa-puzzle-piece text-[11px]"></i>
+                                </span>
+                                <span class="search-bubble__text text-[13px] leading-snug text-slate-700">
+                                    <span class="opacity-55 font-medium">MCP 工具调用</span>
+                                    <span class="mx-1 opacity-30">·</span>
+                                    <span class="font-semibold">{{ msg.content }}</span>
+                                </span>
+                            </div>
+                        </div>
+
                         <!-- Almanac / Fortune -->
                         <div v-else-if="msg.type === 'almanac'" class="flex flex-col w-full"
                             :class="msg.role === 'user' ? 'items-end' : 'items-start'">

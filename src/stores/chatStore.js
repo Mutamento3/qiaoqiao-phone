@@ -1546,6 +1546,14 @@ export const useChatStore = defineStore('chat', () => {
                 const toolName = toolCallData.tool || toolCallData.name
                 const toolParams = toolCallData.params || toolCallData.arguments || {}
 
+                // 显示一个 MCP 调用气泡(玻璃胶囊, 与搜索气泡同款视觉语言, 仅换配色)
+                addMessage(chatId, {
+                    role: 'ai',
+                    type: 'mcp',
+                    content: toolName || '未知工具',
+                    hidden: false
+                })
+
                 newMsg.content = newMsg.content.replace(mcpMatch[0], '')
 
                 import('@/utils/mcpService').then(async (mcpService) => {
