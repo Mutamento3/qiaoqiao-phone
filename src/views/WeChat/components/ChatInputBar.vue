@@ -1,5 +1,7 @@
 <template>
-    <div class="bg-[#f7f7f7] border-t border-[#dcdcdc] relative z-20" @contextmenu.prevent>
+    <div class="relative z-20 backdrop-blur-xl transition-colors"
+        :class="isDark ? 'bg-black/30 border-t border-white/10' : 'bg-white/55 border-t border-white/50'"
+        @contextmenu.prevent>
         <!-- Mention Selection Overlay -->
         <div v-if="showMentionPicker"
             class="absolute bottom-full left-3 w-48 mb-2 bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden z-[100] animate-fade-in-up">
@@ -96,8 +98,8 @@
             </button>
 
             <!-- Input Wrapper -->
-            <div class="flex-1 bg-white rounded-lg border border-gray-300 flex items-center min-h-[38px] px-3 py-2 shadow-sm"
-                :class="isVoiceMode ? 'border-blue-400' : ''">
+            <div class="flex-1 rounded-lg border flex items-center min-h-[38px] px-3 py-2 backdrop-blur-md transition-colors"
+                :class="isVoiceMode ? 'border-blue-400' : (isDark ? 'bg-white/5 border-white/10' : 'bg-white/70 border-white/60 shadow-sm')">
                 <textarea v-model="inputVal"
                     class="w-full bg-transparent border-none focus:ring-0 resize-none outline-none text-[15px] leading-[22px] text-gray-800 placeholder-gray-400"
                     rows="1" :disabled="isDisabled"
@@ -124,14 +126,14 @@
 
             <!-- Generate Btn -->
             <button v-else-if="!inputVal.trim()"
-                class="mb-1 text-white bg-[#07c160] rounded-full w-[34px] h-[34px] flex items-center justify-center hover:bg-[#06ad56] transition-all active:scale-95 shadow-sm"
+                class="mb-1 text-white bg-[#07c160] rounded-full w-[34px] h-[34px] flex items-center justify-center hover:bg-[#06ad56] hover:scale-105 active:scale-95 transition-transform shadow-[0_2px_8px_rgba(7,193,96,0.35)]"
                 :class="{ 'opacity-50 grayscale pointer-events-none': isDisabled }" @click="$emit('generate')">
                 <i class="fa-solid fa-wand-magic-sparkles text-[13px]"></i>
             </button>
 
             <!-- Send Btn -->
             <button v-else
-                class="mb-1 text-white bg-[#07c160] rounded-full w-[34px] h-[34px] flex items-center justify-center hover:bg-[#06ad56] transition-all active:scale-95 shadow-sm"
+                class="mb-1 text-white bg-[#07c160] rounded-full w-[34px] h-[34px] flex items-center justify-center hover:bg-[#06ad56] hover:scale-105 active:scale-95 transition-transform shadow-[0_2px_8px_rgba(7,193,96,0.35)]"
                 :class="{ 'opacity-50 grayscale pointer-events-none': isMuted || isExited || isDissolved }"
                 @click="handleSend">
                 <i class="fa-solid fa-paper-plane text-[13px]"></i>
@@ -145,6 +147,7 @@ import { ref, nextTick, computed } from 'vue'
 import { useSettingsStore } from '../../../stores/settingsStore'
 
 const settingsStore = useSettingsStore()
+const isDark = computed(() => settingsStore.personalization?.theme === 'dark')
 
 const props = defineProps({
     currentQuote: Object,

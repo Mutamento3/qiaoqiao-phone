@@ -3770,7 +3770,7 @@ window.qiaoqiao_receiveFamilyCard = (uuid, amount, note, fromCharId) => {
             <!-- Messages Area -->
 
             <!-- Messages Area -->
-            <div class="flex-1 overflow-y-auto px-4 pt-4 pb-10 flex flex-col gap-4 relative z-10 bg-transparent" ref="msgContainer"
+            <div class="chat-msg-scroll flex-1 overflow-y-auto px-4 pt-4 pb-10 flex flex-col gap-4 relative z-10 bg-transparent" ref="msgContainer"
                 @click="closePanels">
                 <!-- Message Content Area -->
 
@@ -5429,5 +5429,26 @@ window.qiaoqiao_receiveFamilyCard = (uuid, amount, note, fromCharId) => {
 .fade-leave-from {
     opacity: 1;
     transform: translate(-50%, 0);
+}
+
+/* 消息区细滚动条（与玻璃气泡质感配套） */
+.chat-msg-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(120, 130, 150, 0.35) transparent;
+}
+.chat-msg-scroll::-webkit-scrollbar {
+    width: 6px;
+}
+.chat-msg-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+.chat-msg-scroll::-webkit-scrollbar-thumb {
+    background-color: rgba(120, 130, 150, 0.35);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+.chat-msg-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(120, 130, 150, 0.55);
 }
 </style>

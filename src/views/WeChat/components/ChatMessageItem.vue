@@ -4132,6 +4132,7 @@ const scrollToVote = (refId) => {
     color: #000000;
     border: 1px solid rgba(0, 0, 0, 0.05);
     border-radius: 12px 2px 12px 12px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 .chat-bubble-left {
@@ -4139,6 +4140,7 @@ const scrollToVote = (refId) => {
     color: #000000;
     border: 1px solid rgba(0, 0, 0, 0.05);
     border-radius: 2px 12px 12px 12px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 /* 场景变更提示（线上模式） */
