@@ -802,18 +802,20 @@
                             </div>
                         </div>
 
-                        <!-- Timer Reminder -->
-                        <div v-else-if="msg.type === 'timer'" class="flex flex-col w-full"
-                            :class="msg.role === 'user' ? 'items-end' : 'items-start'">
-                            <div class="timer-bubble chat-bubble"
-                                :class="msg.role === 'user' ? 'chat-bubble-right' : 'chat-bubble-left'"
-                                :style="computedBubbleStyle"
+                        <!-- Timer Reminder (glass card, amber theme, consistent with search/mcp) -->
+                        <div v-else-if="msg.type === 'timer'" class="w-full flex justify-center px-3 my-1.5">
+                            <div class="search-bubble flex items-center gap-2.5 max-w-[88%] px-3.5 py-2 rounded-2xl border border-white/50"
+                                style="background: linear-gradient(135deg, rgba(245,158,11,0.16), rgba(251,146,60,0.16)); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 8px 24px -8px rgba(245,158,11,0.45);"
                                 @click="$emit('click-timer', msg)">
-                                <div class="flex items-center gap-2">
-                                    <i class="fa-solid fa-clock text-amber-500"></i>
-                                    <span class="text-sm font-medium">定时提醒</span>
-                                </div>
-                                <div class="mt-1 text-sm opacity-90">{{ msg.content }}</div>
+                                <span class="search-bubble__icon flex items-center justify-center w-7 h-7 shrink-0 rounded-full text-white shadow-md"
+                                    style="background: linear-gradient(135deg, #f59e0b, #fb923c); box-shadow: 0 2px 8px -1px rgba(245,158,11,0.6);">
+                                    <i class="fa-solid fa-clock text-[11px]"></i>
+                                </span>
+                                <span class="search-bubble__text text-[13px] leading-snug text-slate-700">
+                                    <span class="opacity-55 font-medium">定时提醒</span>
+                                    <span class="mx-1 opacity-30">·</span>
+                                    <span class="font-semibold">{{ msg.content }}</span>
+                                </span>
                             </div>
                         </div>
 
@@ -849,17 +851,18 @@
                             </div>
                         </div>
 
-                        <!-- Almanac / Fortune -->
-                        <div v-else-if="msg.type === 'almanac'" class="flex flex-col w-full"
-                            :class="msg.role === 'user' ? 'items-end' : 'items-start'">
-                            <div class="almanac-bubble chat-bubble"
-                                :class="msg.role === 'user' ? 'chat-bubble-right' : 'chat-bubble-left'"
-                                :style="computedBubbleStyle">
-                                <div class="flex items-center gap-2">
-                                    <i class="fa-solid fa-calendar-days text-red-500"></i>
-                                    <span class="text-sm font-medium">今日运势</span>
+                        <!-- Almanac / Fortune (glass card, rose theme) -->
+                        <div v-else-if="msg.type === 'almanac'" class="w-full flex justify-center px-3 my-1.5">
+                            <div class="search-bubble w-full max-w-[88%] px-3.5 py-2.5 rounded-2xl border border-white/50"
+                                style="background: linear-gradient(135deg, rgba(244,63,94,0.14), rgba(251,113,133,0.14)); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 8px 24px -8px rgba(244,63,94,0.4);">
+                                <div class="flex items-center gap-2.5">
+                                    <span class="search-bubble__icon flex items-center justify-center w-7 h-7 shrink-0 rounded-full text-white shadow-md"
+                                        style="background: linear-gradient(135deg, #f43f5e, #fb7185); box-shadow: 0 2px 8px -1px rgba(244,63,94,0.6);">
+                                        <i class="fa-solid fa-calendar-days text-[11px]"></i>
+                                    </span>
+                                    <span class="text-[13px] font-semibold text-slate-700">今日运势</span>
                                 </div>
-                                <div class="mt-1 text-sm opacity-90">{{ msg.content }}</div>
+                                <div class="mt-2 text-[13px] leading-relaxed text-slate-600 whitespace-pre-wrap">{{ msg.content }}</div>
                             </div>
                         </div>
 
