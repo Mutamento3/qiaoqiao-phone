@@ -817,17 +817,19 @@
                             </div>
                         </div>
 
-                        <!-- Search Result -->
-                        <div v-else-if="msg.type === 'search'" class="flex flex-col w-full"
-                            :class="msg.role === 'user' ? 'items-end' : 'items-start'">
-                            <div class="search-bubble chat-bubble"
-                                :class="msg.role === 'user' ? 'chat-bubble-right' : 'chat-bubble-left'"
-                                :style="computedBubbleStyle">
-                                <div class="flex items-center gap-2">
-                                    <i class="fa-solid fa-magnifying-glass text-blue-500"></i>
-                                    <span class="text-sm font-medium">搜索</span>
-                                </div>
-                                <div class="mt-1 text-sm opacity-90">{{ msg.content }}</div>
+                        <!-- Search Result (premium glass pill, centered) -->
+                        <div v-else-if="msg.type === 'search'" class="w-full flex justify-center px-3 my-1.5">
+                            <div class="search-bubble flex items-center gap-2.5 max-w-[88%] px-3.5 py-2 rounded-2xl border border-white/50"
+                                style="background: linear-gradient(135deg, rgba(99,102,241,0.16), rgba(56,189,248,0.16)); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 8px 24px -8px rgba(56,189,248,0.45);">
+                                <span class="search-bubble__icon flex items-center justify-center w-7 h-7 shrink-0 rounded-full text-white shadow-md"
+                                    style="background: linear-gradient(135deg, #6366f1, #38bdf8);">
+                                    <i class="fa-solid fa-magnifying-glass text-[11px]"></i>
+                                </span>
+                                <span class="search-bubble__text text-[13px] leading-snug text-slate-700">
+                                    <span class="opacity-55 font-medium">AI 联网搜索</span>
+                                    <span class="mx-1 opacity-30">·</span>
+                                    <span class="font-semibold">{{ msg.content }}</span>
+                                </span>
                             </div>
                         </div>
 
@@ -4143,6 +4145,18 @@ const scrollToVote = (refId) => {
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(-4px); }
     to { opacity: 1; transform: translateY(0); }
+}
+
+/* 搜索气泡：玻璃质感 + 轻柔入场 */
+.search-bubble {
+    animation: searchBubbleIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes searchBubbleIn {
+    from { opacity: 0; transform: translateY(6px) scale(0.96); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.search-bubble__icon {
+    box-shadow: 0 2px 8px -1px rgba(56, 189, 248, 0.6);
 }
 
 /* Voice bubble adjustments */
