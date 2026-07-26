@@ -5091,10 +5091,11 @@ export const useChatStore = defineStore('chat', () => {
                             mode: finalMode
                         });
                     } else if (type === 'timer') {
-                        // 处理定时提醒指令 - 支持真实时间解析
+                        // 处理定时提醒指令 - 写入持久调度器(列表可见 + 到点由 proactive 触发角色提醒)
                         const timerMatch = content.match(/\[(?:定时|定时提醒|TIMER|REMIND)[:：]\s*(.+?)\]/i);
                         if (timerMatch) {
                             const timerContent = timerMatch[1].trim();
+                            // 气泡展示原文(含时间), 更直观
                             await addMessage(chatId, {
                                 role: 'ai',
                                 type: 'timer',
@@ -5104,47 +5105,27 @@ export const useChatStore = defineStore('chat', () => {
                                 mode: finalMode
                             });
 
-                            // 解析定时时间：支持 "30分钟后" "下午3点" "10s" "5min" "2h" 等格式
-                            let delayMs = 10000; // 默认 10 秒兜底
+                            // 去掉开头的相对/绝对时间词, 让到点提醒文案更自然
+                            const cleanContent = timerContent
+                                .replace(/^(\d+\s*(?:分钟|小时|秒|min|hour|h|s|sec)\b\s*)/i, '')
+                                .replace(/^(?:今天|今日|明天|明日|上午|下午|晚上|中午)\s*(\d{1,2})[:：点]\d{0,2}\s*/,'')
+                                .replace(/^(\d{1,2})[:：点]\d{0,2}\s*/, '')
+                                .trim() || timerContent
 
-                            // 格式1: "X分钟/小时后" / "Xmin/Xh"
-                            const relativeMatch = timerContent.match(/(\d+)\s*(分钟|min|分|小时|hour|h|秒|s|秒)/i)
-                            if (relativeMatch) {
-                                const num = parseInt(relativeMatch[1])
-                                const unit = relativeMatch[2].toLowerCase()
-                                if (unit.includes('分') || unit === 'min') delayMs = num * 60 * 1000
-                                else if (unit.includes('时') || unit === 'h' || unit === 'hour') delayMs = num * 60 * 60 * 1000
-                                else if (unit.includes('秒') || unit === 's' || unit === 'sec') delayMs = num * 1000
+                            const schedulerStore = useSchedulerStore()
+                            const ts = schedulerStore.addTask(chatId, timerContent, cleanContent)
+                            if (ts) {
+                                const delayMs = ts - Date.now()
+                                const label = delayMs < 60000
+                                    ? `${Math.round(delayMs / 1000)}秒后`
+                                    : delayMs < 24 * 3600 * 1000
+                                        ? `${Math.round(delayMs / 60000)}分钟后`
+                                        : `${Math.round(delayMs / 3600000)}小时后`
+                                console.log(`[ChatStore] Timer scheduled: "${timerContent}" -> ${label}`)
+                                triggerToast(`⏰ 定时提醒已设置: ${label}`, 'info')
+                            } else {
+                                triggerToast('⏰ 定时提醒设置失败：无法识别时间', 'error')
                             }
-                            // 格式2: "XX:XX" 时间格式（如 "14:30"）
-                            else if (timerContent.match(/\d{1,2}[:：]\d{2}/)) {
-                                const timeMatch = timerContent.match(/(\d{1,2})[:：](\d{2})/)
-                                if (timeMatch) {
-                                    const targetHour = parseInt(timeMatch[1])
-                                    const targetMin = parseInt(timeMatch[2])
-                                    const now = new Date()
-                                    const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), targetHour, targetMin)
-                                    if (target <= now) target.setDate(target.getDate() + 1) // 已过则明天
-                                    delayMs = Math.max(target.getTime() - now.getTime(), 60000) // 最少 1 分钟
-                                }
-                            }
-
-                            // 上限保护：不超过 24 小时
-                            delayMs = Math.min(delayMs, 24 * 60 * 60 * 1000)
-
-                            console.log(`[ChatStore] Timer set: "${timerContent}" -> ${Math.round(delayMs / 1000)}s`)
-                            triggerToast(`⏰ 定时提醒已设置: ${delayMs < 60000 ? `${Math.round(delayMs / 1000)}秒后` : `${Math.round(delayMs / 60000)}分钟后`}`, 'info')
-
-                            setTimeout(() => {
-                                addMessage(chatId, {
-                                    role: 'system',
-                                    content: `⏰ 定时提醒: ${timerContent}`,
-                                    hidden: false,
-                                    mode: finalMode
-                                })
-                                // 播放提示音
-                                playSound('notification')
-                            }, delayMs);
                         }
                     } else if (type === 'search') {
                         // v1.10.176: 工具调用——AI 输出 [SEARCH:关键词] 后,
