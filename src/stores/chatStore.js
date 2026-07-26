@@ -2412,11 +2412,18 @@ export const useChatStore = defineStore('chat', () => {
     // v1.10.178: 根据当前时段给主动消息 hint 追加"睡眠/沉默期"规则,
     // 防止 AI 在凌晨自顾自走剧情、替用户行动。详见 prompts_private.js 的
     // 【用户沉默期与主动消息规则】。
-    function buildSleepAwareHint(baseHint, hour, diffMinutes) {
+    function buildSleepAwareHint(baseHint, hour, diffMinutes, opts = {}) {
+        const { bypassSleep = false } = opts
         // 深夜/凌晨: 23:00-06:59 —— AI 应该在睡觉,用上帝视角写环境
         const isDeepNight = hour >= 23 || hour < 7
         // 长时间沉默: 用户超过 60 分钟没回 —— 强调"别替用户行动"
         const isLongSilence = diffMinutes >= 60
+
+        // 白名单: 定时提醒/闹钟类任务——用户显式要求到点触发,即使在深夜/长时间沉默也强制送达,
+        // 不被压成环境描写、也不受"别替用户行动"限制(提醒本身就是用户自己设的)。
+        if (bypassSleep) {
+            return baseHint
+        }
 
         let extra = ''
         if (isDeepNight) {
@@ -2506,7 +2513,8 @@ export const useChatStore = defineStore('chat', () => {
                 logger.sys(`[Proactive] Executing scheduler task: ${task.content}`)
                 schedulerStore.removeTask(task.id)
                 const taskHint = `【系统：距离上次对话已过 ${Math.floor(diffMinutes)} 分钟。】执行定时任务：${task.content}。请根据当前人设发送消息通知用户。请勿重复、复制、抄袭前文输出内容，每次输出必须创新并保证格式正确。`
-                sendMessageToAI(chatId, { hiddenHint: buildSleepAwareHint(taskHint, currentHour, diffMinutes) })
+                // 白名单: 定时提醒不受深夜静默限制,到点强制送达(v1.10.245)
+                sendMessageToAI(chatId, { hiddenHint: buildSleepAwareHint(taskHint, currentHour, diffMinutes, { bypassSleep: true }) })
             })
         }
 
