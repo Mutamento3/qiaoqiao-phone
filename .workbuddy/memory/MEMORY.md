@@ -27,6 +27,8 @@
 - **本地 .git 损坏（refs 被删/对象缺失）**：别在坏仓库硬 rebase/stash（对象缺失必炸）。直接 `git clone` 健康远端 → 只复制自己改的精确文件清单进 clone（绝不全量 tar 覆盖，会带无关脏改动）→ commit 重放 → push。PAT 用完即弃，clone 后立刻 `git remote set-url` 去 token。
 - husky 本地 hook 在 Windows Git Bash 有路径 bug → 提交用 `--no-verify` 绕过，CI `lint.yml` 兜底卡门禁。
 - **agent 动作协议（[[action:verb]]）维护铁律**：从 `agentActions.js` 目录摘除某 verb 时，**`chatStore.runAgentAction` 的 switch 分支必须同步删除**。曾因只删目录、漏删执行层分支，导致 AI 幻觉输出 `[[action:publish_moment]]` 仍被接住、与 `[MOMENT_SHARE:]` 专用通道双发朋友圈的同类 bug。
+- **functions/v2/link/fetch.js 抓小红书/SSR 页 INITIAL_STATE 的脆弱正则坑**：老代码 `window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})\s*<\/script>` 要求 `}` 紧贴 `</script>`，但真实页面结尾是 `};</script>`（带分号）→ 匹配失败 → JSON.parse 拿到 null → 标题/封面/正文全空，只剩 HTML 兜底正则抓到的**真评论**（表现"只有评论、没标题封面"）。修复：宽松匹配 `([\s\S]*?)<\/script>` 再 `replace(/;\s*$/,'')` 去分号后 parse。⚠️ 教训：看到"链接只有评论"**别假设评论是假的**（用户已确认是真），先查 state 解析是否失败导致标题/封面缺失。
+- **`const` 块级作用域跨 if 块引用导致 ReferenceError（聊天整体炸）**：1.10.241 在 `aiService.js` 加社交上下文时直接引用了 line 402 的 `const lastUserMsg`，但该 const 声明在 `if (charId && !isSimpleTask && !isCommandTask && !skipContext) { ... }` 块内（line 457 闭块），到达社交上下文代码 line 861 时已超出作用域 → `ReferenceError: lastUserMsg is not defined` → 主聊天每发必炸（安卓端表现为 "AI响应处理失败 lastUserMsg is not defined"，用户感觉"调用不了"）。教训：**JS `const/let` 是块级作用域**，在一个 if 块里 `const` 的变量，出了那个 `}` 就没了；跨多个代码段复用时要么提到函数级（hoist），要么各段各自现场算。**功能加完后必须端到端跑一遍主流程**——单元/局部断言（如"社交上下文能生成"）覆盖不到这种跨作用域引用陷阱（v1.10.241 的 7 断言全过却仍漏掉了，因为它没模拟完整 `_generateReplyInternal` 流到 line 861）。
 
 ## 用户偏好
 - 中文沟通；直接、针对性方案优于兜底；回归 bug 多，习惯截图+简短吐槽反馈。

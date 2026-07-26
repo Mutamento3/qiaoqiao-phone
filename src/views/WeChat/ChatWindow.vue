@@ -2730,6 +2730,14 @@ const handleSendMessage = async (payload) => {
             return
         }
 
+        // v1.10.239: 用户显式搜索快捷键 [[SEARCH:关键词]] / [搜索:关键词] / [查找:关键词]
+        // 拦截后走真实 Bing 搜索, 不把原始命令当普通聊天发给 AI(否则 AI 面对异常输入会吐空)。
+        const userSearchMatch = (content || '').trim().match(/^\[\[?\s*(?:搜索|SEARCH|查找)[:：]\s*(.+?)\s*\]+$/i)
+        if (userSearchMatch) {
+            await chatStore.runUserSearch(chatId, userSearchMatch[1].trim(), 'online')
+            return
+        }
+
         sparkStore.initSpark(chatId)
         try {
             const disabledChars = JSON.parse(localStorage.getItem('spark_disabled_chars') || '[]')

@@ -1088,6 +1088,15 @@ const shouldSuppressLocation = (index) => false // No longer used for card suppr
 const handleSendMessage = (msg) => {
   console.log('[handleSendMessage] Sending message with mode: offline', { content: msg.content })
   const chatId = chatStore.currentChatId
+
+  // v1.10.239: 用户显式搜索快捷键 [[SEARCH:关键词]] / [搜索:关键词] / [查找:关键词]
+  // 拦截后走真实 Bing 搜索, 不把原始命令当普通聊天发给 AI。
+  const userSearchMatch = (msg.content || '').trim().match(/^\[\[?\s*(?:搜索|SEARCH|查找)[:：]\s*(.+?)\s*\]+$/i)
+  if (userSearchMatch) {
+    chatStore.runUserSearch(chatId, userSearchMatch[1].trim(), 'offline')
+    return
+  }
+
   chatStore.addMessage(chatId, {
     role: 'user',
     content: msg.content,

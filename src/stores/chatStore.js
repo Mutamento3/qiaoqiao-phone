@@ -6074,6 +6074,60 @@ export const useChatStore = defineStore('chat', () => {
     const financial = setupFinancialLogic(chats, addMessage, saveChats, playSound)
     history = setupHistoryLogic(chats, typingStatus, isProfileProcessing, addMessage, triggerToast, saveChats)
 
+    // v1.10.239: 用户显式搜索快捷键——用户在输入框手打 [[SEARCH:关键词]] / [搜索:关键词] / [查找:关键词]
+    // 直接触发真实 Bing 搜索(不把原始命令当作普通聊天发给 AI, 避免 AI 面对异常输入吐空)。
+    // 复用 /v2/search/bing 逻辑: 显示搜索气泡 → 注入 hidden 结果 → 递归 AI 生成点评。
+    async function runUserSearch(chatId, keyword, mode = 'online') {
+        const searchKeyword = (keyword || '').trim()
+        if (!searchKeyword || !chatId) return
+        const finalMode = mode || 'online'
+
+        // 用户视角的搜索气泡(右侧, role:user)
+        await addMessage(chatId, {
+            role: 'user',
+            type: 'search',
+            content: searchKeyword,
+            mode: finalMode
+        })
+
+        try {
+            const searchResp = await fetch(`/v2/search/bing?q=${encodeURIComponent(searchKeyword)}&platform=web`)
+            const searchJson = await searchResp.json()
+            const results = Array.isArray(searchJson.data) ? searchJson.data.slice(0, 8) : []
+            if (results.length > 0) {
+                const resultList = results.map((r, idx) =>
+                    `${idx + 1}. ${r.title}\n   URL: ${r.url}\n   摘要: ${r.snippet || '(无)'}`
+                ).join('\n')
+                await addMessage(chatId, {
+                    role: 'system',
+                    content: `[搜索结果: "${searchKeyword}"]\n${resultList}\n\n你现在可以基于这些结果,挑一个最相关的用 [LINK:URL] 分享给用户,并附上你的点评。或直接讨论其中内容。`,
+                    hidden: true,
+                    mode: finalMode
+                })
+                setTimeout(() => sendMessageToAI(chatId, { _isToolContinuation: true, mode: finalMode }), 300)
+                return
+            } else {
+                await addMessage(chatId, {
+                    role: 'system',
+                    content: `[搜索 "${searchKeyword}" 没有找到结果]`,
+                    hidden: true,
+                    mode: finalMode
+                })
+                setTimeout(() => sendMessageToAI(chatId, { _isToolContinuation: true, mode: finalMode }), 300)
+                return
+            }
+        } catch (e) {
+            console.warn('[ChatStore] User search failed:', e)
+            await addMessage(chatId, {
+                role: 'system',
+                content: `[搜索 "${searchKeyword}" 出错: ${e?.message || e}]`,
+                hidden: true,
+                mode: finalMode
+            })
+            setTimeout(() => sendMessageToAI(chatId, { _isToolContinuation: true, mode: finalMode }), 300)
+        }
+    }
+
     // Expose modularized history logic (includes date-range summary support)
     // External callers (ChatDetailSettings, GroupSettings) use these via store spread
     return {
@@ -6086,7 +6140,7 @@ export const useChatStore = defineStore('chat', () => {
         currentChat, addMessage, updateMessage, createChat, deleteChat,
         deleteMessage, deleteMessages, pinChat, clearHistory, clearAllChats,
         checkProactive, updateCharacter, initDemoData,
-        sendMessageToAI, saveChats, getTokenCount, getTokenBreakdown, addSystemMessage, estimateTokens,
+        sendMessageToAI, runUserSearch, saveChats, getTokenCount, getTokenBreakdown, addSystemMessage, estimateTokens,
         getDisplayedMessages, loadMoreMessages, resetPagination, hasMoreMessages, resetCharacter,
         getPreviewContext, isLoaded,
         isProfileProcessing, createGroupChat, updateGroupProfile, updateGroupParticipants, updateGroupSettings,
