@@ -23,7 +23,8 @@
       var tag = event.target.tagName || '?';
       var src = event.target.src || event.target.href || '';
       var info = 'resource-error: <' + tag.toLowerCase() + '> ' + src;
-      if (src.indexOf('assets/index-') !== -1) {
+      // 识别 esbuild 产出的 main.js (1.10.234 起) + Vite 老产物 index-*.js
+      if (isMainScript(src)) {
         mainJsError = info;
         log('MAIN JS FAILED TO LOAD: ' + src);
       }
@@ -41,12 +42,19 @@
     log(info);
   });
 
+  // 判定一个 src 是否是"主 JS" (esbuild main.js + 兼容 Vite index-*.js)
+  function isMainScript(src) {
+    if (!src) return false;
+    return src.indexOf('assets/main.js') !== -1 ||
+           src.indexOf('assets/index-') !== -1;
+  }
+
   // 监听主 JS script 的 load/error 事件
   function watchMainScript() {
     var scripts = document.querySelectorAll('script[src]');
     for (var i = 0; i < scripts.length; i++) {
       var s = scripts[i];
-      if (s.src && s.src.indexOf('assets/index-') !== -1) {
+      if (s.src && isMainScript(s.src)) {
         s.addEventListener('load', function () {
           mainJsLoaded = true;
           log('main JS <script> load event fired');
@@ -86,7 +94,7 @@
   }
   fetchVersion();
 
-  function showError(diagInfo) {
+  function showError(diagInfo, title) {
     var s = document.getElementById('native-splash');
     if (!s) return;
     var infoHtml = '';
@@ -96,7 +104,7 @@
     s.innerHTML =
       '<div style="text-align:center;padding:20px;font-family:monospace,sans-serif;color:#475569;font-size:11px;width:100%;box-sizing:border-box">' +
       '<div style="font-size:40px;margin-bottom:12px">❄️</div>' +
-      '<div style="font-size:16px;font-weight:700;color:#ef4444;margin-bottom:12px">JS 加载失败</div>' +
+      '<div style="font-size:16px;font-weight:700;color:#ef4444;margin-bottom:12px">' + escapeHtml(title || 'JS 加载失败') + '</div>' +
       '<div style="background:rgba(0,0,0,0.05);border-radius:8px;padding:12px;line-height:1.5;word-break:break-all;text-align:left;margin-bottom:10px;max-height:280px;overflow-y:auto">' +
       infoHtml +
       '</div>' +
@@ -108,7 +116,7 @@
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  // 2秒检查: 收集诊断信息
+  // 8秒检查: 收集诊断信息 (3.89MB main.js 在 4G/WiFi 边缘通常 5-10s, 给足缓冲)
   setTimeout(function () {
     var app = document.getElementById('app');
     var mounted = !!(app && app.children.length > 0);
@@ -117,14 +125,15 @@
     for (var i = 0; i < scripts.length; i++) {
       scriptList.push(scripts[i].src.split('/').pop());
     }
-    log('check@2s: mounted=' + mounted + ', errors=' + errors.length + ', mainJsLoaded=' + mainJsLoaded + ', scripts=' + scriptList.join(','));
+    log('check@8s: mounted=' + mounted + ', errors=' + errors.length + ', mainJsLoaded=' + mainJsLoaded + ', scripts=' + scriptList.join(','));
 
     if (!mounted) {
       var diag = [];
       if (errors.length > 0) {
         diag = errors.slice(0, 6);
+        showError(diag, 'JS 加载出错');
       } else {
-        diag.push('无 JS 错误捕获');
+        diag.push('未捕获到 JS 错误');
         diag.push('mainJsLoaded=' + mainJsLoaded);
         diag.push('mainJsError=' + (mainJsError || 'none'));
         diag.push('url=' + location.href);
@@ -137,21 +146,23 @@
         }
         // Check if document ready state
         diag.push('readyState=' + document.readyState);
+        diag.push('提示: 主 JS 约 3.9MB, 若网络较慢请耐心等待或刷新重试');
+        // 软超时 (8s) 用温和标题, 区别于 20s 硬超时
+        showError(diag, '加载较慢, 请稍候…');
       }
-      showError(diag);
     }
-  }, 2000);
+  }, 8000);
 
-  // 5秒二次检查
+  // 20秒二次检查 (硬超时, 此时几乎一定是真挂了)
   setTimeout(function () {
     var app = document.getElementById('app');
     var mounted = !!(app && app.children.length > 0);
-    log('check@5s: mounted=' + mounted);
+    log('check@20s: mounted=' + mounted);
     if (!mounted && errors.length === 0) {
-      errors.push('5s timeout: JS loaded but Vue never mounted');
+      errors.push('20s timeout: JS loaded but Vue never mounted');
       if (!document.getElementById('native-splash') || document.getElementById('native-splash').innerHTML.indexOf('JS 加载失败') === -1) {
-        showError(['5s timeout: JS may have executed but Vue never mounted', 'mainJsLoaded=' + mainJsLoaded, 'Check console for errors']);
+        showError(['20s timeout: JS may have executed but Vue never mounted', 'mainJsLoaded=' + mainJsLoaded, 'Check console for errors']);
       }
     }
-  }, 5000);
+  }, 20000);
 })();
