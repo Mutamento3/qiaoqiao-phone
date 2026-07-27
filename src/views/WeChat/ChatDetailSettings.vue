@@ -3507,8 +3507,8 @@ const saveSettings = async () => {
                                 error.message.includes('exceeded the storage')
                             ));
         if (isQuotaError) {
-            showToast('存储空间不足！请使用URL方式设置头像（点击头像旁的URL按钮）')
-            console.error('[Settings] Storage quota exceeded. Suggest using URL avatar instead of base64.')
+            showToast('存储空间不足，已尝试自动压缩旧图片释放空间。若仍无法保存，请到「设置 → 存储空间」进一步压缩图片或清理缓存。')
+            console.error('[Settings] Storage quota exceeded. Suggest using URL avatar or compressing images.')
             
             // 自动清除本地头像数据以避免持续失败
             if (localData.value.avatar && localData.value.avatar.startsWith('data:image')) {

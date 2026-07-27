@@ -2275,6 +2275,28 @@ export const useChatStore = defineStore('chat', () => {
                 console.warn('[updateCharacter] V3 metadata sync failed (per-chat key already saved):', e)
             })
 
+            // Quota still exceeded: bloated by OTHER chats. Reclaim space globally
+            // (compress oversized images across all chats) — lossless, keeps all text & settings.
+            if (quotaError && metaWriteFailed) {
+                console.log('[updateCharacter] Quota still exceeded, running global defrag...')
+                const freed = await defragStorage()
+                if (freed > 0) {
+                    try {
+                        const chatRef2 = chats.value[chatId]
+                        const { msgs: m2, ...rawMeta2 } = chatRef2
+                        await localforage.setItem(`qiaoqiao_chat_meta_${chatId}`, toRawObj(sanitizeMetaForStorage(rawMeta2)))
+                        if (Array.isArray(m2)) await localforage.setItem(`${MSGS_KEY_PREFIX}${chatId}`, toRawObj(sanitizeMsgsForStorage(m2)))
+                        metaWriteFailed = false
+                        msgsWriteFailed = false
+                        quotaError = null
+                        saveChats().catch(() => {})
+                        return true
+                    } catch (retryErr) {
+                        console.warn('[updateCharacter] defrag retry failed:', retryErr)
+                    }
+                }
+            }
+
             if (quotaError && metaWriteFailed) {
                 throw quotaError;
             }
@@ -5461,12 +5483,78 @@ export const useChatStore = defineStore('chat', () => {
         // Only try to clean up truly temporary/dispensable data if any
         // e.g., clear old undo history, or temp caches (not implemented yet)
 
-        // Notify user instead of destroying data
+        // Notify user instead of destroying data.
+        // NOTE: After v1.10.246 this is only reached when even defragStorage() could
+        // not free enough space. Kept as a calm, actionable hint (no scare tactics).
         if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('show-toast', {
-                detail: { message: '存储空间已满！请立即导出备份或删除旧聊天，否则数据可能丢失！', type: 'error', duration: 10000 }
+                detail: {
+                    message: '存储空间接近上限，已自动压缩旧图片释放空间（聊天记录和设置均保留）。如仍提示，可到「设置 → 存储空间」进一步压缩或导出备份。',
+                    type: 'warning',
+                    duration: 8000
+                }
             }));
         }
+    }
+
+    // --- Lossless storage recovery (v1.10.246) ---
+    // When the IndexedDB quota is exceeded, we reclaim space WITHOUT deleting any
+    // chat record or setting: oversized base64 images stored inside messages are
+    // downscaled (kept, just smaller). Text, settings and message structure are
+    // fully preserved. Returns estimated bytes freed (0 if nothing to do / throttled).
+    let defragging = false
+    let lastDefragTime = 0
+    async function defragStorage() {
+        if (defragging) return 0
+        const now = Date.now()
+        if (now - lastDefragTime < 15000) return 0 // throttle: at most once / 15s
+        defragging = true
+        lastDefragTime = now
+        let freed = 0
+        try {
+            const { compressImage } = await import('../utils/imageUtils')
+            const THRESHOLD = 250 * 1024 // only touch base64 images larger than 250KB
+            for (const chatId of Object.keys(chats.value)) {
+                const chat = chats.value[chatId]
+                if (!chat || !Array.isArray(chat.msgs)) continue
+                let changed = false
+                for (const m of chat.msgs) {
+                    const fields = []
+                    if (m.content && typeof m.content === 'string' && m.content.startsWith('data:image') && m.content.length > THRESHOLD) fields.push('content')
+                    if (m.image && typeof m.image === 'string' && m.image.startsWith('data:image') && m.image.length > THRESHOLD) fields.push('image')
+                    for (const f of fields) {
+                        const src = m[f]
+                        try {
+                            const res = await fetch(src)
+                            const blob = await res.blob()
+                            const file = new File([blob], 'img.jpg', { type: blob.type || 'image/jpeg' })
+                            const c = await compressImage(file, { maxWidth: 1000, maxHeight: 1000, quality: 0.65 })
+                            if (c && c.length < src.length) {
+                                freed += (src.length - c.length)
+                                m[f] = c
+                                changed = true
+                            }
+                        } catch (e) { /* skip uncompressable image */ }
+                    }
+                }
+                if (changed) {
+                    try {
+                        await localforage.setItem(`${MSGS_KEY_PREFIX}${chatId}`, JSON.parse(JSON.stringify(chat.msgs)))
+                    } catch (e) { /* ignore per-chat write errors; final save retries */ }
+                }
+            }
+            // Bonus: clear non-critical local caches
+            try {
+                ['qiaoqiao_avatar_descriptions', 'qiaoqiao-image-cache', 'qiaoqiao-moment-cache', 'qiaoqiao_sticker_cache']
+                    .forEach(k => { try { localStorage.removeItem(k) } catch (e) {} })
+            } catch (e) {}
+            if (freed > 0) console.log(`[Storage] defragStorage compressed oversized images, freed ~${Math.round(freed / 1024)}KB`)
+        } catch (e) {
+            console.warn('[Storage] defragStorage error:', e)
+        } finally {
+            defragging = false
+        }
+        return freed
     }
 
     let saveTimeout = null;
@@ -5531,7 +5619,7 @@ export const useChatStore = defineStore('chat', () => {
 
         if (saveTimeout) clearTimeout(saveTimeout);
         
-        const performSave = async (resolve) => {
+        const writeOnce = async () => {
             try {
                 const deepToRaw = (obj) => {
                     const raw = toRaw(obj);
@@ -5586,7 +5674,6 @@ export const useChatStore = defineStore('chat', () => {
 
                 // [FIX] v1.10.65: 触发自动云端备份(debounce 5 分钟)
                 autoBackup.notifyChange(() => collectBackupPayload());
-                if (resolve) resolve(true);
                 return true;
             } catch (e) {
                 console.error('[Storage] Per-chat save failed:', e);
@@ -5614,7 +5701,6 @@ export const useChatStore = defineStore('chat', () => {
                     localStorage.setItem(V3_MIGRATED_KEY, 'true');
 
                     console.log('[Storage] Saved successfully after sanitizing oversized data');
-                    if (resolve) resolve(true);
                     return true;
 
                 } catch (sanitizeErr) {
@@ -5650,15 +5736,30 @@ export const useChatStore = defineStore('chat', () => {
                     
                     await localforage.setItem('qiaoqiao_chats_v2', fallbackData);
                     console.log('[Storage] Fallback V2 save succeeded (with data sanitization)');
-                    if (resolve) resolve(true);
                     return true;
                 } catch (innerE) {
                     console.error('[Storage] Critical storage failure:', innerE);
-                    vacuumStorage();
-                    if (resolve) resolve(false);
                     return false;
                 }
             }
+        };
+
+        const performSave = async (resolve) => {
+            let ok = await writeOnce();
+            if (!ok) {
+                // Quota likely exceeded: reclaim space losslessly (compress oversized
+                // images across all chats) and retry once. Keeps every text message and
+                // every setting — only oversized image bytes are shrunk.
+                const freed = await defragStorage();
+                if (freed > 0) {
+                    ok = await writeOnce();
+                }
+            }
+            if (!ok) {
+                vacuumStorage(); // gentle fallback (defrag couldn't free enough)
+            }
+            if (resolve) resolve(ok);
+            return ok;
         };
 
         if (force) {
