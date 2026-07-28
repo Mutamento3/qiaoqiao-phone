@@ -2690,7 +2690,8 @@ const handleDrawCommandInChat = async (msgId, prompt) => {
 
     try {
         // 1. Generate Image
-        const imageUrl = await generateImage(actualPrompt, { useComfyUI });
+        // v1.10.250: 传递 chatId 以获取角色形象图,确保图生图时正确使用角色参考
+        const imageUrl = await generateImage(actualPrompt, { chatId, useComfyUI });
         if (!imageUrl) throw new Error('生图返回为空');
 
         // 2. Update message content in Store (Standard UI Update)

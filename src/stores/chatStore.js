@@ -2203,7 +2203,6 @@ export const useChatStore = defineStore('chat', () => {
         };
 
         let metaWriteFailed = false;
-        let msgsWriteFailed = false;
         let quotaError = null;
 
         try {
@@ -2212,7 +2211,6 @@ export const useChatStore = defineStore('chat', () => {
             const chatRef = chats.value[chatId]
             const { msgs, ...rawMeta } = chatRef
             const meta = sanitizeMetaForStorage(rawMeta)
-            const cleanMsgs = sanitizeMsgsForStorage(msgs)
 
             try {
                 await localforage.setItem(`qiaoqiao_chat_meta_${chatId}`, toRawObj(meta))
@@ -2224,50 +2222,55 @@ export const useChatStore = defineStore('chat', () => {
                 }
             }
 
-            if (Array.isArray(msgs) && !metaWriteFailed) {
+            if (quotaError && metaWriteFailed) {
+                console.log('[updateCharacter] Quota exceeded, attempting to clear non-critical caches...')
                 try {
-                    await localforage.setItem(`${MSGS_KEY_PREFIX}${chatId}`, toRawObj(cleanMsgs))
-                } catch (msgsErr) {
-                    console.warn('[updateCharacter] msgs write failed:', msgsErr)
-                    if (isQuotaError(msgsErr)) {
-                        msgsWriteFailed = true;
-                    }
+                    ['qiaoqiao_avatar_descriptions', 'qiaoqiao-image-cache', 'qiaoqiao-moment-cache', 'qiaoqiao_sticker_cache']
+                        .forEach(k => { try { localStorage.removeItem(k) } catch (e) {} })
+                    
+                    await new Promise(r => setTimeout(r, 100))
+
+                    const retryMeta = sanitizeMetaForStorage({ ...chatRef, msgs: undefined })
+                    await localforage.setItem(`qiaoqiao_chat_meta_${chatId}`, toRawObj(retryMeta))
+                    metaWriteFailed = false
+                    quotaError = null
+                } catch (retryErr) {
+                    console.warn('[updateCharacter] Cache cleanup retry failed:', retryErr)
                 }
             }
 
-            if (msgsWriteFailed || (quotaError && metaWriteFailed)) {
-                console.log('[updateCharacter] Quota exceeded, attempting image compression retry...')
+            if (quotaError && metaWriteFailed) {
+                console.log('[updateCharacter] Quota still exceeded, running targeted defrag on this chat only...')
                 try {
                     const { compressImage } = await import('../utils/imageUtils')
                     let compressed = 0
-                    for (const m of (msgs || [])) {
-                        const imgSrc = (m.content && typeof m.content === 'string' && m.content.startsWith('data:image')) ? m.content
-                            : (m.image && typeof m.image === 'string' && m.image.startsWith('data:image')) ? m.image : null
-                        if (imgSrc && imgSrc.length > 200 * 1024) {
+                    for (const m of (chatRef.msgs || [])) {
+                        const fields = []
+                        if (m.content && typeof m.content === 'string' && m.content.startsWith('data:image') && m.content.length > 250 * 1024) fields.push('content')
+                        if (m.image && typeof m.image === 'string' && m.image.startsWith('data:image') && m.image.length > 250 * 1024) fields.push('image')
+                        for (const f of fields) {
+                            const src = m[f]
                             try {
-                                const res = await fetch(imgSrc)
+                                const res = await fetch(src)
                                 const blob = await res.blob()
-                                const file = new File([blob], 'img.jpg', { type: 'image/jpeg' })
-                                const c = await compressImage(file, { maxWidth: 600, maxHeight: 600, quality: 0.5 })
-                                if (c.length < imgSrc.length) {
-                                    if (m.content === imgSrc) m.content = c
-                                    if (m.image === imgSrc) m.image = c
+                                const file = new File([blob], 'img.jpg', { type: blob.type || 'image/jpeg' })
+                                const c = await compressImage(file, { maxWidth: 1000, maxHeight: 1000, quality: 0.65 })
+                                if (c && c.length < src.length) {
+                                    m[f] = c
                                     compressed++
                                 }
-                            } catch (e) {}
+                            } catch (e) { /* skip */ }
                         }
                     }
                     if (compressed > 0) {
-                        console.log(`[updateCharacter] Compressed ${compressed} images, retrying save...`)
-                        const retryMeta = sanitizeMetaForStorage({ ...chatRef, msgs: undefined })
-                        await localforage.setItem(`qiaoqiao_chat_meta_${chatId}`, toRawObj(retryMeta))
-                        await localforage.setItem(`${MSGS_KEY_PREFIX}${chatId}`, toRawObj(sanitizeMsgsForStorage(msgs)))
+                        console.log(`[updateCharacter] Compressed ${compressed} images in chat ${chatId}, retrying save...`)
+                        const retryMeta2 = sanitizeMetaForStorage({ ...chatRef, msgs: undefined })
+                        await localforage.setItem(`qiaoqiao_chat_meta_${chatId}`, toRawObj(retryMeta2))
                         metaWriteFailed = false
-                        msgsWriteFailed = false
                         quotaError = null
                     }
                 } catch (compressErr) {
-                    console.warn('[updateCharacter] Compression retry failed:', compressErr)
+                    console.warn('[updateCharacter] Targeted compression failed:', compressErr)
                 }
             }
 
@@ -2275,29 +2278,8 @@ export const useChatStore = defineStore('chat', () => {
                 console.warn('[updateCharacter] V3 metadata sync failed (per-chat key already saved):', e)
             })
 
-            // Quota still exceeded: bloated by OTHER chats. Reclaim space globally
-            // (compress oversized images across all chats) — lossless, keeps all text & settings.
             if (quotaError && metaWriteFailed) {
-                console.log('[updateCharacter] Quota still exceeded, running global defrag...')
-                const freed = await defragStorage()
-                if (freed > 0) {
-                    try {
-                        const chatRef2 = chats.value[chatId]
-                        const { msgs: m2, ...rawMeta2 } = chatRef2
-                        await localforage.setItem(`qiaoqiao_chat_meta_${chatId}`, toRawObj(sanitizeMetaForStorage(rawMeta2)))
-                        if (Array.isArray(m2)) await localforage.setItem(`${MSGS_KEY_PREFIX}${chatId}`, toRawObj(sanitizeMsgsForStorage(m2)))
-                        metaWriteFailed = false
-                        msgsWriteFailed = false
-                        quotaError = null
-                        saveChats().catch(() => {})
-                        return true
-                    } catch (retryErr) {
-                        console.warn('[updateCharacter] defrag retry failed:', retryErr)
-                    }
-                }
-            }
-
-            if (quotaError && metaWriteFailed) {
+                console.warn('[updateCharacter] Critical: per-chat meta save failed after all retries')
                 throw quotaError;
             }
 
@@ -5477,21 +5459,18 @@ export const useChatStore = defineStore('chat', () => {
 
     function vacuumStorage() {
         console.warn('[Storage] Quota exceeded. Attempting safe cleanup...');
-        // DEPRECATED: Old destructive logic removed.
-        // We do NOT want to auto-delete user messages or backgrounds without consent.
 
-        // Only try to clean up truly temporary/dispensable data if any
-        // e.g., clear old undo history, or temp caches (not implemented yet)
+        try {
+            ['qiaoqiao_avatar_descriptions', 'qiaoqiao-image-cache', 'qiaoqiao-moment-cache', 'qiaoqiao_sticker_cache']
+                .forEach(k => { try { localStorage.removeItem(k) } catch (e) {} })
+        } catch (e) {}
 
-        // Notify user instead of destroying data.
-        // NOTE: After v1.10.246 this is only reached when even defragStorage() could
-        // not free enough space. Kept as a calm, actionable hint (no scare tactics).
         if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('show-toast', {
                 detail: {
-                    message: '存储空间接近上限，已自动压缩旧图片释放空间（聊天记录和设置均保留）。如仍提示，可到「设置 → 存储空间」进一步压缩或导出备份。',
+                    message: '存储空间不足。已清理临时缓存，如仍无法保存，请手动到「设置 → 存储空间」压缩图片或导出备份后清理。',
                     type: 'warning',
-                    duration: 8000
+                    duration: 10000
                 }
             }));
         }
@@ -5504,10 +5483,10 @@ export const useChatStore = defineStore('chat', () => {
     // fully preserved. Returns estimated bytes freed (0 if nothing to do / throttled).
     let defragging = false
     let lastDefragTime = 0
-    async function defragStorage() {
+    async function defragStorage(options = {}) {
         if (defragging) return 0
         const now = Date.now()
-        if (now - lastDefragTime < 15000) return 0 // throttle: at most once / 15s
+        if (!options.force && now - lastDefragTime < 15000) return 0
         defragging = true
         lastDefragTime = now
         let freed = 0
@@ -5747,16 +5726,7 @@ export const useChatStore = defineStore('chat', () => {
         const performSave = async (resolve) => {
             let ok = await writeOnce();
             if (!ok) {
-                // Quota likely exceeded: reclaim space losslessly (compress oversized
-                // images across all chats) and retry once. Keeps every text message and
-                // every setting — only oversized image bytes are shrunk.
-                const freed = await defragStorage();
-                if (freed > 0) {
-                    ok = await writeOnce();
-                }
-            }
-            if (!ok) {
-                vacuumStorage(); // gentle fallback (defrag couldn't free enough)
+                vacuumStorage();
             }
             if (resolve) resolve(ok);
             return ok;

@@ -38,6 +38,11 @@ const breakdown = ref({
     indexedDB: 0  // Explicit IndexedDB usage
 })
 
+const compressionProgress = ref(0)
+const compressionStatus = ref('')
+const isCompressing = ref(false)
+let cancelCompression = false
+
 // Mock helper to estimate string size in bytes
 // SAFETY: Use string length as fallback to prevent "Invalid string length" error
 const getSize = (str) => {
@@ -67,9 +72,8 @@ const getSize = (str) => {
 
 const calculateStorage = async () => {
     try {
-        // Reset error state
         hasError.value = false
-        quotaMode.value = 'calculating'  // Show calculating state
+        quotaMode.value = 'calculating'
 
         let lsTotal = 0
         let details = {
@@ -83,7 +87,6 @@ const calculateStorage = async () => {
             indexedDB: 0
         }
 
-        // 1. Calculate LocalStorage usage (safe, always works)
         try {
             for (let key in localStorage) {
                 if (Object.prototype.hasOwnProperty.call(localStorage, key)) {
@@ -103,10 +106,6 @@ const calculateStorage = async () => {
             console.warn('[Storage] Failed to calculate LocalStorage:', lsErr)
         }
 
-        // 2. v1.10.61: 用 navigator.storage.estimate() 拿真实浏览器存储用量
-        // 之前用 50KB/key 粗估 + 10MB 截断,实际几百 MB 数据只显示几 MB。
-        // 真实流程:estimate() 拿浏览器记录的 IndexedDB + LS + SW cache 总和(最准),
-        // 然后再用 localforage 遍历 keys 拿细分。
         let browserReportedUsage = null
         let browserReportedQuota = null
         if (navigator.storage && navigator.storage.estimate) {
@@ -117,72 +116,97 @@ const calculateStorage = async () => {
             } catch (e) { /* 静默 */ }
         }
 
-        // 3. 遍历 IndexedDB 所有 key 拿细分
-        // 不再卡 10MB 截断,getSize() 已能用 UTF-8 估算处理大字符串
+        const startTime = Date.now()
+        const MAX_CALC_TIME = 10000
+        const LARGE_DATA_THRESHOLD = 100 * 1024 * 1024
+        const BATCH_SIZE = 20
+
         let idbTotal = 0
         try {
             if (typeof localforage.keys === 'function') {
-                const keys = await localforage.keys()
-                for (const key of keys) {
-                    try {
-                        const value = await localforage.getItem(key)
-                        if (value === null || value === undefined) continue
-                        let entrySize = key.length
-                        if (typeof value === 'string') {
-                            entrySize += getSize(value)
-                        } else {
-                            try {
-                                entrySize += getSize(JSON.stringify(value))
-                            } catch (e) {
-                                entrySize += 1024
+                if (browserReportedUsage && browserReportedUsage > LARGE_DATA_THRESHOLD) {
+                    console.log('[Storage] Large data detected (>100MB), skipping detailed IDB calculation to avoid crash')
+                    idbTotal = browserReportedUsage - lsTotal
+                    details.indexedDB = idbTotal
+                    details.system = idbTotal
+                } else {
+                    const keys = await localforage.keys()
+                    for (let i = 0; i < keys.length; i++) {
+                        if (Date.now() - startTime > MAX_CALC_TIME) {
+                            console.warn('[Storage] calculateStorage timeout, stopping IDB traversal')
+                            break
+                        }
+
+                        if (i > 0 && i % BATCH_SIZE === 0) {
+                            await new Promise(r => setTimeout(r, 0))
+                        }
+
+                        const key = keys[i]
+                        try {
+                            const value = await localforage.getItem(key)
+                            if (value === null || value === undefined) continue
+                            let entrySize = key.length
+
+                            if (typeof value === 'string') {
+                                if (value.length > 10 * 1024 * 1024) {
+                                    entrySize += value.length * 2
+                                } else {
+                                    entrySize += getSize(value)
+                                }
+                            } else {
+                                try {
+                                    const str = JSON.stringify(value)
+                                    if (str.length > 10 * 1024 * 1024) {
+                                        entrySize += str.length * 2
+                                    } else {
+                                        entrySize += getSize(str)
+                                    }
+                                } catch (e) {
+                                    entrySize += 1024
+                                }
                             }
-                        }
-                        if (key.startsWith('qiaoqiao_chat_msgs_') ||
-                            key === 'qiaoqiao_chats_v2' ||
-                            key === 'qiaoqiao_chats_metadata' ||
-                            key === 'qiaoqiao_chat_store') {
-                            details.chats += entrySize
-                        } else if (key === 'galleryData' || key === 'qiaoqiao_gallery' || key === 'gallery') {
-                            details.gallery += entrySize
-                        } else if (key === 'qiaoqiao_moments' || key.includes('moment')) {
-                            details.moments += entrySize
-                        } else if (key.includes('image') || key.includes('avatar') || key.includes('Image') || key.includes('Avatar')) {
-                            details.images += entrySize
-                        } else {
-                            details.system += entrySize
-                        }
-                        idbTotal += entrySize
-                    } catch (singleErr) { /* 单个 key 读失败不影响整体 */ }
+
+                            if (key.startsWith('qiaoqiao_chat_msgs_') ||
+                                key === 'qiaoqiao_chats_v2' ||
+                                key === 'qiaoqiao_chats_metadata' ||
+                                key === 'qiaoqiao_chat_store') {
+                                details.chats += entrySize
+                            } else if (key === 'galleryData' || key === 'qiaoqiao_gallery' || key === 'gallery') {
+                                details.gallery += entrySize
+                            } else if (key === 'qiaoqiao_moments' || key.includes('moment')) {
+                                details.moments += entrySize
+                            } else if (key.includes('image') || key.includes('avatar') || key.includes('Image') || key.includes('Avatar')) {
+                                details.images += entrySize
+                            } else {
+                                details.system += entrySize
+                            }
+                            idbTotal += entrySize
+                        } catch (singleErr) { /* 单个 key 读失败不影响整体 */ }
+                    }
+                    details.indexedDB = idbTotal
                 }
             }
-            details.indexedDB = idbTotal
         } catch (idbError) {
             console.warn('[Storage] Failed to walk IndexedDB:', idbError)
             details.indexedDB = 0
         }
 
-        // 4. 决定 usedSpace / totalLimit / quotaMode
-        // 优先用浏览器 estimate(包含 SW cache 等所有浏览器分配的存储)
         if (browserReportedUsage !== null && browserReportedUsage > 0) {
             usedSpace.value = browserReportedUsage
             totalLimit.value = browserReportedQuota || (280 * 1024 * 1024 * 1024)
             quotaMode.value = 'system'
-            // 我们遍历的 IDB+LS 加起来可能 < estimate.usage(差额是 SW cache 等)
             const accountedFor = lsTotal + idbTotal
             const swCachePortion = Math.max(0, browserReportedUsage - accountedFor)
             details.system += swCachePortion
         } else {
-            // estimate 不可用,降级到累加
             usedSpace.value = lsTotal + idbTotal
             totalLimit.value = 280 * 1024 * 1024 * 1024
             quotaMode.value = 'system'
         }
         details.system = Math.max(0, details.system)
 
-        // [FIX] 把细分写回响应式对象,模板 breakdown.* 才会更新
         breakdown.value = details
     } catch (calcErr) {
-        // [FIX] 避免 calculateStorage 抛错时整个组件崩溃
         console.error('[Storage] calculateStorage failed:', calcErr)
         hasError.value = true
     }
@@ -234,45 +258,60 @@ const updateCompressQuality = () => {
 // Image Compression Logic
 const compressImages = async () => {
     console.log('[Storage] compressImages clicked')
+    if (isCompressing.value) return
     try {
         chatStore.triggerConfirm('图片压缩', '这将重新压缩所有现有的聊天图片，可能会略微降低清晰度以节省空间。\n确定要继续吗？', async () => {
-            chatStore.triggerToast('正在压缩图片，请稍候...', 'info')
-            await new Promise(r => setTimeout(r, 50)) // Allow UI to render the toast
+            isCompressing.value = true
+            compressionProgress.value = 0
+            compressionStatus.value = '正在准备...'
+            cancelCompression = false
+            
+            await new Promise(r => setTimeout(r, 50))
+            
             let count = 0
             let savedSize = 0
             let loopCounter = 0
-
-            // Process
+            
             const chats = chatStore.chats
-            for (const chatId in chats) {
+            const chatIds = Object.keys(chats)
+            const totalChats = chatIds.length
+            let currentChat = 0
+
+            for (const chatId of chatIds) {
+                if (cancelCompression) {
+                    compressionStatus.value = '已取消'
+                    break
+                }
+                
+                currentChat++
+                compressionProgress.value = Math.round((currentChat / totalChats) * 100)
+                compressionStatus.value = `正在处理角色 ${currentChat}/${totalChats}...`
+                
                 const msgs = chats[chatId].msgs || []
                 for (const msg of msgs) {
-                    if (loopCounter++ % 100 === 0) await new Promise(r => setTimeout(r, 0)) // Yield event loop
+                    if (loopCounter++ % 100 === 0) await new Promise(r => setTimeout(r, 0))
                     if (msg.content && typeof msg.content === 'string') {
-                        // Match all [图片:...] tags
                         const imgRegex = /\[图片:([^\]]+)\]/g
                         let match
                         let newContent = msg.content
                         let msgModified = false
 
-                        // Reset regex index for safety
                         imgRegex.lastIndex = 0
 
-                        // In-place collection of matches to avoid indexing issues during replacement
                         const foundImages = []
                         while ((match = imgRegex.exec(msg.content)) !== null) {
                             foundImages.push({ full: match[0], url: match[1] })
                         }
 
                         for (const imgInfo of foundImages) {
+                            if (cancelCompression) break
+                            
                             const originalUrl = imgInfo.url
-                            // Handle both Base64 and remote URLs
                             if (originalUrl.startsWith('data:image') || originalUrl.includes('pollinations') || originalUrl.includes('image')) {
                                 try {
                                     const newBase64 = await reCompressBase64FromUrl(originalUrl, compressQuality.value)
                                     if (newBase64 && newBase64.length < originalUrl.length) {
                                         savedSize += (originalUrl.length - newBase64.length)
-                                        // Use split/join for safe global replace of this specific string
                                         newContent = newContent.split(imgInfo.full).join(`[图片:${newBase64}]`)
                                         msgModified = true
                                         count++
@@ -290,12 +329,20 @@ const compressImages = async () => {
                 }
             }
 
-            await chatStore.saveChats(true)
-            calculateStorage()
-            chatStore.triggerToast(`压缩完成！处理了 ${count} 张图片，释放了 ${formatSize(savedSize)}`, 'success')
+            if (!cancelCompression) {
+                compressionStatus.value = '正在保存...'
+                await chatStore.saveChats(true)
+                compressionProgress.value = 100
+                compressionStatus.value = '完成'
+                calculateStorage()
+                chatStore.triggerToast(`压缩完成！处理了 ${count} 张图片，释放了 ${formatSize(savedSize)}`, 'success')
+            }
+            
+            isCompressing.value = false
         })
     } catch (e) {
         console.error('[Storage] compressImages error:', e)
+        isCompressing.value = false
         chatStore.triggerToast('压缩启动失败: ' + e.message, 'error')
     }
 }
@@ -401,151 +448,184 @@ const cleanAllImages = () => {
 // 压缩 AI 生图（包括朋友圈、论坛、相册等）
 const compressAIImages = async () => {
     console.log('[Storage] compressAIImages clicked')
+    if (isCompressing.value) return
     try {
         chatStore.triggerConfirm('AI 图片压缩', '这将压缩所有 AI 生成的图片（朋友圈、论坛、相册、情侣空间等），可能略微降低清晰度以节省空间。\n确定要继续吗？', async () => {
-        chatStore.triggerToast('正在压缩 AI 图片，请稍候...', 'info')
-        await new Promise(r => setTimeout(r, 50)) // Allow UI to render the toast
-        let count = 0
-        let savedSize = 0
-        let loopCounter = 0
+            isCompressing.value = true
+            compressionProgress.value = 0
+            compressionStatus.value = '正在准备...'
+            cancelCompression = false
+            
+            await new Promise(r => setTimeout(r, 50))
+            
+            let count = 0
+            let savedSize = 0
+            let loopCounter = 0
+            let loveSpaceStore = null
 
-        try {
-            // 1. 压缩聊天中的 AI 生图（最主要占用空间）
-            const chats = chatStore.chats
-            for (const chatId in chats) {
-                const msgs = chats[chatId].msgs || []
-                for (const msg of msgs) {
-                    if (loopCounter++ % 100 === 0) await new Promise(r => setTimeout(r, 0)) // Yield event loop
-                    // 处理 AI 生成的图片（包括 URL 和 base64 格式）
-                    if (msg.image && typeof msg.image === 'string' && (msg.image.startsWith('http') || msg.image.startsWith('data:image'))) {
-                        try {
-                            const compressed = await reCompressBase64FromUrl(msg.image, compressQuality.value)
-                            if (compressed && compressed.length > 0 && compressed.length < msg.image.length) {
-                                savedSize += (msg.image.length - compressed.length)
-                                msg.image = compressed
-                                count++
-                            } else if (compressed && compressed.length >= msg.image.length) {
-                                // 压缩后更大或相同，不保存
-                                console.log('Image compression skipped (no size reduction)')
-                            }
-                            // If compressed is null, skip silently
-                        } catch (e) {
-                            console.warn('Chat AI image compression error:', e.message)
-                        }
-                    }
-                }
-            }
+            try {
+                const chats = chatStore.chats
+                const chatIds = Object.keys(chats)
+                const totalSteps = chatIds.length + 3
+                
+                let step = 0
 
-            // 2. 压缩朋友圈图片
-            const momentsStore = (await import('../../stores/momentsStore.js')).useMomentsStore()
-            const allMoments = momentsStore.moments || []
-            for (const moment of allMoments) {
-                if (loopCounter++ % 100 === 0) await new Promise(r => setTimeout(r, 0))
-                if (moment.images && Array.isArray(moment.images)) {
-                    for (let i = 0; i < moment.images.length; i++) {
-                        const imgUrl = moment.images[i]
-                        if (imgUrl && typeof imgUrl === 'string' && (imgUrl.includes('pollinations') || imgUrl.startsWith('data:image'))) {
+                for (const chatId of chatIds) {
+                    if (cancelCompression) break
+                    
+                    step++
+                    compressionProgress.value = Math.round((step / totalSteps) * 100)
+                    compressionStatus.value = `正在处理聊天图片 ${step}/${totalSteps}...`
+                    
+                    const msgs = chats[chatId].msgs || []
+                    for (const msg of msgs) {
+                        if (loopCounter++ % 100 === 0) await new Promise(r => setTimeout(r, 0))
+                        if (msg.image && typeof msg.image === 'string' && (msg.image.startsWith('http') || msg.image.startsWith('data:image'))) {
                             try {
-                                const compressed = await reCompressBase64FromUrl(imgUrl, compressQuality.value)
-                                if (compressed && compressed.length < imgUrl.length) {
-                                    savedSize += (imgUrl.length - compressed.length)
-                                    moment.images[i] = compressed
+                                const compressed = await reCompressBase64FromUrl(msg.image, compressQuality.value)
+                                if (compressed && compressed.length > 0 && compressed.length < msg.image.length) {
+                                    savedSize += (msg.image.length - compressed.length)
+                                    msg.image = compressed
                                     count++
                                 }
                             } catch (e) {
-                                console.error('Moments image compression failed:', e)
+                                console.warn('Chat AI image compression error:', e.message)
                             }
                         }
                     }
                 }
-            }
 
-            // 3. 压缩论坛帖子图片
-            const forumStore = (await import('../../stores/forumStore.js')).useForumStore()
-            const forumData = forumStore.forumData || {}
-            for (const forumKey in forumData) {
-                const posts = forumData[forumKey]?.posts || []
-                for (const post of posts) {
-                    if (loopCounter++ % 100 === 0) await new Promise(r => setTimeout(r, 0))
-                    if (post.image && typeof post.image === 'string' && (post.image.includes('pollinations') || post.image.startsWith('data:image'))) {
-                        try {
-                            const compressed = await reCompressBase64FromUrl(post.image, compressQuality.value)
-                            if (compressed && compressed.length < post.image.length) {
-                                savedSize += (post.image.length - compressed.length)
-                                post.image = compressed
-                                count++
+                if (!cancelCompression) {
+                    step++
+                    compressionProgress.value = Math.round((step / totalSteps) * 100)
+                    compressionStatus.value = `正在处理朋友圈图片...`
+                    
+                    const momentsStore = (await import('../../stores/momentsStore.js')).useMomentsStore()
+                    const allMoments = momentsStore.moments || []
+                    for (const moment of allMoments) {
+                        if (loopCounter++ % 100 === 0) await new Promise(r => setTimeout(r, 0))
+                        if (moment.images && Array.isArray(moment.images)) {
+                            for (let i = 0; i < moment.images.length; i++) {
+                                if (cancelCompression) break
+                                const imgUrl = moment.images[i]
+                                if (imgUrl && typeof imgUrl === 'string' && (imgUrl.includes('pollinations') || imgUrl.startsWith('data:image'))) {
+                                    try {
+                                        const compressed = await reCompressBase64FromUrl(imgUrl, compressQuality.value)
+                                        if (compressed && compressed.length < imgUrl.length) {
+                                            savedSize += (imgUrl.length - compressed.length)
+                                            moment.images[i] = compressed
+                                            count++
+                                        }
+                                    } catch (e) {
+                                        console.error('Moments image compression failed:', e)
+                                    }
+                                }
                             }
-                        } catch (e) {
-                            console.error('Forum image compression failed:', e)
                         }
                     }
                 }
-            }
 
-            // 4. 压缩相册照片（查手机 & 情侣空间）
-            // 查手机
-            for (const charId in chats) {
-                const char = chats[charId]
-                const photos = char.phoneData?.apps?.photos?.photos || []
-                for (const photo of photos) {
-                    if (loopCounter++ % 50 === 0) await new Promise(r => setTimeout(r, 0))
-                    if (photo.url && typeof photo.url === 'string' && (photo.url.includes('pollinations') || photo.url.startsWith('data:image'))) {
-                        try {
-                            const compressed = await reCompressBase64FromUrl(photo.url, compressQuality.value)
-                            if (compressed && compressed.length < photo.url.length) {
-                                savedSize += (photo.url.length - compressed.length)
-                                photo.url = compressed
-                                count++
+                if (!cancelCompression) {
+                    step++
+                    compressionProgress.value = Math.round((step / totalSteps) * 100)
+                    compressionStatus.value = `正在处理论坛图片...`
+                    
+                    const forumStore = (await import('../../stores/forumStore.js')).useForumStore()
+                    const forumData = forumStore.forumData || {}
+                    for (const forumKey in forumData) {
+                        if (cancelCompression) break
+                        const posts = forumData[forumKey]?.posts || []
+                        for (const post of posts) {
+                            if (loopCounter++ % 100 === 0) await new Promise(r => setTimeout(r, 0))
+                            if (post.image && typeof post.image === 'string' && (post.image.includes('pollinations') || post.image.startsWith('data:image'))) {
+                                try {
+                                    const compressed = await reCompressBase64FromUrl(post.image, compressQuality.value)
+                                    if (compressed && compressed.length < post.image.length) {
+                                        savedSize += (post.image.length - compressed.length)
+                                        post.image = compressed
+                                        count++
+                                    }
+                                } catch (e) {
+                                    console.error('Forum image compression failed:', e)
+                                }
                             }
-                        } catch (e) {
-                            console.error('Photos app compression failed:', e)
                         }
                     }
                 }
-            }
 
-            // 情侣空间
-            const loveSpaceStore = (await import('../../stores/loveSpaceStore.js')).useLoveSpaceStore()
-            const spaces = loveSpaceStore.spaces || {}
-            for (const sId in spaces) {
-                const space = spaces[sId]
-                // Album
-                const album = space.album || []
-                for (const photo of album) {
-                    if (loopCounter++ % 50 === 0) await new Promise(r => setTimeout(r, 0))
-                    const imgUrl = photo.url || photo.imageUrl || photo.image
-                    if (imgUrl && typeof imgUrl === 'string' && (imgUrl.includes('pollinations') || imgUrl.startsWith('data:image'))) {
-                        try {
-                            const compressed = await reCompressBase64FromUrl(imgUrl, compressQuality.value)
-                            if (compressed && compressed.length < imgUrl.length) {
-                                savedSize += (imgUrl.length - compressed.length)
-                                if (photo.url) photo.url = compressed
-                                else if (photo.imageUrl) photo.imageUrl = compressed
-                                else photo.image = compressed
-                                count++
+                if (!cancelCompression) {
+                    step++
+                    compressionProgress.value = Math.round((step / totalSteps) * 100)
+                    compressionStatus.value = `正在处理相册照片...`
+                    
+                    for (const charId in chats) {
+                        if (cancelCompression) break
+                        const char = chats[charId]
+                        const photos = char.phoneData?.apps?.photos?.photos || []
+                        for (const photo of photos) {
+                            if (loopCounter++ % 50 === 0) await new Promise(r => setTimeout(r, 0))
+                            if (photo.url && typeof photo.url === 'string' && (photo.url.includes('pollinations') || photo.url.startsWith('data:image'))) {
+                                try {
+                                    const compressed = await reCompressBase64FromUrl(photo.url, compressQuality.value)
+                                    if (compressed && compressed.length < photo.url.length) {
+                                        savedSize += (photo.url.length - compressed.length)
+                                        photo.url = compressed
+                                        count++
+                                    }
+                                } catch (e) {
+                                    console.error('Photos app compression failed:', e)
+                                }
                             }
-                        } catch (e) {
-                            console.error('LoveSpace album compression failed:', e)
+                        }
+                    }
+
+                    loveSpaceStore = (await import('../../stores/loveSpaceStore.js')).useLoveSpaceStore()
+                    const spaces = loveSpaceStore.spaces || {}
+                    for (const sId in spaces) {
+                        if (cancelCompression) break
+                        const space = spaces[sId]
+                        const album = space.album || []
+                        for (const photo of album) {
+                            if (loopCounter++ % 50 === 0) await new Promise(r => setTimeout(r, 0))
+                            const imgUrl = photo.url || photo.imageUrl || photo.image
+                            if (imgUrl && typeof imgUrl === 'string' && (imgUrl.includes('pollinations') || imgUrl.startsWith('data:image'))) {
+                                try {
+                                    const compressed = await reCompressBase64FromUrl(imgUrl, compressQuality.value)
+                                    if (compressed && compressed.length < imgUrl.length) {
+                                        savedSize += (imgUrl.length - compressed.length)
+                                        if (photo.url) photo.url = compressed
+                                        else if (photo.imageUrl) photo.imageUrl = compressed
+                                        else photo.image = compressed
+                                        count++
+                                    }
+                                } catch (e) {
+                                    console.error('LoveSpace album compression failed:', e)
+                                }
+                            }
                         }
                     }
                 }
-                // Footprints (if any images in future)
-                // Letters (if any images in future)
+
+                if (!cancelCompression) {
+                    compressionStatus.value = '正在保存...'
+                    await chatStore.saveChats()
+                    if (loveSpaceStore.saveToStorage) await loveSpaceStore.saveToStorage()
+
+                    compressionProgress.value = 100
+                    compressionStatus.value = '完成'
+                    calculateStorage()
+                    chatStore.triggerToast(`压缩完成！处理了 ${count} 张 AI 图片，释放了 ${formatSize(savedSize)}`, 'success')
+                }
+            } catch (e) {
+                console.error('AI Image compression failed:', e)
+                chatStore.triggerToast('压缩失败，请重试', 'error')
             }
-
-            // 写入持久化
-            await chatStore.saveChats()
-            if (loveSpaceStore.saveToStorage) await loveSpaceStore.saveToStorage()
-
-            calculateStorage()
-            chatStore.triggerToast(`压缩完成！处理了 ${count} 张 AI 图片，释放了 ${formatSize(savedSize)}`, 'success')
-        } catch (e) {
-            console.error('AI Image compression failed:', e)
-            chatStore.triggerToast('压缩失败，请重试', 'error')
-        }
-    })
+            
+            isCompressing.value = false
+        })
     } catch (e) {
         console.error('[Storage] compressAIImages error:', e)
+        isCompressing.value = false
         chatStore.triggerToast('AI 压缩启动失败: ' + e.message, 'error')
     }
 }
@@ -710,14 +790,29 @@ const clearChats = () => {
                     <p class="text-xs text-gray-400 mb-4">调整聊天图片的压缩质量，影响图片清晰度和占用空间。</p>
 
                     <button @click="compressImages"
-                        class="w-full bg-blue-400 text-white py-3 rounded-xl text-sm font-bold shadow-sm active:scale-95 transition flex items-center justify-center gap-2">
+                        class="w-full bg-blue-400 text-white py-3 rounded-xl text-sm font-bold shadow-sm active:scale-95 transition flex items-center justify-center gap-2"
+                        :disabled="isCompressing">
                         <i class="fa-solid fa-compress"></i> 开始压缩所有聊天图片
                     </button>
 
                     <button @click="compressAIImages"
-                        class="w-full mt-3 bg-purple-400 text-white py-3 rounded-xl text-sm font-bold shadow-sm active:scale-95 transition flex items-center justify-center gap-2">
+                        class="w-full mt-3 bg-purple-400 text-white py-3 rounded-xl text-sm font-bold shadow-sm active:scale-95 transition flex items-center justify-center gap-2"
+                        :disabled="isCompressing">
                         <i class="fa-solid fa-wand-magic-sparkles"></i> 压缩所有 AI 生图 (朋友圈/论坛/相册)
                     </button>
+
+                    <div v-if="isCompressing" class="mt-4">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-xs text-gray-500">{{ compressionStatus }}</span>
+                            <span class="text-xs text-gray-500">{{ compressionProgress }}%</span>
+                        </div>
+                        <div class="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                            <div class="h-full bg-blue-500 rounded-full transition-all duration-300"
+                                :style="{ width: compressionProgress + '%' }"></div>
+                        </div>
+                        <button @click="cancelCompression = true"
+                            class="w-full mt-2 text-xs text-red-400 py-1">取消压缩</button>
+                    </div>
                 </div>
             </div>
 

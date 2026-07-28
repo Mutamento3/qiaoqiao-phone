@@ -238,6 +238,9 @@ try {
   }
 
   // 输出 index.html - 修复 module 脚本路径, 添加 CSS 引用
+  // 使用 ./assets/ 相对路径: Android WebViewAssetLoader 把 /assets/ 映射到 APK assets/ 目录,
+  // 而 dist/ 复制到 assets/ 后, assets/main.js 实际位于 assets/assets/main.js.
+  // 浏览器解析 ./assets/main.js → /assets/assets/main.js, handler 去掉前缀后正确定位到 assets/main.js.
   indexHtml = indexHtml.replace(
     /<script type="module" src="\/src\/main\.js"><\/script>/,
     '<link rel="stylesheet" href="./assets/main.css">\n  <script type="module" src="./assets/main.js"></script>'

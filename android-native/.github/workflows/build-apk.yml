@@ -40,10 +40,22 @@ jobs:
           # 本地资源秒开, 只在调 LLM API 时走云端.
           rm -rf android-native/app/src/main/assets
           mkdir -p android-native/app/src/main/assets
-          cp -r dist/. android-native/app/src/main/assets/
+          # 先复制 dist/ 根目录的文件 (index.html, native-diag.js, manifest.json, 图标等)
+          cp dist/index.html android-native/app/src/main/assets/
+          cp dist/native-diag.js android-native/app/src/main/assets/
+          cp dist/manifest.json android-native/app/src/main/assets/
+          cp dist/version.json android-native/app/src/main/assets/ 2>/dev/null || true
+          cp dist/*.png android-native/app/src/main/assets/ 2>/dev/null || true
+          cp dist/*.json android-native/app/src/main/assets/ 2>/dev/null || true
+          # 再复制 dist/assets/ 的内容到 assets/ 根目录 (不是 assets/assets/)
+          # 这样 ./assets/main.js 解析后 handler 能正确定位到 assets/main.js
+          cp -r dist/assets/. android-native/app/src/main/assets/
+          # 复制其他目录
+          cp -r dist/webfonts android-native/app/src/main/assets/ 2>/dev/null || true
+          cp -r dist/functions android-native/app/src/main/assets/ 2>/dev/null || true
           du -sh android-native/app/src/main/assets
-          echo "--- assets contents (top 10) ---"
-          ls android-native/app/src/main/assets/ | head -10
+          echo "--- assets contents (top 20) ---"
+          ls android-native/app/src/main/assets/ | head -20
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3

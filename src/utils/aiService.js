@@ -3270,7 +3270,7 @@ async function _generateImageInternal(prompt, options = {}) {
     // 解决 Seedream 等中文模型经常忘记风格、出胡子、生出小孩、身体比例崩坏的问题
     // 对所有 provider 都生效(volcengine / siliconflow / pollinations 都用)
     const QUALITY_PROMPT_ANIME = ',二次元动漫插画风格，精细线稿，赛璐璐上色，鲜艳色彩，平面光影，'
-    const QUALITY_PROMPT_REALISTIC = ',真实摄影风格，4K高清照片质感，自然光线，专业构图，写实人像，'
+    const QUALITY_PROMPT_REALISTIC = ',真实摄影风格，4K高清照片质感，自然光线，专业构图，'
     // 通用质量护栏(动漫 + 真人 都加): 强制成年 + 干净面容 + 正常体型
     const QUALITY_POSITIVE_GUARD = ',所有人物均为22-28岁成年男女，面容干净无胡须无体毛，身材匀称比例正常，'
     // 强制年龄 + 干净面容 + 比例的中文 negative(火山引擎对 negative_prompt 字段支持有限,直接写进 prompt 更稳)
@@ -3348,8 +3348,11 @@ async function _generateImageInternal(prompt, options = {}) {
 
     // v1.10.165: 把英文质量护栏注入 enhancedPrompt,确保 SiliconFlow / Pollinations 也记住风格 + 排除儿童/胡须
     // (火山引擎走自己的 finalPrompt 拼装,这里只影响 SiliconFlow / Pollinations)
+    // v1.10.250: 修复非人像场景强制生成人物问题 - 只有检测到人像提示词时才添加 QUALITY_POSITIVE_GUARD_EN
     if (!options.isProduct) {
-        enhancedPrompt = `${enhancedPrompt}${QUALITY_POSITIVE_GUARD_EN}`
+        if (isCouple || isMale || isFemale || isPerson) {
+            enhancedPrompt = `${enhancedPrompt}${QUALITY_POSITIVE_GUARD_EN}`
+        }
         negativeBoost = `${QUALITY_NEGATIVE_EN}, ${negativeBoost}`
     }
 
@@ -3804,8 +3807,10 @@ async function _generateImageInternal(prompt, options = {}) {
         // 同时把 QUALITY_POSITIVE_GUARD(强制成年+干净面容)和 QUALITY_NEGATIVE(明确不要什么)
         // 直接拼到 prompt 末尾,让中文模型明确知道风格和质量要求
         // (火山引擎的 negative_prompt 字段对 Seedream 4.0 实际不生效,所以直接拼进 prompt)
+        // v1.10.250: 修复非人像场景强制生成人物问题 - 只有检测到人像提示词时才添加 QUALITY_POSITIVE_GUARD
         const styleHint = isRealisticStyle ? QUALITY_PROMPT_REALISTIC : QUALITY_PROMPT_ANIME
-        const finalPrompt = `${promptPrefix}${stripSDWeights(enhancedPrompt)}，${volcStyleHint}${styleHint}${QUALITY_POSITIVE_GUARD}绝对禁止：${QUALITY_NEGATIVE}`
+        const portraitGuard = (hasPortraitHint || refImageCount > 0) ? QUALITY_POSITIVE_GUARD : ''
+        const finalPrompt = `${promptPrefix}${stripSDWeights(enhancedPrompt)}，${volcStyleHint}${styleHint}${portraitGuard}绝对禁止：${QUALITY_NEGATIVE}`
 
         const body = {
             model: chosenModel,
