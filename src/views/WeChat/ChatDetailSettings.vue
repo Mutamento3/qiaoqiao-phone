@@ -2365,44 +2365,53 @@ const localData = ref({
 
 
 
-// Sync props
+// Sync props — 仅在面板首次打开时同步, 编辑过程中不覆盖用户输入
+// 根因: currentChat 是 computed, 每次 store 变化(新消息/打字状态等)都返回新对象,
+// 触发 watch 用旧数据覆盖 localData, 导致用户编辑丢失
+let isLocalDataInitialized = false
 watch(() => props.chatData, (newVal) => {
-    if (newVal && !isSaving.value) {
-        let dataCopy = {}
-        try {
-            // Use JSON parse/stringify with toRaw to break reactivity references and ensure clean copy
-            dataCopy = JSON.parse(JSON.stringify(toRaw(newVal)))
-        } catch (e) {
-            console.error('[ChatDetailSettings] Failed to deep clone chatData:', e)
-            dataCopy = { ...newVal } // Fallback to shallow copy
-        }
+    // 首次加载 或 保存中跳过
+    if (!newVal) return
+    if (isSaving.value) return
+    // 已初始化过则不再覆盖, 避免编辑过程中被 store 变化冲掉
+    if (isLocalDataInitialized) return
 
-        // Data Migration: handle legacy nickname vs new remark
-        if (dataCopy.nickname && !dataCopy.remark) {
-            dataCopy.remark = dataCopy.nickname
-        }
-
-        // Initialize userAvatar if missing
-        if (!dataCopy.userAvatar) {
-            dataCopy.userAvatar = chatStore.getRandomAvatar ? chatStore.getRandomAvatar() : '/avatars/小猫开心.jpg'
-        }
-
-        // Ensure gender fields are present
-        if (!dataCopy.gender) dataCopy.gender = '无'
-        if (!dataCopy.userGender) dataCopy.userGender = '无'
-
-        // Group memory intero initialization
-        if (dataCopy.groupMemoryIntero === undefined) dataCopy.groupMemoryIntero = false
-        if (!Array.isArray(dataCopy.linkedGroups)) dataCopy.linkedGroups = []
-        if (!dataCopy.groupMemoryLimits) dataCopy.groupMemoryLimits = {}
-        if (!Array.isArray(dataCopy.mcpEnabledServers)) dataCopy.mcpEnabledServers = []
-
-        localData.value = { ...localData.value, ...dataCopy }
-
-        // Explicitly set name if present (safety check)
-        if (newVal.name) localData.value.name = newVal.name
+    let dataCopy = {}
+    try {
+        // Use JSON parse/stringify with toRaw to break reactivity references and ensure clean copy
+        dataCopy = JSON.parse(JSON.stringify(toRaw(newVal)))
+    } catch (e) {
+        console.error('[ChatDetailSettings] Failed to deep clone chatData:', e)
+        dataCopy = { ...newVal } // Fallback to shallow copy
     }
-}, { immediate: true }) // Default deep: false for performance
+
+    // Data Migration: handle legacy nickname vs new remark
+    if (dataCopy.nickname && !dataCopy.remark) {
+        dataCopy.remark = dataCopy.nickname
+    }
+
+    // Initialize userAvatar if missing
+    if (!dataCopy.userAvatar) {
+        dataCopy.userAvatar = chatStore.getRandomAvatar ? chatStore.getRandomAvatar() : '/avatars/小猫开心.jpg'
+    }
+
+    // Ensure gender fields are present
+    if (!dataCopy.gender) dataCopy.gender = '无'
+    if (!dataCopy.userGender) dataCopy.userGender = '无'
+
+    // Group memory intero initialization
+    if (dataCopy.groupMemoryIntero === undefined) dataCopy.groupMemoryIntero = false
+    if (!Array.isArray(dataCopy.linkedGroups)) dataCopy.linkedGroups = []
+    if (!dataCopy.groupMemoryLimits) dataCopy.groupMemoryLimits = {}
+    if (!Array.isArray(dataCopy.mcpEnabledServers)) dataCopy.mcpEnabledServers = []
+
+    localData.value = { ...localData.value, ...dataCopy }
+
+    // Explicitly set name if present (safety check)
+    if (newVal.name) localData.value.name = newVal.name
+
+    isLocalDataInitialized = true
+}, { immediate: true })
 
 // Image Compression Utility
 const compressImage = (file, maxWidth = 400, quality = 0.7) => {
