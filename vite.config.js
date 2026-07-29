@@ -9,21 +9,17 @@ export default defineConfig(({ command }) => ({
   base: './',
   plugins: [
     vue(),
-    // Android WebView 用 file:// 加载时:
-    // 1. <script type="module"> 走 CORS, file:// origin 是 null → 拒绝执行
-    // 2. <script crossorigin> / <link crossorigin> 触发 CORS → 拒绝执行
-    // 这个插件在 build 后 (IIFE 格式下):
-    // - 删掉 type="module" (改成 classic script, 不走 CORS)
-    // - 删掉 crossorigin 属性
-    // - 把 native-diag.js 移到主 JS 之前 (确保能捕获主 JS 的加载错误)
-    // 仅在 build 阶段生效: dev 模式下 Vite 用原生 ESM, 必须保留 type="module"
-    // 当前 build 是 ES 格式 (云端 Web 部署), 此插件不做任何修改
+    // Android WebView 用 WebViewAssetLoader (HTTPS origin) 加载:
+    // 1. <script crossorigin> / <link crossorigin> 触发 CORS 预检 (OPTIONS),
+    //    AssetsPathHandler 不支持 CORS 头, 导致 WebView 报 code=-6 (FILE_NOT_FOUND)
+    // 2. 剥离 crossorigin 属性, 让 WebView 走同源简单请求
+    // 3. 保留 type="module" (ES 格式, WebViewAssetLoader HTTPS origin 支持)
     {
       name: 'fix-script-tags',
       apply: 'build',
       transformIndexHtml(html) {
-        // 临时禁用: 切到 ES 格式后, 保留 type="module" 以让浏览器正确加载
         return html
+          .replace(/\scrossorigin(="[^"]*")?/g, '')
       }
     }
   ],

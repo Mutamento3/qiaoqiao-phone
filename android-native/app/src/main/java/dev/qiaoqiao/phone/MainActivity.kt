@@ -149,25 +149,27 @@ class MainActivity : AppCompatActivity() {
                 val fromLoader = assetLoader.shouldInterceptRequest(uri)
                 if (fromLoader != null) return fromLoader
 
-                // 2) Fallback: WebViewAssetLoader 返回 null 时, 手动从 assets 读.
-                //    这种情况通常是 path 对不上 handler 的前缀 (e.g. /assets/assets/main.js
-                //    被 handler 剥掉 /assets/ 后剩 assets/main.js, 若 handler 内部再剥一层就会错).
-                //    这里直接把 URL path 里跟在 /assets/ 后面的部分当作 assets 内相对路径,
-                //    不再让 AssetsPathHandler 二次处理.
+                // 2) Fallback: 手动从 assets 读, 兼容 AssetsPathHandler 未覆盖的情况
+                //    (如路径带查询参数、或 handler 内部异常时)
                 if (uri.host == "appassets.androidplatform.net") {
                     val fullPath = uri.path ?: return null
-                    // 剥掉开头的 /assets/ (如果存在), 其余部分就是 assets 内的相对路径
-                    val rel = fullPath.removePrefix("/assets/").removePrefix("/res/")
-                    if (rel.isNotBlank()) {
+                    // 依次尝试: 去掉 /assets/ 前缀, 去掉 /res/ 前缀, 完整路径 (兜底)
+                    val candidates = listOf(
+                        fullPath.removePrefix("/assets/").removePrefix("/res/"),
+                        fullPath.removePrefix("/assets/"),
+                        fullPath.removePrefix("/res/"),
+                        fullPath.trimStart('/')
+                    ).filter { it.isNotBlank() }.distinct()
+
+                    for (rel in candidates) {
                         try {
                             val inputStream = assets.open(rel)
                             val mime = guessMimeType(rel)
-                            Log.d(TAG, "Fallback load: $fullPath -> assets/$rel ($mime)")
+                            Log.d(TAG, "Fallback OK: $fullPath -> assets/$rel ($mime)")
                             return WebResourceResponse(mime, "UTF-8", inputStream)
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Fallback failed: $fullPath -> assets/$rel", e)
-                        }
+                        } catch (_: Exception) { }
                     }
+                    Log.e(TAG, "Fallback FAILED: $fullPath (tried: $candidates)")
                 }
                 return null
             }
