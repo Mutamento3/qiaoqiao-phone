@@ -3847,7 +3847,7 @@ window.qiaoqiao_receiveFamilyCard = (uuid, amount, note, fromCharId) => {
 
                 <!-- Typing Indicator -->
                 <div v-if="chatStore.isTyping" class="flex gap-2 w-full z-10 mb-2">
-                    <img :src="chatData?.avatar" class="w-10 h-10 rounded shadow-sm bg-white object-cover">
+                    <img :src="chatData?.avatar || '/avatars/default.jpg'" class="w-10 h-10 rounded shadow-sm bg-white object-cover">
                     <div class="chat-bubble-left px-4 py-3 rounded-lg flex items-center gap-1">
                         <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
                         <div class="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100"></div>

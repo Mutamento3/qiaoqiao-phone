@@ -1447,7 +1447,7 @@ onMounted(() => {
                                     @click="settingsForm.enabledCharacters.includes(chat.id) ? settingsForm.enabledCharacters = settingsForm.enabledCharacters.filter(id => id !== chat.id) : settingsForm.enabledCharacters.push(chat.id)">
                                     <input type="checkbox" :checked="settingsForm.enabledCharacters.includes(chat.id)"
                                         class="accent-green-500">
-                                    <img :src="chat.avatar" class="w-6 h-6 rounded">
+                                    <img :src="chat.avatar || '/avatars/default.jpg'" class="w-6 h-6 rounded">
                                     <span class="text-sm flex-1">{{ chat.name }}</span>
                                     <i class="fa-solid transition-all p-1 active:scale-75 cursor-pointer"
                                         :class="confirmClearCharId === chat.id ? 'fa-check text-red-600 font-bold scale-110' : 'fa-trash-can text-red-400 hover:text-red-600'"
@@ -1578,7 +1578,7 @@ onMounted(() => {
                         <div v-for="chat in chatStore.contactList" :key="chat.id"
                             class="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
                             @click="postForm.visibleIds.includes(chat.id) ? postForm.visibleIds = postForm.visibleIds.filter(id => id !== chat.id) : postForm.visibleIds.push(chat.id)">
-                            <img :src="chat.avatar" class="w-8 h-8 rounded-lg object-cover">
+                            <img :src="chat.avatar || '/avatars/default.jpg'" class="w-8 h-8 rounded-lg object-cover">
                             <span class="flex-1 text-sm">{{ chat.name }}</span>
                             <div class="w-5 h-5 rounded-full border border-gray-200 flex items-center justify-center transition-colors"
                                 :class="{ 'bg-green-500 border-green-500': postForm.visibleIds.includes(chat.id) }">
@@ -1803,7 +1803,7 @@ onMounted(() => {
                     :class="{ 'bg-green-50/40 border-green-100': genChoiceForm.selectedIds.includes(chat.id) }"
                     @click="genChoiceForm.selectedIds.includes(chat.id) ? genChoiceForm.selectedIds = genChoiceForm.selectedIds.filter(id => id !== chat.id) : genChoiceForm.selectedIds.push(chat.id)">
                     <div class="relative">
-                        <img :src="chat.avatar" class="w-10 h-10 rounded-xl object-cover shadow-sm">
+                        <img :src="chat.avatar || '/avatars/default.jpg'" class="w-10 h-10 rounded-xl object-cover shadow-sm">
                         <div v-if="genChoiceForm.selectedIds.includes(chat.id)"
                             class="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white flex items-center justify-center">
                             <i class="fa-solid fa-check text-white text-[8px]"></i>
@@ -1897,7 +1897,7 @@ onMounted(() => {
                     class="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 cursor-pointer transition-colors group"
                     @click="handleMentionSelect(chat)">
                     <div class="w-10 h-10 rounded-lg overflow-hidden bg-gray-200">
-                        <img :src="chat.avatar" class="w-full h-full object-cover">
+                        <img :src="chat.avatar || '/avatars/default.jpg'" class="w-full h-full object-cover">
                     </div>
                     <div class="flex-1">
                         <div class="font-bold text-gray-800 text-sm group-hover:text-blue-600 transition-colors">{{

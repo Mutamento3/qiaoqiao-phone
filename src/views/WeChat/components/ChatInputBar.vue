@@ -21,7 +21,7 @@
                 <div v-for="member in mentionList" :key="member.id"
                     class="flex items-center gap-2 p-2.5 hover:bg-blue-50 cursor-pointer transition-colors border-l-4 border-transparent hover:border-blue-500"
                     @click="pickMention(member)">
-                    <img :src="member.avatar" class="w-7 h-7 rounded-full object-cover">
+                    <img :src="member.avatar || '/avatars/default.jpg'" class="w-7 h-7 rounded-full object-cover">
                     <div class="flex-1 text-sm text-gray-700 truncate">{{ member.name }}</div>
                 </div>
             </div>

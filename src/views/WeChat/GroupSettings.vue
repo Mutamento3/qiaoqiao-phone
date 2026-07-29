@@ -1241,7 +1241,7 @@ onMounted(() => {
               <div
                 class="w-14 h-14 rounded-xl overflow-hidden bg-gray-100 shrink-0 cursor-pointer border border-white shadow-sm"
                 @click="triggerAvatarUpload">
-                <img :src="form.avatar" class="w-full h-full object-cover" />
+                <img :src="form.avatar || '/avatars/default.jpg'" class="w-full h-full object-cover" />
               </div>
               <div class="flex gap-1">
                 <button class="text-[9px] text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded"
@@ -1300,7 +1300,7 @@ onMounted(() => {
               <div
                 class="w-12 h-12 rounded-xl overflow-hidden bg-gray-200 cursor-pointer active:scale-95 transition-transform border border-white shadow-sm"
                 @click="handleMemberClick(p)">
-                <img :src="p.avatar" class="w-full h-full object-cover" />
+                <img :src="p.avatar || '/avatars/default.jpg'" class="w-full h-full object-cover" />
               </div>
               <div class="text-[9px] mt-1.5 truncate w-full text-center text-gray-600 font-medium">{{ p.name }}</div>
             </div>
@@ -1833,7 +1833,7 @@ onMounted(() => {
               class="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-xl cursor-pointer transition-colors">
               <input type="checkbox" :checked="state.selectedInviteIds.has(contact.id)"
                 @change="toggleInvite(contact.id)" class="accent-green-600 scale-125" />
-              <img :src="contact.avatar" class="w-10 h-10 rounded-lg object-cover" />
+              <img :src="contact.avatar || '/avatars/default.jpg'" class="w-10 h-10 rounded-lg object-cover" />
               <div class="flex-1 min-w-0">
                 <div class="text-sm font-medium text-gray-900 truncate">{{ contact.remark || contact.name }}</div>
                 <div class="text-[10px] text-gray-400">{{ contact.id }}</div>
@@ -2089,7 +2089,7 @@ onMounted(() => {
             @click="toggleAiSelect(m.id)">
 
             <div class="relative">
-              <img :src="m.avatar" class="w-12 h-12 rounded-xl object-cover shadow-sm bg-gray-100" />
+              <img :src="m.avatar || '/avatars/default.jpg'" class="w-12 h-12 rounded-xl object-cover shadow-sm bg-gray-100" />
               <div v-if="state.selectedAiIds.has(m.id)"
                 class="absolute -top-1 -right-1 w-5 h-5 bg-green-500 text-white rounded-full flex items-center justify-center text-[10px] shadow-sm animate-bounce-short">
                 <i class="fa-solid fa-check"></i>

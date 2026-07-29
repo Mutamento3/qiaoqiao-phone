@@ -1163,7 +1163,7 @@
                                     </div>
                                     <div class="relative group">
                                         <div class="absolute inset-0 bg-rose-300 rounded-full blur group-hover:blur-md transition-all"></div>
-                                        <img :src="chatData.avatar" class="w-14 h-14 rounded-full border-2 border-white relative z-10 object-cover">
+                                        <img :src="chatData.avatar || '/avatars/default.jpg'" class="w-14 h-14 rounded-full border-2 border-white relative z-10 object-cover">
                                         <div class="absolute -right-1 -bottom-1 w-6 h-6 bg-rose-400 rounded-full flex items-center justify-center text-[10px] text-white shadow-lg ring-2 ring-white z-20">
                                             <i class="fa-solid fa-check"></i>
                                         </div>

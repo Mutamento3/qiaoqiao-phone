@@ -66,7 +66,7 @@
                                     padding: localData.avatarFrame ? ((1 - (localData.avatarFrame.scale || 1)) / 2 * 100) + '%' : '0',
                                     transform: localData.avatarFrame ? `translate(${localData.avatarFrame.offsetX || 0}px, ${localData.avatarFrame.offsetY || 0}px)` : 'none'
                                 }">
-                                    <img v-if="localData.avatar" :src="localData.avatar"
+                                    <img v-if="localData.avatar" :src="localData.avatar || '/avatars/default.jpg'"
                                         class="w-full h-full object-cover">
                                     <span v-else class="text-xs text-gray-400">头像</span>
                                 </div>
@@ -679,7 +679,7 @@
                                 class="flex items-center justify-between p-2 rounded-xl bg-white/50 border border-white/80 transition-all hover:bg-white cursor-pointer shadow-sm"
                                 @click="toggleGroupLink(group.id)">
                                 <div class="flex items-center gap-2">
-                                    <img :src="group.avatar" class="w-8 h-8 rounded-lg object-cover" />
+                                    <img :src="group.avatar || '/avatars/default.jpg'" class="w-8 h-8 rounded-lg object-cover" />
                                     <div class="flex flex-col">
                                         <span class="text-xs font-bold text-gray-700 truncate w-32">{{ group.name
                                         }}</span>
