@@ -489,12 +489,24 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
     // [BUG FIX] char.emojis 可能因为 sanitizeMetaForStorage 的 MAX_EMOJI_SIZE 过滤而变空
     // 增加 fallback: 如果 char.emojis 为空, 直接从 stickerStore 按 scope 重新加载
     let charStickers = charId ? stickerStore.getStickers(charId, char.emojis || []) : []
-    if (charId && charStickers.length === 0) {
-        const chatFromStore = chatStore?.chats?.[charId]
-        if (chatFromStore && chatFromStore.emojis && chatFromStore.emojis.length > 0) {
-            charStickers = stickerStore.getStickers(charId, chatFromStore.emojis)
-            console.warn('[aiService] char.emojis 为空, 从 chatStore 重新加载:', charStickers.length, '个')
+
+    // 兜底: 如果 char 传过来的 emojis 为空但 chatStore 里有, 则强制从 chatStore 读取
+    // 这覆盖了 char.emojis / char.id 被中间层转义或裁剪的情况
+    if (charId && chatStore?.chats?.[charId]) {
+        const fromStore = chatStore.chats[charId].emojis
+        if (Array.isArray(fromStore) && fromStore.length > 0) {
+            // 以 chatStore 里的为准 (最新、未被裁剪)
+            charStickers = fromStore
         }
+    }
+
+    if (charId && charStickers.length === 0) {
+        console.warn('[aiService] 角色专属表情包加载为 0', {
+            charId,
+            charIdFromChar: char.id || char.uuid || char.charId,
+            emojisInChar: Array.isArray(char.emojis) ? char.emojis.length : '非数组',
+            emojisInStore: chatStore?.chats?.[charId]?.emojis?.length || 0,
+        })
     }
     let memoryText = ''
 
@@ -574,7 +586,7 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
     )
 
     // 诊断日志: 明确展示每个表情包是否进了提示词, 以及是短链还是 base64
-    const stickerDiag = availableStickers.map(s => ({
+    const stickerDiag = availableStickers.map((s) => ({
         name: s.name,
         type: s.url?.startsWith('data:') ? 'base64(只发名称)' : '短链(带URL)',
         scope: globalStickers?.includes(s) ? '全局' : '角色专属',
@@ -1136,17 +1148,31 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
         try {
             if (!options.isCall && availableStickers && availableStickers.length > 0) {
                 // 1. 表情包可用列表
-                const stickerSectionMatch = promptContent.match(/### 4\. 【指令集与功能】[\s\S]*?(- \*\*表情包\*\*:[\s\S]*?)(?=\n\s*[`"]|$)/)
+                const stickerSectionMatch = promptContent.match(
+                    /### 4\. 【指令集与功能】[\s\S]*?(- \*\*表情包\*\*:[\s\S]*?)(?=\n\s*[`"]|$)/,
+                )
                 if (stickerSectionMatch) {
-                    logger.addLog('INFO', `系统提示词·表情包列表 (${availableStickers.length}个)`, stickerSectionMatch[1].substring(0, 5000))
+                    logger.addLog(
+                        'INFO',
+                        `系统提示词·表情包列表 (${availableStickers.length}个)`,
+                        stickerSectionMatch[1].substring(0, 5000),
+                    )
                 }
                 // 2. 角色核心设定
-                const charSectionMatch = promptContent.match(/(### \d+\. 【角色设定】[\s\S]*?)(?=\n\s*### \d+\.|\n\s*##|\n\s*$)/)
+                const charSectionMatch = promptContent.match(
+                    /(### \d+\. 【角色设定】[\s\S]*?)(?=\n\s*### \d+\.|\n\s*##|\n\s*$)/,
+                )
                 if (charSectionMatch) {
-                    logger.addLog('DEBUG', `系统提示词·角色设定预览`, charSectionMatch[1].substring(0, 3000))
+                    logger.addLog(
+                        'DEBUG',
+                        `系统提示词·角色设定预览`,
+                        charSectionMatch[1].substring(0, 3000),
+                    )
                 }
             }
-        } catch (_diagErr) { /* 诊断日志不影响主流程 */ }
+        } catch (_diagErr) {
+            /* 诊断日志不影响主流程 */
+        }
     }
 
     // --- Helper: Resolve Image URL to Base64 (Vision Proxy) ---
@@ -1301,9 +1327,11 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                 const isStickerBase64 = isSticker && msg.image.startsWith('data:')
 
                 if (isStickerBase64) {
-                    const stickerName = msg.stickerName
-                        || (msg.content && msg.content.replace(/^\[表情包[:：]\s*/, '').replace(/\]\s*$/, ''))
-                        || '表情'
+                    const stickerName =
+                        msg.stickerName ||
+                        (msg.content &&
+                            msg.content.replace(/^\[表情包[:：]\s*/, '').replace(/\]\s*$/, '')) ||
+                        '表情'
                     formattedMessages.push({
                         role: msg.role === 'assistant' ? 'assistant' : 'user',
                         content: `${content || `[表情包: ${stickerName}]`}`,
