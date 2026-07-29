@@ -2202,6 +2202,33 @@ export const useChatStore = defineStore('chat', () => {
                     e.message.includes('Invalid string length') || e.message.includes('storage limit'))));
         };
 
+        // 【修复】真正的 IndexedDB 空间清理：清除 localforage 里的非核心数据
+        const freeIndexedDBSpace = async () => {
+            try {
+                // 1. 清除所有聊天的消息缓存 (最大的占用), 但保留当前正在编辑的聊天
+                //    这样 meta 写入有空间, 用户保存后再恢复消息
+                const keys = await localforage.keys()
+                let freed = 0
+                for (const k of keys) {
+                    if (k.startsWith(MSGS_KEY_PREFIX) && k !== `${MSGS_KEY_PREFIX}${chatId}`) {
+                        const data = await localforage.getItem(k)
+                        if (data) {
+                            const size = JSON.stringify(data).length
+                            await localforage.removeItem(k)
+                            freed += size
+                            console.log(`[updateCharacter] Freed ${Math.round(size/1024)}KB from ${k}`)
+                        }
+                    }
+                }
+                // 2. 清除已删除聊天的 meta
+                if (freed > 0) console.log(`[updateCharacter] Total freed: ${Math.round(freed/1024)}KB from IndexedDB`)
+                return freed
+            } catch (e) {
+                console.warn('[updateCharacter] freeIndexedDBSpace error:', e)
+                return 0
+            }
+        }
+
         let metaWriteFailed = false;
         let quotaError = null;
 
@@ -2223,24 +2250,29 @@ export const useChatStore = defineStore('chat', () => {
             }
 
             if (quotaError && metaWriteFailed) {
-                console.log('[updateCharacter] Quota exceeded, attempting to clear non-critical caches...')
-                try {
-                    ['qiaoqiao_avatar_descriptions', 'qiaoqiao-image-cache', 'qiaoqiao-moment-cache', 'qiaoqiao_sticker_cache']
-                        .forEach(k => { try { localStorage.removeItem(k) } catch (e) {} })
-                    
-                    await new Promise(r => setTimeout(r, 100))
+                console.log('[updateCharacter] Quota exceeded, freeing IndexedDB space...')
+                // 清除 localforage 中其他聊天的消息缓存 (这是最大的空间占用)
+                await freeIndexedDBSpace()
+                await new Promise(r => setTimeout(r, 200))
 
+                // 也清理一下 localStorage 里的非核心缓存
+                ['qiaoqiao_avatar_descriptions', 'qiaoqiao-image-cache', 'qiaoqiao-moment-cache', 'qiaoqiao_sticker_cache']
+                    .forEach(k => { try { localStorage.removeItem(k) } catch (e) {} })
+
+                try {
                     const retryMeta = sanitizeMetaForStorage({ ...chatRef, msgs: undefined })
                     await localforage.setItem(`qiaoqiao_chat_meta_${chatId}`, toRawObj(retryMeta))
                     metaWriteFailed = false
                     quotaError = null
+                    console.log('[updateCharacter] Retry succeeded after IndexedDB cleanup')
                 } catch (retryErr) {
-                    console.warn('[updateCharacter] Cache cleanup retry failed:', retryErr)
+                    console.warn('[updateCharacter] IndexedDB cleanup retry failed:', retryErr)
                 }
             }
 
             if (quotaError && metaWriteFailed) {
-                console.log('[updateCharacter] Quota still exceeded, running targeted defrag on this chat only...')
+                // 最后一招: 压缩当前聊天的大图片
+                console.log('[updateCharacter] Quota still exceeded, compressing images in chat...')
                 try {
                     const { compressImage } = await import('../utils/imageUtils')
                     let compressed = 0
@@ -2270,12 +2302,13 @@ export const useChatStore = defineStore('chat', () => {
                         quotaError = null
                     }
                 } catch (compressErr) {
-                    console.warn('[updateCharacter] Targeted compression failed:', compressErr)
+                    console.warn('[updateCharacter] Image compression failed:', compressErr)
                 }
             }
 
+            // 恢复其他聊天的消息缓存 (异步, 不阻塞)
             saveChats().catch(e => {
-                console.warn('[updateCharacter] V3 metadata sync failed (per-chat key already saved):', e)
+                console.warn('[updateCharacter] V3 metadata sync failed:', e)
             })
 
             if (quotaError && metaWriteFailed) {
@@ -5598,6 +5631,29 @@ export const useChatStore = defineStore('chat', () => {
 
         if (saveTimeout) clearTimeout(saveTimeout);
         
+        // 预清理: 在写入前先清除已不存在的聊天的 IndexedDB 数据
+        // 防止累积的僵尸数据占满空间导致写入失败
+        try {
+            const existingChatIds = new Set(Object.keys(chats.value))
+            const allKeys = await localforage.keys()
+            let preCleaned = 0
+            for (const k of allKeys) {
+                if (k.startsWith(MSGS_KEY_PREFIX)) {
+                    const cid = k.replace(MSGS_KEY_PREFIX, '')
+                    if (!existingChatIds.has(cid)) {
+                        const data = await localforage.getItem(k)
+                        if (data) {
+                            preCleaned += JSON.stringify(data).length
+                            await localforage.removeItem(k)
+                        }
+                    }
+                }
+            }
+            if (preCleaned > 0) {
+                console.log(`[Storage] Pre-cleaned ${Math.round(preCleaned/1024)}KB of orphaned chat data`)
+            }
+        } catch (e) { /* non-blocking */ }
+
         const writeOnce = async () => {
             try {
                 const deepToRaw = (obj) => {

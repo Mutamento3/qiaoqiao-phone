@@ -3441,10 +3441,10 @@ const saveSettings = async () => {
             delete finalData.userAvatar;
         }
 
-        // --- 核心优化：空间检查与静默清理 ---
-        const clearQuota = () => {
+        // --- 核心优化：空间检查与静默清理 (同时清理 localStorage 和 IndexedDB) ---
+        const clearQuota = async () => {
             try {
-                // 清理各种非核心缓存来释放空间
+                // 清理 localStorage 里的非核心缓存
                 const nonCriticalKeys = [
                     'qiaoqiao_avatar_descriptions',
                     'qiaoqiao-image-cache',
@@ -3454,7 +3454,23 @@ const saveSettings = async () => {
                 nonCriticalKeys.forEach(key => {
                     try { localStorage.removeItem(key); } catch(e) {}
                 });
-                console.log('[Settings] Cleared non-critical caches to free up space.');
+
+                // 关键修复: 同时清理 localforage (IndexedDB) 里的旧消息缓存
+                // IndexedDB 才是真正的存储瓶颈, 之前只清 localStorage 完全没用
+                const { default: localforage } = await import('localforage')
+                const keys = await localforage.keys()
+                let freed = 0
+                for (const k of keys) {
+                    if (k.startsWith('qiaoqiao_chat_msgs_') && k !== `qiaoqiao_chat_msgs_${props.chatData.id}`) {
+                        const data = await localforage.getItem(k)
+                        if (data) {
+                            const size = JSON.stringify(data).length
+                            await localforage.removeItem(k)
+                            freed += size
+                        }
+                    }
+                }
+                console.log(`[Settings] Cleared caches: ${Math.round(freed/1024)}KB from IndexedDB + localStorage cleanup`);
             } catch (e) {
                 console.warn('[Settings] clearQuota error:', e);
             }
@@ -3466,7 +3482,7 @@ const saveSettings = async () => {
             success = await chatStore.updateCharacter(props.chatData.id, finalData)
         } catch (e) {
             if (e.name === 'QuotaExceededError' || e.message?.includes('quota')) {
-                clearQuota(); // 尝试清理缓存后重试
+                await clearQuota(); // 尝试清理 IndexedDB + localStorage 缓存后重试
                 success = await chatStore.updateCharacter(props.chatData.id, finalData);
             } else {
                 throw e;
@@ -3507,7 +3523,7 @@ const saveSettings = async () => {
                                 error.message.includes('exceeded the storage')
                             ));
         if (isQuotaError) {
-            showToast('存储空间不足，已尝试自动压缩旧图片释放空间。若仍无法保存，请到「设置 → 存储空间」进一步压缩图片或清理缓存。')
+            showToast('存储空间不足，已自动清理缓存。若仍无法保存，请到「设置 → 存储空间」压缩图片。')
             console.error('[Settings] Storage quota exceeded. Suggest using URL avatar or compressing images.')
             
             // 自动清除本地头像数据以避免持续失败
@@ -3516,6 +3532,8 @@ const saveSettings = async () => {
                 localData.value.avatar = ''  // 清除base64头像
                 // 重新尝试保存（不带大头像）
                 try {
+                    // 再清理一次 IndexedDB
+                    await clearQuota()
                     const retryData = JSON.parse(JSON.stringify(localData.value))
                     const protectedFields = ['msgs', 'memory', 'summary', 'bio', 'lastSummaryIndex', 'lastSummaryCount', 'isSummarizing', 'unreadCount']
                     protectedFields.forEach(field => delete retryData[field])
@@ -3526,7 +3544,28 @@ const saveSettings = async () => {
                     }
                 } catch (retryErr) {
                     console.error('[Settings] Retry also failed:', retryErr)
+                    // 终极尝试: 连头像带 userAvatar 一起清掉
+                    if (localData.value.userAvatar && localData.value.userAvatar.startsWith('data:image')) {
+                        localData.value.userAvatar = ''
+                    }
+                    try {
+                        await clearQuota()
+                        const retryData2 = JSON.parse(JSON.stringify(localData.value))
+                        const protectedFields2 = ['msgs', 'memory', 'summary', 'bio', 'lastSummaryIndex', 'lastSummaryCount', 'isSummarizing', 'unreadCount', 'avatar', 'userAvatar']
+                        protectedFields2.forEach(field => delete retryData2[field])
+                        const success2 = await chatStore.updateCharacter(props.chatData.id, retryData2)
+                        if (success2) {
+                            showToast('已清除所有图片并保存成功，请重新设置头像')
+                            setTimeout(() => emit('close'), 300)
+                        }
+                    } catch (finalErr) {
+                        console.error('[Settings] Final retry failed:', finalErr)
+                        showToast('保存失败：存储空间已满，请前往「设置 → 存储空间」清理')
+                    }
                 }
+            } else {
+                // 即使没有 base64 头像也失败，提示用户
+                showToast('保存失败：存储空间已满，请前往「设置 → 存储空间」清理')
             }
         } else if (error.message?.includes('JSON') || error.message?.includes('serialize')) {
             showToast('保存失败：数据格式错误')
