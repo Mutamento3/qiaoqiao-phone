@@ -1117,18 +1117,21 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             role: 'system',
             content: promptContent,
         }
-    }
 
-    // [诊断] 提取系统提示词中的关键片段, 单独打日志, 避免被截断
-    // 1. 表情包可用列表
-    const stickerSectionMatch = promptContent.match(/### 4\. 【指令集与功能】[\s\S]*?(- \*\*表情包\*\*:[\s\S]*?)(?=\n\s*[`"]|$)/)
-    if (stickerSectionMatch && availableStickers.length > 0) {
-        logger.addLog('INFO', `系统提示词·表情包列表 (${availableStickers.length}个)`, stickerSectionMatch[1].substring(0, 5000))
-    }
-    // 2. 角色核心设定
-    const charSectionMatch = promptContent.match(/(### \d+\. 【角色设定】[\s\S]*?)(?=\n\s*### \d+\.|\n\s*##|\n\s*$)/)
-    if (charSectionMatch) {
-        logger.addLog('DEBUG', `系统提示词·角色设定预览`, charSectionMatch[1].substring(0, 3000))
+        // [诊断] 提取系统提示词中的关键片段, 单独打日志, 避免被截断
+        // 仅在非 isCall 模式下执行 (CALL 模板里没有表情包)
+        if (!options.isCall && availableStickers.length > 0) {
+            // 1. 表情包可用列表
+            const stickerSectionMatch = promptContent.match(/### 4\. 【指令集与功能】[\s\S]*?(- \*\*表情包\*\*:[\s\S]*?)(?=\n\s*[`"]|$)/)
+            if (stickerSectionMatch) {
+                logger.addLog('INFO', `系统提示词·表情包列表 (${availableStickers.length}个)`, stickerSectionMatch[1].substring(0, 5000))
+            }
+            // 2. 角色核心设定
+            const charSectionMatch = promptContent.match(/(### \d+\. 【角色设定】[\s\S]*?)(?=\n\s*### \d+\.|\n\s*##|\n\s*$)/)
+            if (charSectionMatch) {
+                logger.addLog('DEBUG', `系统提示词·角色设定预览`, charSectionMatch[1].substring(0, 3000))
+            }
+        }
     }
 
     // --- Helper: Resolve Image URL to Base64 (Vision Proxy) ---
