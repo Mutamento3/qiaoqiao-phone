@@ -570,7 +570,9 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
         type: s.url?.startsWith('data:') ? 'base64(只发名称)' : '短链(带URL)',
         scope: globalStickers?.includes(s) ? '全局' : '角色专属',
     }))
-    console.log(`[aiService] 表情包库注入提示词: 全局${globalStickers?.length || 0}个 + 角色专属${charStickers?.length || 0}个 = ${availableStickers.length}个`, stickerDiag)
+    const stickerSummary = `全局${globalStickers?.length || 0}个 + 角色专属${charStickers?.length || 0}个 = ${availableStickers.length}个`
+    console.log(`[aiService] 表情包库注入提示词: ${stickerSummary}`, stickerDiag)
+    logger.addLog('AI', `表情包库注入: ${stickerSummary}`, stickerDiag)
 
     const config = settingsStore.currentConfig || settingsStore.apiConfig
     // Mismatch fix: Store uses 'baseUrl', Service expected 'apiUrl'
@@ -1115,6 +1117,18 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             role: 'system',
             content: promptContent,
         }
+    }
+
+    // [诊断] 提取系统提示词中的关键片段, 单独打日志, 避免被截断
+    // 1. 表情包可用列表
+    const stickerSectionMatch = promptContent.match(/### 4\. 【指令集与功能】[\s\S]*?(- \*\*表情包\*\*:[\s\S]*?)(?=\n\s*[`"]|$)/)
+    if (stickerSectionMatch && availableStickers.length > 0) {
+        logger.addLog('INFO', `系统提示词·表情包列表 (${availableStickers.length}个)`, stickerSectionMatch[1].substring(0, 5000))
+    }
+    // 2. 角色核心设定
+    const charSectionMatch = promptContent.match(/(### \d+\. 【角色设定】[\s\S]*?)(?=\n\s*### \d+\.|\n\s*##|\n\s*$)/)
+    if (charSectionMatch) {
+        logger.addLog('DEBUG', `系统提示词·角色设定预览`, charSectionMatch[1].substring(0, 3000))
     }
 
     // --- Helper: Resolve Image URL to Base64 (Vision Proxy) ---
