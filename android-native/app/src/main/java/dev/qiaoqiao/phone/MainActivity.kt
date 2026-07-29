@@ -144,9 +144,32 @@ class MainActivity : AppCompatActivity() {
                 view: WebView,
                 request: WebResourceRequest
             ): WebResourceResponse? {
-                // WebViewAssetLoader 拦截并处理 appassets.androidplatform.net 请求,
-                // 返回正确 MIME type 的 WebResourceResponse, 其他请求返回 null 走正常网络.
-                return assetLoader.shouldInterceptRequest(request.url)
+                val uri = request.url
+                // 1) 先走 WebViewAssetLoader (标准路径)
+                val fromLoader = assetLoader.shouldInterceptRequest(uri)
+                if (fromLoader != null) return fromLoader
+
+                // 2) Fallback: WebViewAssetLoader 返回 null 时, 手动从 assets 读.
+                //    这种情况通常是 path 对不上 handler 的前缀 (e.g. /assets/assets/main.js
+                //    被 handler 剥掉 /assets/ 后剩 assets/main.js, 若 handler 内部再剥一层就会错).
+                //    这里直接把 URL path 里跟在 /assets/ 后面的部分当作 assets 内相对路径,
+                //    不再让 AssetsPathHandler 二次处理.
+                if (uri.host == "appassets.androidplatform.net") {
+                    val fullPath = uri.path ?: return null
+                    // 剥掉开头的 /assets/ (如果存在), 其余部分就是 assets 内的相对路径
+                    val rel = fullPath.removePrefix("/assets/").removePrefix("/res/")
+                    if (rel.isNotBlank()) {
+                        try {
+                            val inputStream = assets.open(rel)
+                            val mime = guessMimeType(rel)
+                            Log.d(TAG, "Fallback load: $fullPath -> assets/$rel ($mime)")
+                            return WebResourceResponse(mime, "UTF-8", inputStream)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Fallback failed: $fullPath -> assets/$rel", e)
+                        }
+                    }
+                }
+                return null
             }
 
             override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
@@ -205,12 +228,29 @@ class MainActivity : AppCompatActivity() {
                 val msg = "url=${request.url} code=${error.errorCode} desc=${error.description}"
                 Log.e(TAG, "WebView onReceivedError: $msg")
                 AppPrefs.lastLoadError = msg
-                // v1.10.233: 第一次资源加载失败立刻 Toast (不依赖下次启动), 让用户马上看到原因
+                // 第一次资源加载失败立刻 Toast, 显示完整信息
                 if (resourceErrorCount == 1) {
                     runOnUiThread {
                         Toast.makeText(
                             this@MainActivity,
-                            "资源加载失败:\n${msg}",
+                            "资源加载失败: code=${error.errorCode}\n${msg}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            }
+
+            @Deprecated("Deprecated in API 23, but some devices still call this")
+            override fun onReceivedError(view: WebView, errorCode: Int, description: String, failingUrl: String) {
+                resourceErrorCount++
+                val msg = "deprecated-url=$failingUrl code=$errorCode desc=$description"
+                Log.e(TAG, "WebView onReceivedError (deprecated): $msg")
+                AppPrefs.lastLoadError = msg
+                if (resourceErrorCount == 1) {
+                    runOnUiThread {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "资源加载失败(旧版): code=$errorCode\n$failingUrl",
                             Toast.LENGTH_LONG
                         ).show()
                     }
@@ -351,6 +391,30 @@ class MainActivity : AppCompatActivity() {
 
     private fun jsString(s: String): String {
         return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+    }
+
+    private fun guessMimeType(path: String): String {
+        return when {
+            path.endsWith(".html") -> "text/html"
+            path.endsWith(".js") -> "text/javascript"
+            path.endsWith(".css") -> "text/css"
+            path.endsWith(".json") -> "application/json"
+            path.endsWith(".png") -> "image/png"
+            path.endsWith(".jpg") || path.endsWith(".jpeg") -> "image/jpeg"
+            path.endsWith(".svg") -> "image/svg+xml"
+            path.endsWith(".ico") -> "image/x-icon"
+            path.endsWith(".woff") -> "font/woff"
+            path.endsWith(".woff2") -> "font/woff2"
+            path.endsWith(".ttf") -> "font/ttf"
+            path.endsWith(".mp3") -> "audio/mpeg"
+            path.endsWith(".mp4") -> "video/mp4"
+            path.endsWith(".wav") -> "audio/wav"
+            path.endsWith(".webp") -> "image/webp"
+            path.endsWith(".gif") -> "image/gif"
+            path.endsWith(".pdf") -> "application/pdf"
+            path.endsWith(".wasm") -> "application/wasm"
+            else -> "application/octet-stream"
+        }
     }
 
     private fun isNewerVersion(remote: String, local: String): Boolean {
