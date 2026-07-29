@@ -113,17 +113,12 @@ class MainActivity : AppCompatActivity() {
     private fun setupWebView() {
         // WebViewAssetLoader: 用 AssetsPathHandler 把 /assets/ 映射到 APK assets 目录.
         // 它内部会自动设置正确的 MIME type (.js → text/javascript, .css → text/css 等).
-        // v1.10.233 FIX: index.html 本身也在 APK 的 assets/ 下, Vite 的相对引用 ./assets/main.js
-        // 会被浏览器解析成 /assets/assets/main.js (多一层), 导致 JS/CSS/chunk 全部 404,
-        // Vue 永不挂载, splash 永远转圈. 这里自定义 handler 把多余的 "assets/" 前缀剥掉,
-        // 正确映射到 assets/main.js 等. main.js 内部 import 的 chunk 同样是 ./assets/... 也一并修复.
-        // PWA 网页版 (pages.dev 根路径) 是单层引用, 不受此 handler 影响.
-        val assetsHandler = WebViewAssetLoader.AssetsPathHandler(this)
+        // v1.10.251 FIX: 之前套的 removePrefix("assets/") 是反的, 把
+        // path="assets/main.js" 错剥成 "main.js" → 找 assets/main.js → 404.
+        // 标准 AssetsPathHandler 内部直接 assets.open(path), 收到 "assets/main.js"
+        // 就能正确读 APK 里的 assets/assets/main.js. 直接用标准 handler, 不再自定义.
         assetLoader = WebViewAssetLoader.Builder()
-            .addPathHandler("/assets/") { path ->
-                val normalized = path.removePrefix("assets/")
-                assetsHandler.handle(normalized)
-            }
+            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
             .addPathHandler("/res/", WebViewAssetLoader.ResourcesPathHandler(this))
             .build()
 
