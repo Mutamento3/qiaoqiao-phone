@@ -502,13 +502,18 @@ const confirmUpload = async () => {
     try {
         const name = customStickerName.value.trim()
         const category = uploadCategory.value.trim()
-        await stickerStore.uploadSticker(
+        const result = await stickerStore.uploadSticker(
             pendingFile.value,
             activeScope.value,
             name,
             category
         )
-        showToast('添加成功')
+        // 根据短链上传状态显示不同提示
+        if (result.usedShortUrl) {
+            showToast('添加成功（短链）')
+        } else {
+            showToast('添加成功（本地存储，图床不可用）')
+        }
         _resetUploadModal()
     } catch (e) {
         console.error(e)

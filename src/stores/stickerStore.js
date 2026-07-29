@@ -168,9 +168,11 @@ export const useStickerStore = defineStore('sticker', () => {
                 .then(async base64 => {
                     // 优先上传到图床获取短链, 失败则 fallback 到 base64
                     let stickerUrl = base64
+                    let usedShortUrl = false
                     const shortUrl = await uploadToImageHost(base64)
                     if (shortUrl) {
                         stickerUrl = shortUrl
+                        usedShortUrl = true
                     } else {
                         console.warn('[StickerStore] Image host failed, using base64 fallback')
                     }
@@ -187,7 +189,8 @@ export const useStickerStore = defineStore('sticker', () => {
                         }
                     }
 
-                    resolve(stickerUrl)
+                    // 返回对象: 包含 URL 和短链上传状态, 供 UI 层显示提示
+                    resolve({ url: stickerUrl, usedShortUrl })
                 })
                 .catch(err => {
                     console.error('Compression failed', err)

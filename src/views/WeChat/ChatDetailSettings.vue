@@ -3632,8 +3632,12 @@ const handleStickerUpload = async (e) => {
                 return
             }
             const scope = stickerScope.value === 'special_global' ? 'global' : props.chatData.id
-            await stickerStore.uploadSticker(file, scope)
-            showToast('添加成功')
+            const result = await stickerStore.uploadSticker(file, scope)
+            if (result.usedShortUrl) {
+                showToast('添加成功（短链）')
+            } else {
+                showToast('添加成功（本地存储，图床不可用）')
+            }
         } catch (err) {
             console.error(err)
             showToast('添加失败')
