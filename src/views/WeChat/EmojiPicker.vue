@@ -178,9 +178,9 @@
 
         <!-- Single Upload Modal (custom name + optional category) -->
         <div v-if="showUploadModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] animate-fade-in">
-            <div class="bg-white w-[80%] max-w-[300px] rounded-lg shadow-xl overflow-hidden">
-                <div class="p-4">
-                    <div class="font-bold text-gray-700 text-center mb-3">添加表情包</div>
+            <div class="bg-white w-[85%] max-w-[300px] max-h-[85vh] rounded-lg shadow-xl overflow-hidden flex flex-col">
+                <div class="p-4 overflow-y-auto custom-scrollbar">
+                    <div class="font-bold text-gray-700 text-center mb-3 flex-shrink-0">添加表情包</div>
 
                     <!-- Preview -->
                     <div v-if="pendingFilePreview" class="flex justify-center mb-3">
