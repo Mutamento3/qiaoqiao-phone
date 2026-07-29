@@ -118,8 +118,41 @@ export const useStickerStore = defineStore('sticker', () => {
         }
     }
 
+    // 上传 base64 到图床, 返回短链 URL
+    // 失败时返回 null, 调用方 fallback 到 base64
+    async function uploadToImageHost(base64Data) {
+        try {
+            // base64 data URL → Blob
+            const res = await fetch(base64Data)
+            const blob = await res.blob()
+            const file = new File([blob], 'sticker.png', { type: blob.type || 'image/png' })
+
+            // catbox.moe 免费公开图床, 无需 API key, 支持 CORS
+            const formData = new FormData()
+            formData.append('reqType', 'fileupload')
+            formData.append('fileToUpload', file)
+
+            const resp = await fetch('https://catbox.moe/user/api.php', {
+                method: 'POST',
+                body: formData
+            })
+            if (resp.ok) {
+                const url = (await resp.text()).trim()
+                if (url.startsWith('https://')) {
+                    console.log('[StickerStore] Uploaded to image host:', url)
+                    return url
+                }
+            }
+            console.warn('[StickerStore] Image host upload failed, response:', await resp.text())
+            return null
+        } catch (e) {
+            console.warn('[StickerStore] Image host upload error:', e)
+            return null
+        }
+    }
+
     // Process file upload
-    function uploadSticker(file, scope = 'global') {
+    function uploadSticker(file, scope = 'global', customName = '', category = '') {
         return new Promise((resolve, reject) => {
             if (!file) {
                 reject('No file')
@@ -133,21 +166,28 @@ export const useStickerStore = defineStore('sticker', () => {
 
             compressImage(file, { maxWidth: 300, maxHeight: 300, quality: 0.8 })
                 .then(async base64 => {
-                    const name = file.name.split('.')[0] || `Custom_${Date.now()}`
-                    const result = addSticker(base64, name, scope)
+                    // 优先上传到图床获取短链, 失败则 fallback 到 base64
+                    let stickerUrl = base64
+                    const shortUrl = await uploadToImageHost(base64)
+                    if (shortUrl) {
+                        stickerUrl = shortUrl
+                    } else {
+                        console.warn('[StickerStore] Image host failed, using base64 fallback')
+                    }
+
+                    const name = customName?.trim() || file.name.split('.')[0] || `Custom_${Date.now()}`
+                    const cat = category?.trim() || null
+                    const result = addSticker(stickerUrl, name, scope, cat)
 
                     if (scope !== 'global' && result && typeof result === 'object') {
                         const chat = chatStore.chats[scope]
                         if (chat) {
                             const newEmojis = [...(chat.emojis || []), result]
-                            // [BUG FIX] 缺少 await, resolve(base64) 立即返回后
-                            // 角色表情列表的 IndexedDB 持久化仍在进行中,
-                            // 此时若页面刷新或快速切换会导致表情丢失.
                             await chatStore.updateCharacter(scope, { emojis: newEmojis })
                         }
                     }
 
-                    resolve(base64)
+                    resolve(stickerUrl)
                 })
                 .catch(err => {
                     console.error('Compression failed', err)

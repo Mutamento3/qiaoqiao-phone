@@ -176,6 +176,98 @@
         <!-- Hidden Input -->
         <input type="file" ref="fileInput" class="hidden" accept="image/*" @change="handleFileChange">
 
+        <!-- Single Upload Modal (custom name + optional category) -->
+        <div v-if="showUploadModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] animate-fade-in">
+            <div class="bg-white w-[80%] max-w-[300px] rounded-lg shadow-xl overflow-hidden">
+                <div class="p-4">
+                    <div class="font-bold text-gray-700 text-center mb-3">添加表情包</div>
+
+                    <!-- Preview -->
+                    <div v-if="pendingFilePreview" class="flex justify-center mb-3">
+                        <img :src="pendingFilePreview" class="w-24 h-24 object-contain border border-gray-200 rounded-lg p-1">
+                    </div>
+
+                    <!-- Custom Name Input -->
+                    <div class="mb-3">
+                        <label class="text-xs text-gray-600 mb-1 block">名称 (可选)</label>
+                        <input
+                            v-model="customStickerName"
+                            type="text"
+                            :placeholder="defaultStickerName"
+                            maxlength="30"
+                            class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-300 transition-all"
+                        >
+                    </div>
+
+                    <!-- Category Input (optional) -->
+                    <div class="mb-4">
+                        <label class="text-xs text-gray-600 mb-1 block">分类标签 (可选)</label>
+                        <div class="relative">
+                            <button
+                                @click="showUploadCategoryMenu = !showUploadCategoryMenu"
+                                class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg flex justify-between items-center focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-300"
+                            >
+                                <span :class="uploadCategory ? '' : 'text-gray-400'">{{ uploadCategory || '选择或新建分类标签' }}</span>
+                                <i class="fa-solid fa-chevron-down text-gray-400 text-xs"></i>
+                            </button>
+                            <div v-if="showUploadCategoryMenu" class="absolute top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg z-10 mt-1 max-h-40 overflow-y-auto">
+                                <div class="p-2">
+                                    <button
+                                        @click="uploadCategory = ''; showUploadCategoryMenu = false"
+                                        class="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100 rounded mb-1 text-gray-500"
+                                    >
+                                        不设分类
+                                    </button>
+                                    <button
+                                        v-for="cat in availableCategories"
+                                        :key="cat"
+                                        @click="uploadCategory = cat; showUploadCategoryMenu = false"
+                                        class="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100 rounded mb-1"
+                                    >
+                                        {{ cat }}
+                                    </button>
+                                    <div class="text-xs text-gray-500 mb-1 px-2 mt-2">新建标签</div>
+                                    <div class="flex gap-1">
+                                        <input
+                                            v-model="newUploadCategoryName"
+                                            type="text"
+                                            placeholder="输入新标签名称"
+                                            class="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-300"
+                                        >
+                                        <button
+                                            @click="addNewUploadCategory"
+                                            class="px-3 py-1.5 text-sm bg-orange-500 text-white rounded"
+                                        >
+                                            <i class="fa-solid fa-plus text-xs"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2 justify-center">
+                        <button
+                            @click="cancelUpload"
+                            :disabled="isUploading"
+                            class="px-4 py-2 bg-gray-100 text-gray-600 rounded font-medium text-sm disabled:opacity-50"
+                        >
+                            取消
+                        </button>
+                        <button
+                            @click="confirmUpload"
+                            :disabled="isUploading"
+                            class="px-4 py-2 bg-orange-500 text-white rounded font-medium text-sm disabled:opacity-50 flex items-center gap-1"
+                        >
+                            <i v-if="isUploading" class="fa-solid fa-spinner fa-spin text-xs"></i>
+                            {{ isUploading ? '上传中...' : '确认添加' }}
+                        </button>
+                    </div>
+                    <div class="text-[10px] text-gray-400 text-center mt-2">上传后自动转短链，失败则本地保存</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Batch Import Modal -->
         <div v-if="showBatchModal" class="absolute inset-0 bg-white z-50 flex flex-col p-4 animate-fade-in">
             <div class="flex justify-between items-center mb-2">
@@ -270,6 +362,22 @@ const showConfirmModal = ref(false)
 const confirmMessage = ref('')
 const confirmCallback = ref(null)
 
+// Single upload modal state (custom name + category + short URL upload)
+const showUploadModal = ref(false)
+const pendingFile = ref(null)
+const pendingFilePreview = ref('')
+const customStickerName = ref('')
+const uploadCategory = ref('')
+const showUploadCategoryMenu = ref(false)
+const newUploadCategoryName = ref('')
+const isUploading = ref(false)
+
+const defaultStickerName = computed(() => {
+    if (!pendingFile.value) return ''
+    const n = pendingFile.value.name || ''
+    return n.split('.').slice(0, -1).join('.') || n || '自定义表情'
+})
+
 const displayedStickers = computed(() => {
     const char = chatStore.currentChat
     return stickerStore.getStickers(activeScope.value, char?.emojis || [])
@@ -340,14 +448,72 @@ const showToast = (msg) => {
 const handleFileChange = async (event) => {
     const file = event.target.files[0]
     if (file) {
+        // Reset modal state
+        pendingFile.value = file
+        customStickerName.value = ''
+        uploadCategory.value = ''
+        newUploadCategoryName.value = ''
+        showUploadCategoryMenu.value = false
+        isUploading.value = false
+
+        // Generate preview
         try {
-            await stickerStore.uploadSticker(file, activeScope.value)
-            showToast('添加成功')
+            pendingFilePreview.value = URL.createObjectURL(file)
         } catch (e) {
-            console.error(e)
-            showToast('添加失败')
+            pendingFilePreview.value = ''
         }
-        event.target.value = ''
+
+        showUploadModal.value = true
+    }
+    event.target.value = ''
+}
+
+// 新建分类标签 (单个上传弹窗内)
+const addNewUploadCategory = () => {
+    if (newUploadCategoryName.value.trim()) {
+        uploadCategory.value = newUploadCategoryName.value.trim()
+        newUploadCategoryName.value = ''
+        showUploadCategoryMenu.value = false
+    }
+}
+
+const cancelUpload = () => {
+    if (isUploading.value) return
+    _resetUploadModal()
+}
+
+const _resetUploadModal = () => {
+    if (pendingFilePreview.value) {
+        try { URL.revokeObjectURL(pendingFilePreview.value) } catch (e) {}
+    }
+    showUploadModal.value = false
+    pendingFile.value = null
+    pendingFilePreview.value = ''
+    customStickerName.value = ''
+    uploadCategory.value = ''
+    newUploadCategoryName.value = ''
+    showUploadCategoryMenu.value = false
+    isUploading.value = false
+}
+
+const confirmUpload = async () => {
+    if (!pendingFile.value || isUploading.value) return
+    isUploading.value = true
+    try {
+        const name = customStickerName.value.trim()
+        const category = uploadCategory.value.trim()
+        await stickerStore.uploadSticker(
+            pendingFile.value,
+            activeScope.value,
+            name,
+            category
+        )
+        showToast('添加成功')
+        _resetUploadModal()
+    } catch (e) {
+        console.error(e)
+        showToast('添加失败')
+        isUploading.value = false
     }
 }
 
@@ -496,6 +662,11 @@ const handleBatchImport = () => {
 onUnmounted(() => {
     if (toastTimer.value) { clearTimeout(toastTimer.value); toastTimer.value = null }
     if (deleteResetTimer.value) { clearTimeout(deleteResetTimer.value); deleteResetTimer.value = null }
+    // 清理待上传预览的 Object URL
+    if (pendingFilePreview.value) {
+        try { URL.revokeObjectURL(pendingFilePreview.value) } catch (e) {}
+        pendingFilePreview.value = ''
+    }
 })
 </script>
 
