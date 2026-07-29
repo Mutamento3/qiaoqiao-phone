@@ -183,10 +183,12 @@ export const useStickerStore = defineStore('sticker', () => {
                     return null
                 },
                 // 3. catbox.moe - 备选, 国内需代理, 无需 API key
+                //    官方 API: https://catbox.moe/tools.php
                 //    返回: 纯文本 https://files.catbox.moe/xxx.png
+                //    注意: 参数名必须全小写 reqtype (非 reqType), 否则服务端返回错误
                 async () => {
                     const formData = new FormData()
-                    formData.append('reqType', 'fileupload')
+                    formData.append('reqtype', 'fileupload')
                     formData.append('fileToUpload', file)
                     const resp = await fetchWithTimeout('https://catbox.moe/user/api.php', {
                         method: 'POST',
