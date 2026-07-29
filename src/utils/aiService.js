@@ -572,7 +572,8 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
     }))
     const stickerSummary = `全局${globalStickers?.length || 0}个 + 角色专属${charStickers?.length || 0}个 = ${availableStickers.length}个`
     console.log(`[aiService] 表情包库注入提示词: ${stickerSummary}`, stickerDiag)
-    logger.addLog('AI', `表情包库注入: ${stickerSummary}`, stickerDiag)
+    // logger 在后面 (line 613) 才声明, 这里不能用 logger.addLog
+    // 改为: logger 在声明后统一打日志 (见 World Book Logic 之后)
 
     const config = settingsStore.currentConfig || settingsStore.apiConfig
     // Mismatch fix: Store uses 'baseUrl', Service expected 'apiUrl'
@@ -611,6 +612,10 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
     // World Book Logic
     const worldBookStore = useWorldBookStore()
     const logger = useLoggerStore()
+
+    // 表情包库诊断日志 (延迟到 logger 声明后)
+    logger.addLog('AI', `表情包库注入: ${stickerSummary}`, stickerDiag)
+
     // Ensure entries are loaded properly
     try {
         if (worldBookStore && !worldBookStore.isLoaded) {
@@ -1119,19 +1124,20 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
         }
 
         // [诊断] 提取系统提示词中的关键片段, 单独打日志, 避免被截断
-        // 仅在非 isCall 模式下执行 (CALL 模板里没有表情包)
-        if (!options.isCall && availableStickers.length > 0) {
-            // 1. 表情包可用列表
-            const stickerSectionMatch = promptContent.match(/### 4\. 【指令集与功能】[\s\S]*?(- \*\*表情包\*\*:[\s\S]*?)(?=\n\s*[`"]|$)/)
-            if (stickerSectionMatch) {
-                logger.addLog('INFO', `系统提示词·表情包列表 (${availableStickers.length}个)`, stickerSectionMatch[1].substring(0, 5000))
+        try {
+            if (!options.isCall && availableStickers && availableStickers.length > 0) {
+                // 1. 表情包可用列表
+                const stickerSectionMatch = promptContent.match(/### 4\. 【指令集与功能】[\s\S]*?(- \*\*表情包\*\*:[\s\S]*?)(?=\n\s*[`"]|$)/)
+                if (stickerSectionMatch) {
+                    logger.addLog('INFO', `系统提示词·表情包列表 (${availableStickers.length}个)`, stickerSectionMatch[1].substring(0, 5000))
+                }
+                // 2. 角色核心设定
+                const charSectionMatch = promptContent.match(/(### \d+\. 【角色设定】[\s\S]*?)(?=\n\s*### \d+\.|\n\s*##|\n\s*$)/)
+                if (charSectionMatch) {
+                    logger.addLog('DEBUG', `系统提示词·角色设定预览`, charSectionMatch[1].substring(0, 3000))
+                }
             }
-            // 2. 角色核心设定
-            const charSectionMatch = promptContent.match(/(### \d+\. 【角色设定】[\s\S]*?)(?=\n\s*### \d+\.|\n\s*##|\n\s*$)/)
-            if (charSectionMatch) {
-                logger.addLog('DEBUG', `系统提示词·角色设定预览`, charSectionMatch[1].substring(0, 3000))
-            }
-        }
+        } catch (_diagErr) { /* 诊断日志不影响主流程 */ }
     }
 
     // --- Helper: Resolve Image URL to Base64 (Vision Proxy) ---
