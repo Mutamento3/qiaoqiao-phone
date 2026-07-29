@@ -14,8 +14,15 @@ export function PRIVATE_PROMPT_TEMPLATE(char, user, stickers = [], worldInfo = '
     const userName = String(user.name || '用户');
     const userGender = String(user.gender || '未知');
 
+    // base64 URL 表情包只写名称 (省 token: base64 几十~几百 KB/张)
+    // 短链 URL 表情包带 URL (AI 可用格式2区分同名不同图)
     const stickerListStr = (stickers && stickers.length > 0)
-        ? stickers.map(s => `"${s.name}"(URL:${s.url})`).join(', ')
+        ? stickers.map(s => {
+            const isShortUrl = s.url && !s.url.startsWith('data:')
+            return isShortUrl
+                ? `"${s.name}"(URL:${s.url})`
+                : `"${s.name}"`
+        }).join(', ')
         : '(暂无)';
 
     // v1.11.0: 动态生成 DRAW 指令说明(根据火山引擎配置和形象图设置)

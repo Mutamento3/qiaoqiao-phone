@@ -564,12 +564,13 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
         (s) => s && s.name,
     )
 
-    console.log('[aiService] 表情包库:', {
-        globalCount: globalStickers?.length || 0,
-        charCount: charStickers?.length || 0,
-        totalCount: availableStickers.length,
-        stickers: availableStickers.map((s) => s.name),
-    })
+    // 诊断日志: 明确展示每个表情包是否进了提示词, 以及是短链还是 base64
+    const stickerDiag = availableStickers.map(s => ({
+        name: s.name,
+        type: s.url?.startsWith('data:') ? 'base64(只发名称)' : '短链(带URL)',
+        scope: globalStickers?.includes(s) ? '全局' : '角色专属',
+    }))
+    console.log(`[aiService] 表情包库注入提示词: 全局${globalStickers?.length || 0}个 + 角色专属${charStickers?.length || 0}个 = ${availableStickers.length}个`, stickerDiag)
 
     const config = settingsStore.currentConfig || settingsStore.apiConfig
     // Mismatch fix: Store uses 'baseUrl', Service expected 'apiUrl'
