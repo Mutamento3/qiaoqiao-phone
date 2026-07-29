@@ -215,6 +215,11 @@ export const useShoppingStore = defineStore('shopping', () => {
                 // 如果 AI 没给 ID，我们手动补一个
                 if (!p.id) p.id = 'prod_' + Math.random().toString(36).slice(2, 9)
 
+                // 【BUG FIX】强制分类对齐：如果请求指定了具体分类，确保商品归属正确，避免在当前分类下生成后只显示部分商品
+                if (category && category !== 'all') {
+                    p.category = category
+                }
+
                 // FIX: 使用 draw 指令调用自定义生图 API，而不是直接调用 generateImage
                 // 通过在 chatStore 中注册 DRAW 指令处理器来实现
                 if (p.imagePrompt) {
