@@ -182,9 +182,21 @@
                 <div class="p-4 overflow-y-auto custom-scrollbar">
                     <div class="font-bold text-gray-700 text-center mb-3 flex-shrink-0">添加表情包</div>
 
-                    <!-- Preview -->
-                    <div v-if="pendingFilePreview" class="flex justify-center mb-3">
+                    <!-- Preview + OCR Button -->
+                    <div v-if="pendingFilePreview" class="flex flex-col items-center mb-3">
                         <img :src="pendingFilePreview" class="w-24 h-24 object-contain border border-gray-200 rounded-lg p-1">
+                        <button
+                            @click="autoRecognizeName"
+                            :disabled="isOcrLoading"
+                            class="mt-2 text-xs px-3 py-1 rounded-full flex items-center gap-1 transition-colors"
+                            :class="isOcrLoading
+                                ? 'bg-gray-100 text-gray-400'
+                                : 'bg-blue-50 text-blue-600 hover:bg-blue-100'"
+                        >
+                            <i v-if="isOcrLoading" class="fa-solid fa-spinner fa-spin"></i>
+                            <i v-else class="fa-solid fa-wand-magic-sparkles"></i>
+                            {{ isOcrLoading ? '识别中...' : '自动识别文字' }}
+                        </button>
                     </div>
 
                     <!-- Custom Name Input -->
@@ -200,7 +212,7 @@
                     </div>
 
                     <!-- Category Input (optional) -->
-                    <div class="mb-4">
+                    <div class="mb-3">
                         <label class="text-xs text-gray-600 mb-1 block">分类标签 (可选)</label>
                         <div class="relative">
                             <button
@@ -246,6 +258,20 @@
                         </div>
                     </div>
 
+                    <!-- Tag-as-Prefix Checkbox -->
+                    <div v-if="uploadCategory" class="mb-4 flex items-center gap-2">
+                        <input
+                            v-model="useTagAsPrefix"
+                            type="checkbox"
+                            id="tagPrefix"
+                            class="w-4 h-4 rounded appearance-none bg-white border-2 border-gray-300 checked:bg-orange-500 checked:border-orange-500 relative cursor-pointer"
+                        >
+                        <label for="tagPrefix" class="text-xs text-gray-600 cursor-pointer">
+                            标签作为名字前缀<br>
+                            <span class="text-gray-400">最终名: {{ uploadCategory }}-{{ customStickerName || defaultStickerName }}</span>
+                        </label>
+                    </div>
+
                     <div class="flex gap-2 justify-center">
                         <button
                             @click="cancelUpload"
@@ -263,7 +289,7 @@
                             {{ isUploading ? '上传中...' : '确认添加' }}
                         </button>
                     </div>
-                    <div class="text-[10px] text-gray-400 text-center mt-2">上传后自动转短链，失败则本地保存</div>
+                    <div class="text-[10px] text-gray-400 text-center mt-2">图床国内不可用, 已自动改本地存储</div>
                 </div>
             </div>
         </div>
@@ -371,6 +397,8 @@ const uploadCategory = ref('')
 const showUploadCategoryMenu = ref(false)
 const newUploadCategoryName = ref('')
 const isUploading = ref(false)
+const isOcrLoading = ref(false)
+const useTagAsPrefix = ref(false)
 
 const defaultStickerName = computed(() => {
     if (!pendingFile.value) return ''
@@ -455,6 +483,7 @@ const handleFileChange = async (event) => {
         newUploadCategoryName.value = ''
         showUploadCategoryMenu.value = false
         isUploading.value = false
+        useTagAsPrefix.value = false
 
         // Generate preview
         try {
@@ -466,6 +495,31 @@ const handleFileChange = async (event) => {
         showUploadModal.value = true
     }
     event.target.value = ''
+}
+
+// OCR: 用当前配置的视觉模型识别表情包文字, 自动填入名称框
+const autoRecognizeName = async () => {
+    if (isOcrLoading.value || !pendingFile.value) return
+    isOcrLoading.value = true
+    try {
+        // 读取文件 → base64
+        const { compressImage } = await import('../../utils/imageUtils')
+        const base64 = await compressImage(pendingFile.value, { maxWidth: 800, maxHeight: 800, quality: 0.85 })
+        // 调 OCR
+        const { recognizeImageText } = await import('../../utils/aiService')
+        const text = await recognizeImageText(base64)
+        if (text) {
+            customStickerName.value = text
+            showToast(`识别成功: ${text}`)
+        } else {
+            showToast('未识别到文字 (可能图片无文字或视觉模型不支持)')
+        }
+    } catch (e) {
+        console.error('[OCR] failed', e)
+        showToast('识别失败: ' + (e.message || '未知错误'))
+    } finally {
+        isOcrLoading.value = false
+    }
 }
 
 // 新建分类标签 (单个上传弹窗内)
@@ -494,26 +548,29 @@ const _resetUploadModal = () => {
     newUploadCategoryName.value = ''
     showUploadCategoryMenu.value = false
     isUploading.value = false
+    isOcrLoading.value = false
+    useTagAsPrefix.value = false
 }
 
 const confirmUpload = async () => {
     if (!pendingFile.value || isUploading.value) return
     isUploading.value = true
     try {
-        const name = customStickerName.value.trim()
+        let name = customStickerName.value.trim()
         const category = uploadCategory.value.trim()
+        // 标签作为前缀: "搞怪" + "嘬嘬" → "搞怪-嘬嘬"
+        if (useTagAsPrefix.value && category) {
+            const baseName = name || defaultStickerName.value
+            name = `${category}-${baseName}`
+        }
         const result = await stickerStore.uploadSticker(
             pendingFile.value,
             activeScope.value,
             name,
             category
         )
-        // 根据短链上传状态显示不同提示
-        if (result.usedShortUrl) {
-            showToast('添加成功（短链）')
-        } else {
-            showToast('添加成功（本地存储，图床不可用）')
-        }
+        // 图床国内不可用, 不再区分短链/本地存储提示
+        showToast('添加成功')
         _resetUploadModal()
     } catch (e) {
         console.error(e)

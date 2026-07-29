@@ -1264,6 +1264,21 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                 // 加上明确的【表情包】前缀,避免 AI 把它当成头像素材
                 const isSticker = msg.type === 'sticker' || /^\[表情包[:：]/.test(msg.content || '')
 
+                // [TOKEN SAVER] 表情包消息只发文字标签, 不发图片给 AI
+                // 原因: 表情包图大多是 base64 (图床不可用时), 一张几十 KB ~ 几 MB,
+                //       而且表情包的语义已经体现在名字里 (如"老子惹你没？"),
+                //       AI 看名字就够了, 不需要看图. 省 token 效果显著.
+                if (isSticker) {
+                    const stickerName = msg.stickerName
+                        || (msg.content && msg.content.replace(/^\[表情包[:：]\s*/, '').replace(/\]\s*$/, ''))
+                        || '表情'
+                    formattedMessages.push({
+                        role: msg.role === 'assistant' ? 'assistant' : 'user',
+                        content: `${content || `[表情包: ${stickerName}]`}`,
+                    })
+                    continue
+                }
+
                 // Unseen user images (sent after last AI reply) are ALWAYS sent to Vision
                 const isUnseenUserImage = unseenUserImageIds.has(msg.id)
                 const isVisionEnabled = isUnseenUserImage || currentImageIndex >= visionStartIndex
@@ -1271,10 +1286,7 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
 
                 if (isVisionEnabled) {
                     const imageId = msg.id || 'curr'
-                    // v1.10.59: sticker 不再带"如需更换头像"提示,避免 AI 错把表情包当头像
-                    const refText = isSticker
-                        ? `【表情包: ${msg.stickerName || (msg.content && msg.content.replace(/^\[表情包[:：]\s*/, '').replace(/\]\s*$/, '')) || '表情'}】(图片ID: ${imageId})`
-                        : `【图片ID: ${imageId}】如需更换头像，请使用: [更换头像:${imageId}]`
+                    const refText = `【图片ID: ${imageId}】如需更换头像，请使用: [更换头像:${imageId}]`
 
                     // Resolve to B64 if remote
                     const imgUrl = msg.image.startsWith('http')
@@ -5621,5 +5633,73 @@ JSON 示例：
     } catch (e) {
         console.error('[aiService] generateCharacterPersona failed', e)
         throw e
+    }
+}
+
+/**
+ * OCR: 用当前配置的视觉模型识别图片上的文字 (用于表情包自动命名)
+ * @param {string} base64Image - data URL 或 base64 字符串
+ * @returns {Promise<string>} 识别到的文字 (已 trim, 限 30 字). 失败返回 ''
+ */
+export async function recognizeImageText(base64Image) {
+    try {
+        const settingsStore = useSettingsStore(getActivePinia())
+        const config = settingsStore.currentConfig || settingsStore.apiConfig
+        if (!config || !config.apiKey) {
+            console.warn('[aiService OCR] No API key configured')
+            return ''
+        }
+        const { baseUrl, apiKey, model } = config
+
+        // 构造 endpoint
+        let endpoint = baseUrl || ''
+        if (!endpoint) return ''
+        if (!endpoint.includes('/chat/completions')) {
+            if (endpoint.endsWith('/v1')) endpoint = `${endpoint}/chat/completions`
+            else if (endpoint.endsWith('/v1/')) endpoint = `${endpoint}chat/completions`
+            else endpoint = endpoint.endsWith('/')
+                ? `${endpoint}chat/completions`
+                : `${endpoint}/chat/completions`
+        }
+
+        // 保证 data URL 前缀
+        const dataUrl = base64Image.startsWith('data:')
+            ? base64Image
+            : `data:image/png;base64,${base64Image}`
+
+        const resp = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+                model: model || 'gpt-4o-mini',
+                messages: [{
+                    role: 'user',
+                    content: [
+                        { type: 'text', text: '识别这张表情包上的文字。只返回识别到的文字内容(不要解释、不要引号、不要标点)。如果没有文字就返回空。最多30字。' },
+                        { type: 'image_url', image_url: { url: dataUrl } },
+                    ],
+                }],
+                temperature: 0,
+                max_tokens: 60,
+            }),
+            signal: AbortSignal.timeout(20000),
+        })
+
+        if (!resp.ok) {
+            console.warn('[aiService OCR] HTTP', resp.status, await resp.text().catch(() => ''))
+            return ''
+        }
+        const data = await resp.json()
+        const text = data?.choices?.[0]?.message?.content || ''
+        // 清理: 去引号/换行/多余空白, 限 30 字
+        const cleaned = text.replace(/["'""''「」『』]/g, '').replace(/\s+/g, ' ').trim().slice(0, 30)
+        console.log('[aiService OCR] recognized:', cleaned)
+        return cleaned
+    } catch (e) {
+        console.warn('[aiService OCR] failed:', e.message || e)
+        return ''
     }
 }
