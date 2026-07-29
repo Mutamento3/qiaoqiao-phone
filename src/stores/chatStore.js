@@ -1,6 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch, toRaw } from 'vue'
-import { generateReply, generateSummary, generateImage, generateContextPreview } from '../utils/aiService'
+import {
+    generateReply,
+    generateSummary,
+    generateImage,
+    generateContextPreview,
+} from '../utils/aiService'
 import { useAITaskStore } from './aiTaskStore'
 import { useLoggerStore } from './loggerStore'
 import { useWorldBookStore } from './worldBookStore'
@@ -24,15 +29,26 @@ import { backgroundManager } from '../utils/backgroundManager'
 import autoBackup from '../utils/autoBackup'
 import { setupFinancialLogic } from './chatModules/chatFinancial'
 import { setupHistoryLogic } from './chatModules/chatHistory'
-import { ensureString, getRandomAvatar, DEFAULT_AVATARS, getLastNTurns, countTurnsBetween, dateRangeToMsgIndices, turnRangeToMsgIndices } from '../utils/common'
-import { compressAllChatImages as chatImageUtils_compressAll, extractLSActions as chatImageUtils_extractLSActions } from '../utils/chatImageUtils'
+import {
+    ensureString,
+    getRandomAvatar,
+    DEFAULT_AVATARS,
+    getLastNTurns,
+    countTurnsBetween,
+    dateRangeToMsgIndices,
+    turnRangeToMsgIndices,
+} from '../utils/common'
+import {
+    compressAllChatImages as chatImageUtils_compressAll,
+    extractLSActions as chatImageUtils_extractLSActions,
+} from '../utils/chatImageUtils'
 import localforage from 'localforage'
 
 // Configure localforage
 localforage.config({
     name: 'qiaoqiao-phone',
-    storeName: 'chats'
-});
+    storeName: 'chats',
+})
 
 // 向后兼容：保留旧式 export（其他模块可能 import）
 export { ensureString, getRandomAvatar, DEFAULT_AVATARS }
@@ -58,8 +74,11 @@ async function runAgentAction(act, ctx) {
             // AI 拿到的 postId 来自社交上下文（收集所有论坛），可能不在当前浏览的论坛。
             // 先定位 postId 所属论坛，否则 sendComment 因 currentForumId 不对而找不到帖子/报错。
             let targetFid = fs.currentForumId
-            for (const fid in (fs.posts || {})) {
-                if ((fs.posts[fid] || []).some((pp) => pp.id === p.postId)) { targetFid = fid; break }
+            for (const fid in fs.posts || {}) {
+                if ((fs.posts[fid] || []).some((pp) => pp.id === p.postId)) {
+                    targetFid = fid
+                    break
+                }
             }
             if (targetFid !== fs.currentForumId) fs.currentForumId = targetFid
             fs.sendComment(p.postId, p.content || '')
@@ -78,7 +97,12 @@ async function runAgentAction(act, ctx) {
             return `已在情侣空间写下一封信`
         }
         case 'add_calendar_event': {
-            useCalendarStore().addEvent({ title: p.title || '事件', date: p.date || '', time: p.time || '', note: p.note || '' })
+            useCalendarStore().addEvent({
+                title: p.title || '事件',
+                date: p.date || '',
+                time: p.time || '',
+                note: p.note || '',
+            })
             return `已添加日历日程：${p.title || ''}`
         }
         case 'send_redpacket': {
@@ -88,7 +112,14 @@ async function runAgentAction(act, ctx) {
             const payId = `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
             const paid = useWalletStore().decreaseBalance(amount, note)
             if (!paid) return `发送红包失败：余额不足或金额无效（¥${amount}）`
-            addMessage(chatId, { role: 'ai', type: 'redpacket', amount, note, paymentId: payId, content: `[红包:${amount}:${note}:${payId}]` })
+            addMessage(chatId, {
+                role: 'ai',
+                type: 'redpacket',
+                amount,
+                note,
+                paymentId: payId,
+                content: `[红包:${amount}:${note}:${payId}]`,
+            })
             return `已发送红包 ¥${amount}（${note}）`
         }
         case 'inspect_phone': {
@@ -97,8 +128,12 @@ async function runAgentAction(act, ctx) {
         }
         case 'open_app': {
             const f = resolveFeature(p.app)
-            if (!f || !f.route) return `无法识别应用：${p.app}（可用功能见能力清单，如 1=朋友圈 7=购物）`
-            const target = f.route === 'phone-inspection' ? { name: 'phone-inspection', params: { charId: chatId } } : { name: f.route }
+            if (!f || !f.route)
+                return `无法识别应用：${p.app}（可用功能见能力清单，如 1=朋友圈 7=购物）`
+            const target =
+                f.route === 'phone-inspection'
+                    ? { name: 'phone-inspection', params: { charId: chatId } }
+                    : { name: f.route }
             router.push(target)
             return `已打开${f.name}`
         }
@@ -115,13 +150,16 @@ export const useChatStore = defineStore('chat', () => {
     const typingStatus = ref({}) // { chatId: boolean }
     const isProfileProcessing = ref({}) // track if a specific character's archive is being analyzed
     let history // 模块化的历史/总结逻辑（延迟初始化，在所有依赖函数 hoist 后赋值）
-    
+
     // Streaming message persistence state
     const streamingState = ref({}) // { chatId: { msgId, content, startTime, mode, context, options, isUserTriggered } }
-    
+
     async function saveStreamingState() {
         try {
-            await localforage.setItem('qiaoqiao_streaming_state', JSON.parse(JSON.stringify(toRaw(streamingState.value))))
+            await localforage.setItem(
+                'qiaoqiao_streaming_state',
+                JSON.parse(JSON.stringify(toRaw(streamingState.value))),
+            )
         } catch (e) {
             console.warn('[ChatStore] Failed to save streaming state:', e)
         }
@@ -132,7 +170,7 @@ export const useChatStore = defineStore('chat', () => {
     const METADATA_KEY = 'qiaoqiao_chats_metadata'
     const MSGS_KEY_PREFIX = 'qiaoqiao_chat_msgs_'
     const V3_MIGRATED_KEY = 'qiaoqiao_chats_v3_migrated'
-    
+
     async function loadStreamingState() {
         try {
             const saved = await localforage.getItem('qiaoqiao_streaming_state')
@@ -143,7 +181,7 @@ export const useChatStore = defineStore('chat', () => {
             console.warn('[ChatStore] Failed to load streaming state:', e)
         }
     }
-    
+
     async function clearStreamingState(chatId) {
         if (chatId) {
             delete streamingState.value[chatId]
@@ -152,8 +190,16 @@ export const useChatStore = defineStore('chat', () => {
         }
         await saveStreamingState()
     }
-    
-    function setStreamingMessage(chatId, msgId, content, mode = 'online', context = null, options = null, isUserTriggered = false) {
+
+    function setStreamingMessage(
+        chatId,
+        msgId,
+        content,
+        mode = 'online',
+        context = null,
+        options = null,
+        isUserTriggered = false,
+    ) {
         streamingState.value[chatId] = {
             msgId,
             content,
@@ -162,7 +208,7 @@ export const useChatStore = defineStore('chat', () => {
             context, // 保存上下文以便恢复时继续生成
             options, // 保存生成选项
             isUserTriggered, // 标记是否是用户点击打断的
-            isComplete: false
+            isComplete: false,
         }
         saveStreamingState()
     }
@@ -185,14 +231,14 @@ export const useChatStore = defineStore('chat', () => {
             await localforage.setItem('qiaoqiao_pending_ai_requests', pending)
         } catch (e) {}
     }
-    
+
     function updateStreamingContent(chatId, content) {
         if (streamingState.value[chatId]) {
             streamingState.value[chatId].content = content
             saveStreamingState()
         }
     }
-    
+
     function markStreamingComplete(chatId, isUserTriggered = false) {
         if (streamingState.value[chatId]) {
             streamingState.value[chatId].isComplete = true
@@ -207,7 +253,7 @@ export const useChatStore = defineStore('chat', () => {
             if (currentChatId.value) {
                 typingStatus.value[currentChatId.value] = val
             }
-        }
+        },
     })
     const notificationEvent = ref(null) // Global notification trigger
     const patEvent = ref(null) // Event: { chatId, target: 'ai'|'user' }
@@ -223,13 +269,13 @@ export const useChatStore = defineStore('chat', () => {
 
     // AI Control
     const abortControllers = {} // { chatId: AbortController }
-    let currentAbortController = null; // Still keep for extreme backward compat if needed, but not used by main logic now
+    let currentAbortController = null // Still keep for extreme backward compat if needed, but not used by main logic now
 
     function triggerPatEffect(chatId, target) {
         patEvent.value = {
             id: Date.now(),
             chatId,
-            target
+            target,
         }
     }
 
@@ -237,12 +283,42 @@ export const useChatStore = defineStore('chat', () => {
         toastEvent.value = { id: Date.now(), message, type }
     }
 
-    function triggerConfirm(title, message, onConfirm, onCancel = null, confirmText = '确定', cancelText = '取消') {
-        confirmEvent.value = { id: Date.now(), title, message, onConfirm, onCancel, confirmText, cancelText }
+    function triggerConfirm(
+        title,
+        message,
+        onConfirm,
+        onCancel = null,
+        confirmText = '确定',
+        cancelText = '取消',
+    ) {
+        confirmEvent.value = {
+            id: Date.now(),
+            title,
+            message,
+            onConfirm,
+            onCancel,
+            confirmText,
+            cancelText,
+        }
     }
 
-    function triggerPrompt(title, message, placeholder = '', defaultValue = '', onConfirm, onCancel = null) {
-        promptEvent.value = { id: Date.now(), title, message, placeholder, defaultValue, onConfirm, onCancel }
+    function triggerPrompt(
+        title,
+        message,
+        placeholder = '',
+        defaultValue = '',
+        onConfirm,
+        onCancel = null,
+    ) {
+        promptEvent.value = {
+            id: Date.now(),
+            title,
+            message,
+            placeholder,
+            defaultValue,
+            onConfirm,
+            onCancel,
+        }
     }
 
     function stopGeneration(silent = false, chatId = null, isUserTriggered = true) {
@@ -261,12 +337,14 @@ export const useChatStore = defineStore('chat', () => {
 
         if (typingStatus.value[id]) {
             typingStatus.value[id] = false
-            console.log(`[ChatStore] AI Generation for ${id} stopped. User triggered: ${isUserTriggered}`)
+            console.log(
+                `[ChatStore] AI Generation for ${id} stopped. User triggered: ${isUserTriggered}`,
+            )
             if (!silent) {
                 triggerToast('已中断生成', 'info')
             }
         }
-        
+
         // 如果是用户触发的打断，清除流式状态
         if (isUserTriggered) {
             markStreamingComplete(id, true)
@@ -283,53 +361,58 @@ export const useChatStore = defineStore('chat', () => {
 
     // Getters
     const chatList = computed(() => {
-        return Object.keys(chats.value).map(key => {
-            const chat = chats.value[key]
-            return {
-                id: key,
-                ...chat,
-                displayName: chat.remark?.trim() ? chat.remark.trim() : (chat.name || '未命名'),
-                unreadCount: chat.unreadCount || 0,
-                lastMsg: (chat.msgs || []).slice(-1)[0] || null
-            }
-        }).filter(c => c.inChatList !== false && !c.isDissolved).sort((a, b) => {
-            // Sort by Pinned First
-            if (a.isPinned && !b.isPinned) return -1
-            if (!a.isPinned && b.isPinned) return 1
+        return Object.keys(chats.value)
+            .map((key) => {
+                const chat = chats.value[key]
+                return {
+                    id: key,
+                    ...chat,
+                    displayName: chat.remark?.trim() ? chat.remark.trim() : chat.name || '未命名',
+                    unreadCount: chat.unreadCount || 0,
+                    lastMsg: (chat.msgs || []).slice(-1)[0] || null,
+                }
+            })
+            .filter((c) => c.inChatList !== false && !c.isDissolved)
+            .sort((a, b) => {
+                // Sort by Pinned First
+                if (a.isPinned && !b.isPinned) return -1
+                if (!a.isPinned && b.isPinned) return 1
 
-            // Sort by last message time
-            const timeA = a.lastMsg ? a.lastMsg.timestamp : 0
-            const timeB = b.lastMsg ? b.lastMsg.timestamp : 0
-            return timeB - timeA
-        })
+                // Sort by last message time
+                const timeA = a.lastMsg ? a.lastMsg.timestamp : 0
+                const timeB = b.lastMsg ? b.lastMsg.timestamp : 0
+                return timeB - timeA
+            })
     })
 
     const contactList = computed(() => {
-        return Object.keys(chats.value).map(key => ({
-            id: key,
-            ...chats.value[key]
-        })).sort((a, b) => {
-            // Sort contacts alphabetically or by pinyin
-            return (a.name || '').localeCompare(b.name || '', 'zh-CN')
-        })
+        return Object.keys(chats.value)
+            .map((key) => ({
+                id: key,
+                ...chats.value[key],
+            }))
+            .sort((a, b) => {
+                // Sort contacts alphabetically or by pinyin
+                return (a.name || '').localeCompare(b.name || '', 'zh-CN')
+            })
     })
 
     const groupNpcs = computed(() => {
-        const npcs = [];
+        const npcs = []
         Object.entries(chats.value).forEach(([chatId, chat]) => {
             if (chat.isGroup && Array.isArray(chat.participants)) {
-                chat.participants.forEach(p => {
+                chat.participants.forEach((p) => {
                     if (p.isNPC || p.role === 'npc') {
                         npcs.push({
                             ...p,
                             groupId: chatId,
-                            groupName: chat.name
-                        });
+                            groupName: chat.name,
+                        })
                     }
-                });
+                })
             }
-        });
-        return npcs;
+        })
+        return npcs
     })
 
     const currentChat = computed(() => {
@@ -342,13 +425,14 @@ export const useChatStore = defineStore('chat', () => {
         return {
             voiceSpeed: 1.0,
             ...chat,
-            id: currentChatId.value
+            id: currentChatId.value,
         }
     })
 
     // Actions
     function createChat(name, options = {}) {
-        const chatId = options.id || 'c-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5)
+        const chatId =
+            options.id || 'c-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5)
 
         if (!chats.value[chatId]) {
             const newChat = {
@@ -378,9 +462,9 @@ export const useChatStore = defineStore('chat', () => {
                     gender: options.gender || '未知',
                     age: options.age || '未知',
                     hobbies: [],
-                    routine: { awake: '未知', busy: '未知', deep: '未知' }
+                    routine: { awake: '未知', busy: '未知', deep: '未知' },
                 },
-                ...options
+                ...options,
             }
             chats.value[chatId] = newChat
             saveChats()
@@ -390,7 +474,8 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     function createGroupChat(options = {}) {
-        const chatId = options.id || 'g-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5)
+        const chatId =
+            options.id || 'g-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5)
         const newChat = {
             id: chatId,
             isGroup: true,
@@ -400,8 +485,12 @@ export const useChatStore = defineStore('chat', () => {
             groupProfile: options.groupProfile || {
                 avatar: options.avatar || getRandomAvatar(),
                 name: options.name || '新建群聊',
-                groupNo: 'G' + Math.floor(Math.random() * 1000000).toString().padStart(6, '0'),
-                announcement: ''
+                groupNo:
+                    'G' +
+                    Math.floor(Math.random() * 1000000)
+                        .toString()
+                        .padStart(6, '0'),
+                announcement: '',
             },
             msgs: [],
             inChatList: true,
@@ -415,7 +504,7 @@ export const useChatStore = defineStore('chat', () => {
             autoSummary: false,
             autoTTS: false,
             showInnerVoice: true,
-            ...options
+            ...options,
         }
         chats.value[chatId] = newChat
         saveChats()
@@ -429,22 +518,22 @@ export const useChatStore = defineStore('chat', () => {
             if (profile) {
                 chats.value[chatId].groupProfile = {
                     ...(chats.value[chatId].groupProfile || {}),
-                    ...profile
+                    ...profile,
                 }
             }
-            saveChats();
-            return true;
+            saveChats()
+            return true
         }
-        return false;
+        return false
     }
 
     function updateGroupParticipants(chatId, participants) {
         if (chats.value[chatId]) {
-            chats.value[chatId].participants = participants;
-            saveChats();
-            return true;
+            chats.value[chatId].participants = participants
+            saveChats()
+            return true
         }
-        return false;
+        return false
     }
 
     async function updateGroupSettings(chatId, settings) {
@@ -452,17 +541,17 @@ export const useChatStore = defineStore('chat', () => {
             // Ensure groupSettings sub-object is updated for component compatibility
             chats.value[chatId].groupSettings = {
                 ...(chats.value[chatId].groupSettings || {}),
-                ...settings
-            };
+                ...settings,
+            }
             // Also sync to top level for legacy support
             // [BUG FIX] 不要重建对象 (`chats.value[chatId] = {...}`), 否则外部持有的引用全部失效.
             // Vue 3 ref + reactive 会自动追踪属性赋值, 用 Object.assign 即可.
-            Object.assign(chats.value[chatId], settings);
+            Object.assign(chats.value[chatId], settings)
 
-            await saveChats();
-            return true;
+            await saveChats()
+            return true
         }
-        return false;
+        return false
     }
 
     async function addMessage(chatId, msg) {
@@ -472,14 +561,30 @@ export const useChatStore = defineStore('chat', () => {
         // Robust Migration: Ensure bio structure exists and is reactive
         if (!chat.bio) {
             chat.bio = {
-                gender: '未知', age: '未知', birthday: '未知', zodiac: '未知', mbti: '未知',
-                height: '未知', weight: '未知', body: '未知', occupation: '未知', status: '未知',
-                scent: '未知', style: '未知', hobbies: [], idealType: '未知', heartbeatMoment: '暂无记录',
-                traits: [], routine: { awake: '未知', busy: '未知', deep: '未知' },
-                soulBonds: [], loveItems: [
-                    { name: '爱之物 I', image: '' }, { name: '爱之物 II', image: '' }, { name: '爱之物 III', image: '' }
-                ]
-            };
+                gender: '未知',
+                age: '未知',
+                birthday: '未知',
+                zodiac: '未知',
+                mbti: '未知',
+                height: '未知',
+                weight: '未知',
+                body: '未知',
+                occupation: '未知',
+                status: '未知',
+                scent: '未知',
+                style: '未知',
+                hobbies: [],
+                idealType: '未知',
+                heartbeatMoment: '暂无记录',
+                traits: [],
+                routine: { awake: '未知', busy: '未知', deep: '未知' },
+                soulBonds: [],
+                loveItems: [
+                    { name: '爱之物 I', image: '' },
+                    { name: '爱之物 II', image: '' },
+                    { name: '爱之物 III', image: '' },
+                ],
+            }
             // [BUG FIX] 原代码用 `chats.value[chatId] = { ...chat, bio: chat.bio }` 重建对象,
             // 会让所有外部保存的 chat 引用失效(突然变成旧对象的快照,新增消息看不到).
             // Vue 3 ref + reactive 已经能自动追踪属性赋值, 直接 chat.bio = {...} 即可触发响应式.
@@ -487,97 +592,136 @@ export const useChatStore = defineStore('chat', () => {
 
         // Parse special tags (Mission: Priority)
         if (msg.role === 'ai') {
-            let processedContent = msg.content;
+            let processedContent = msg.content
             if (typeof processedContent === 'string') {
                 // === 关键修复：增强对“裸露”情侣空间指令的自动补全与提取 ===
                 // AI 有时会忘记写 [LS_JSON:] 标签，或者只输出了裸露的 JSON 块
-                const trimmedContent = processedContent.trim();
-                const looseLSPattern = /\{[^{}]*?(?:"type"|type)\s*[:：]\s*["']?(?:diary|footprint|message|sticky|anniversary|letter|question|album|house|gacha|schedule|commands)["']?[\s\S]*?\}/gi;
-                
+                const trimmedContent = processedContent.trim()
+                const looseLSPattern =
+                    /\{[^{}]*?(?:"type"|type)\s*[:：]\s*["']?(?:diary|footprint|message|sticky|anniversary|letter|question|album|house|gacha|schedule|commands)["']?[\s\S]*?\}/gi
+
                 if (trimmedContent.startsWith('{') && trimmedContent.endsWith('}')) {
                     try {
                         // [BUG FIX] 原代码 .replace(/['"]/g, '"') 会把 JSON 值里的单引号(如
                         // "content":"Bob's diary")也替换成双引号, 破坏 JSON. 标准双引号 JSON 直接 parse 即可.
-                        const parsed = JSON.parse(trimmedContent);
-                        if (parsed.commands || (parsed.type && ['diary', 'footprint', 'message', 'sticky', 'anniversary', 'letter', 'question', 'album', 'house', 'gacha', 'schedule'].includes(parsed.type))) {
-                            console.log('[ChatStore] Detected raw JSON LS_JSON format, wrapping with tag...');
-                            processedContent = `[LS_JSON:${trimmedContent}]`;
+                        const parsed = JSON.parse(trimmedContent)
+                        if (
+                            parsed.commands ||
+                            (parsed.type &&
+                                [
+                                    'diary',
+                                    'footprint',
+                                    'message',
+                                    'sticky',
+                                    'anniversary',
+                                    'letter',
+                                    'question',
+                                    'album',
+                                    'house',
+                                    'gacha',
+                                    'schedule',
+                                ].includes(parsed.type))
+                        ) {
+                            console.log(
+                                '[ChatStore] Detected raw JSON LS_JSON format, wrapping with tag...',
+                            )
+                            processedContent = `[LS_JSON:${trimmedContent}]`
                         }
                     } catch (e) {
                         if (looseLSPattern.test(trimmedContent)) {
-                            processedContent = `[LS_JSON:${trimmedContent}]`;
+                            processedContent = `[LS_JSON:${trimmedContent}]`
                         }
                     }
-                } else if (!processedContent.includes('LS_JSON') && !processedContent.includes('情侣空间')) {
+                } else if (
+                    !processedContent.includes('LS_JSON') &&
+                    !processedContent.includes('情侣空间')
+                ) {
                     // 如果在正文中发现了裸露的指令块，尝试给它们补全标签
-                    const matches = [...processedContent.matchAll(looseLSPattern)];
+                    const matches = [...processedContent.matchAll(looseLSPattern)]
                     if (matches.length > 0) {
-                        console.log('[ChatStore] 发现正文中的裸露指令，正在补全 [LS_JSON:] 标签...');
+                        console.log('[ChatStore] 发现正文中的裸露指令，正在补全 [LS_JSON:] 标签...')
                         for (let i = matches.length - 1; i >= 0; i--) {
-                            const m = matches[i];
-                            processedContent = processedContent.substring(0, m.index) + `[LS_JSON:${m[0]}]` + processedContent.substring(m.index + m[0].length);
+                            const m = matches[i]
+                            processedContent =
+                                processedContent.substring(0, m.index) +
+                                `[LS_JSON:${m[0]}]` +
+                                processedContent.substring(m.index + m[0].length)
                         }
                     }
                 }
-                
+
                 // Intercept Couple Space commands [LS_JSON: ...], [情侣空间: ...], [LS: ...]
                 // Robust extraction using balanced brace matching
-                const startMarkerRegex = /[\\[【]\s*(?:LS_JSON|LS|情侣空间)[:：]?\s*/gi;
-                let match;
-                let foundBlocks = [];
-                
-                const searchRegex = new RegExp(startMarkerRegex.source, startMarkerRegex.flags);
+                const startMarkerRegex = /[\\[【]\s*(?:LS_JSON|LS|情侣空间)[:：]?\s*/gi
+                let match
+                let foundBlocks = []
+
+                const searchRegex = new RegExp(startMarkerRegex.source, startMarkerRegex.flags)
                 while ((match = searchRegex.exec(processedContent)) !== null) {
-                    const startIdx = match.index;
-                    const markerText = match[0];
-                    const contentStart = startIdx + markerText.length;
-                    
-                    const firstBrace = processedContent.indexOf('{', contentStart);
+                    const startIdx = match.index
+                    const markerText = match[0]
+                    const contentStart = startIdx + markerText.length
+
+                    const firstBrace = processedContent.indexOf('{', contentStart)
                     if (firstBrace !== -1) {
-                        let braceCount = 0;
-                        let inString = false;
-                        let isEscaped = false;
-                        let jsonEndIdx = -1;
-                        
+                        let braceCount = 0
+                        let inString = false
+                        let isEscaped = false
+                        let jsonEndIdx = -1
+
                         for (let i = firstBrace; i < processedContent.length; i++) {
-                            const char = processedContent[i];
-                            if (isEscaped) { isEscaped = false; continue; }
-                            if (char === '\\') { isEscaped = true; continue; }
-                            if (char === '"') { inString = !inString; continue; }
+                            const char = processedContent[i]
+                            if (isEscaped) {
+                                isEscaped = false
+                                continue
+                            }
+                            if (char === '\\') {
+                                isEscaped = true
+                                continue
+                            }
+                            if (char === '"') {
+                                inString = !inString
+                                continue
+                            }
                             if (!inString) {
-                                if (char === '{') braceCount++;
+                                if (char === '{') braceCount++
                                 else if (char === '}') {
-                                    braceCount--;
+                                    braceCount--
                                     if (braceCount === 0) {
-                                        jsonEndIdx = i;
-                                        break;
+                                        jsonEndIdx = i
+                                        break
                                     }
                                 }
                             }
                         }
-                        
+
                         if (jsonEndIdx !== -1) {
                             // Find optional closing bracket ]
-                            let blockEndIdx = jsonEndIdx + 1;
-                            const remaining = processedContent.substring(jsonEndIdx + 1, jsonEndIdx + 10);
-                            const closeMatch = remaining.match(/^\s*[\]】]/);
+                            let blockEndIdx = jsonEndIdx + 1
+                            const remaining = processedContent.substring(
+                                jsonEndIdx + 1,
+                                jsonEndIdx + 10,
+                            )
+                            const closeMatch = remaining.match(/^\s*[\]】]/)
                             if (closeMatch) {
-                                blockEndIdx = jsonEndIdx + 1 + closeMatch[0].length;
+                                blockEndIdx = jsonEndIdx + 1 + closeMatch[0].length
                             }
-                            
+
                             foundBlocks.push({
                                 start: startIdx,
                                 end: blockEndIdx,
-                                content: processedContent.substring(startIdx, blockEndIdx)
-                            });
+                                content: processedContent.substring(startIdx, blockEndIdx),
+                            })
                             // Advance regex
-                            searchRegex.lastIndex = blockEndIdx;
+                            searchRegex.lastIndex = blockEndIdx
                         }
                     }
                 }
-                
+
                 if (foundBlocks.length > 0) {
-                    console.log(`[ChatStore] Detected ${foundBlocks.length} Couple Space commands, processing...`);
+                    console.log(
+                        `[ChatStore] Detected ${foundBlocks.length} Couple Space commands, processing...`,
+                    )
 
                     // Extract clean JSON payloads for execution (fix double-escaped quotes + truncated JSON)
                     const jsonPayloads = []
@@ -594,18 +738,34 @@ export const useChatStore = defineStore('chat', () => {
                             // (如 content:"她说\"你好\"" → 替换后字符串提前闭合, JSON.parse 必失败).
                             // 改为: 先原样 parse, 失败后才尝试修复真正的双重转义.
                             const tryParseLenient = (s) => {
-                                try { JSON.parse(s); return s } catch (_) {
-                                    const repaired = s.replace(/\\\\"/g, '\\"').replace(/\\\\\\\\/g, '\\\\')
-                                    try { JSON.parse(repaired); return repaired } catch (__) { return null }
+                                try {
+                                    JSON.parse(s)
+                                    return s
+                                } catch (_) {
+                                    const repaired = s
+                                        .replace(/\\\\"/g, '\\"')
+                                        .replace(/\\\\\\\\/g, '\\\\')
+                                    try {
+                                        JSON.parse(repaired)
+                                        return repaired
+                                    } catch (__) {
+                                        return null
+                                    }
                                 }
                             }
 
                             const parsed = tryParseLenient(jsonStr)
                             if (parsed) {
-                                console.log('[ChatStore] Cleaned LS_JSON payload OK:', parsed.substring(0, 120) + '...')
+                                console.log(
+                                    '[ChatStore] Cleaned LS_JSON payload OK:',
+                                    parsed.substring(0, 120) + '...',
+                                )
                                 jsonPayloads.push(parsed)
                             } else {
-                                console.warn('[ChatStore] LS_JSON parse failed, trying extended extraction:', jsonStr.substring(0, 100))
+                                console.warn(
+                                    '[ChatStore] LS_JSON parse failed, trying extended extraction:',
+                                    jsonStr.substring(0, 100),
+                                )
                                 // 兜底：从原始 processedContent 中用正则提取完整的 JSON 对象
                                 const fullText = processedContent
                                 const markerIdx = fullText.toLowerCase().indexOf('ls_json')
@@ -615,13 +775,20 @@ export const useChatStore = defineStore('chat', () => {
                                     const extStart = afterMarker.indexOf('{')
                                     const extEnd = afterMarker.lastIndexOf('}')
                                     if (extStart !== -1 && extEnd > extStart) {
-                                        let extJson = afterMarker.substring(extStart, extEnd + 1).replace(/^[\s,]+/, '')
+                                        let extJson = afterMarker
+                                            .substring(extStart, extEnd + 1)
+                                            .replace(/^[\s,]+/, '')
                                         const extParsed = tryParseLenient(extJson)
                                         if (extParsed) {
-                                            console.log('[ChatStore] Extended LS_JSON extraction OK:', extParsed.substring(0, 120) + '...')
+                                            console.log(
+                                                '[ChatStore] Extended LS_JSON extraction OK:',
+                                                extParsed.substring(0, 120) + '...',
+                                            )
                                             jsonPayloads.push(extParsed)
                                         } else {
-                                            console.warn('[ChatStore] Extended extraction also failed, skipping payload')
+                                            console.warn(
+                                                '[ChatStore] Extended extraction also failed, skipping payload',
+                                            )
                                         }
                                     }
                                 }
@@ -631,116 +798,170 @@ export const useChatStore = defineStore('chat', () => {
 
                     // Combine payloads for execution — pass clean JSON array format
                     console.log('[ChatStore] LS_JSON jsonPayloads:', jsonPayloads)
-                    const executionPayload = jsonPayloads.length === 1
-                        ? jsonPayloads[0]
-                        : JSON.stringify({ commands: jsonPayloads.map(p => { try { return JSON.parse(p) } catch { return { type: 'raw', raw: p } } }) })
+                    const executionPayload =
+                        jsonPayloads.length === 1
+                            ? jsonPayloads[0]
+                            : JSON.stringify({
+                                  commands: jsonPayloads.map((p) => {
+                                      try {
+                                          return JSON.parse(p)
+                                      } catch {
+                                          return { type: 'raw', raw: p }
+                                      }
+                                  }),
+                              })
                     console.log('[ChatStore] LS_JSON executionPayload:', executionPayload)
 
                     // Strip blocks from display content (backwards to keep indices intact)
                     for (let i = foundBlocks.length - 1; i >= 0; i--) {
-                        const block = foundBlocks[i];
-                        let pre = processedContent.substring(0, block.start);
-                        let post = processedContent.substring(block.end);
+                        const block = foundBlocks[i]
+                        let pre = processedContent.substring(0, block.start)
+                        let post = processedContent.substring(block.end)
 
                         // 🗑️ 增强清理：剔除指令前残留的逗号、冒号、空格或换行
-                        pre = pre.replace(/[,，:：\s\r\n]+$/, '');
+                        pre = pre.replace(/[,，:：\s\r\n]+$/, '')
 
                         // [FIX] 清理块后的尾部垃圾内容（如 {\n,\n,\n,\n,\n}）
                         post = post.replace(/^\s*\{[\s,]*\}\s*/, '')
 
-                        processedContent = pre + post;
+                        processedContent = pre + post
                     }
-                    processedContent = processedContent.trim();
+                    processedContent = processedContent.trim()
 
                     // [FIX] 安全网：仅移除残留的 LS_JSON 指令标签片段（防止 brace-counting 定位偏差导致泄漏）
                     // 使用更精确的匹配：要求 { 前面紧邻 LS_JSON/LS/情侣空间 标记，且不误删正常讨论这些关键词的文本
-                    processedContent = processedContent.replace(/\[?(?:LS_JSON|LS|情侣空间)[:：]\s*\{[^}]*$/gi, '')
+                    processedContent = processedContent.replace(
+                        /\[?(?:LS_JSON|LS|情侣空间)[:：]\s*\{[^}]*$/gi,
+                        '',
+                    )
                     // 第二条正则：仅匹配完整的指令格式（有闭合 } 和可选的 ]），避免跨行误删
-                    processedContent = processedContent.replace(/\[?(?:LS_JSON|LS|情侣空间)[:：]\s*\{(?:[^{}]|\{[^{}]*\})*\}\s*\]?\s*/gi, '')
+                    processedContent = processedContent.replace(
+                        /\[?(?:LS_JSON|LS|情侣空间)[:：]\s*\{(?:[^{}]|\{[^{}]*\})*\}\s*\]?\s*/gi,
+                        '',
+                    )
                     processedContent = processedContent.trim()
 
                     // Execute commands in background
-                    import('./loveSpaceStore').then(m => {
-                        const loveSpaceStore = m.useLoveSpaceStore();
-                        loveSpaceStore.executeSpaceCommands(executionPayload, chat.name, null, chatId)
-                            .then((result) => {
-                                console.log('[ChatStore] LS_JSON commands executed successfully', result)
-                                // [FIX] 给用户执行结果反馈 + 聊天内系统提示
-                                if (result && result.success !== false) {
-                                    triggerToast(`${chat.name} 更新了情侣空间`, 'success')
-                                    // 从清理后的payload提取具体操作类型，生成精确的系统提示
-                                    const actions = _extractLSActions(executionPayload)
-                                    if (actions.length > 0) {
-                                        addMessage(chatId, {
-                                            role: 'system',
-                                            type: 'system',
-                                            content: `${chat.name} ${actions.join('、')}`,
-                                            _lsReferenceId: Date.now()
-                                        })
+                    import('./loveSpaceStore')
+                        .then((m) => {
+                            const loveSpaceStore = m.useLoveSpaceStore()
+                            loveSpaceStore
+                                .executeSpaceCommands(executionPayload, chat.name, null, chatId)
+                                .then((result) => {
+                                    console.log(
+                                        '[ChatStore] LS_JSON commands executed successfully',
+                                        result,
+                                    )
+                                    // [FIX] 给用户执行结果反馈 + 聊天内系统提示
+                                    if (result && result.success !== false) {
+                                        triggerToast(`${chat.name} 更新了情侣空间`, 'success')
+                                        // 从清理后的payload提取具体操作类型，生成精确的系统提示
+                                        const actions = _extractLSActions(executionPayload)
+                                        if (actions.length > 0) {
+                                            addMessage(chatId, {
+                                                role: 'system',
+                                                type: 'system',
+                                                content: `${chat.name} ${actions.join('、')}`,
+                                                _lsReferenceId: Date.now(),
+                                            })
+                                        } else {
+                                            addMessage(chatId, {
+                                                role: 'system',
+                                                type: 'system',
+                                                content: `${chat.name} 更新了情侣空间`,
+                                                _lsReferenceId: Date.now(),
+                                            })
+                                        }
                                     } else {
-                                        addMessage(chatId, {
-                                            role: 'system',
-                                            type: 'system',
-                                            content: `${chat.name} 更新了情侣空间`,
-                                            _lsReferenceId: Date.now()
-                                        })
+                                        triggerToast(
+                                            '情侣空间更新失败（可能未选择伴侣）',
+                                            'warning',
+                                        )
                                     }
-                                } else {
-                                    triggerToast('情侣空间更新失败（可能未选择伴侣）', 'warning')
-                                }
-                            })
-                            .catch(err => {
-                                console.error('[ChatStore] LS_JSON execution failed', err)
-                                triggerToast('情侣空间执行出错', 'error')
-                            });
-                    }).catch(err => console.error('[ChatStore] Failed to load loveSpaceStore', err));
+                                })
+                                .catch((err) => {
+                                    console.error('[ChatStore] LS_JSON execution failed', err)
+                                    triggerToast('情侣空间执行出错', 'error')
+                                })
+                        })
+                        .catch((err) =>
+                            console.error('[ChatStore] Failed to load loveSpaceStore', err),
+                        )
                 }
-                
-                msg.content = processedContent;
+
+                msg.content = processedContent
             }
         }
 
         // Push message to memory (Legacy support)
         // Deep safety for nested properties
-        if (!chat.bio.routine) chat.bio.routine = { awake: '未知', busy: '未知', deep: '未知' };
-        if (!chat.bio.hobbies) chat.bio.hobbies = [];
-        if (!chat.bio.traits) chat.bio.traits = [];
-        if (!chat.bio.soulBonds) chat.bio.soulBonds = [];
-        if (!chat.bio.loveItems) chat.bio.loveItems = [
-            { name: '爱之物 I', image: '' }, { name: '爱之物 II', image: '' }, { name: '爱之物 III', image: '' }
-        ];
+        if (!chat.bio.routine) chat.bio.routine = { awake: '未知', busy: '未知', deep: '未知' }
+        if (!chat.bio.hobbies) chat.bio.hobbies = []
+        if (!chat.bio.traits) chat.bio.traits = []
+        if (!chat.bio.soulBonds) chat.bio.soulBonds = []
+        if (!chat.bio.loveItems)
+            chat.bio.loveItems = [
+                { name: '爱之物 I', image: '' },
+                { name: '爱之物 II', image: '' },
+                { name: '爱之物 III', image: '' },
+            ]
 
         // EARLY FILTER: Reject JSON/Metadata fragments (清除残余碎片)
         if (msg.content && typeof msg.content === 'string') {
-            const trimmed = msg.content.trim();
+            const trimmed = msg.content.trim()
 
             // Filter header fragment: EXACT match for { "type": "html", "html": " or type: html, html:
-            const headerPattern = /^\{\s*["']type["']\s*:\s*["']html["']\s*,\s*["']html["']\s*:\s*["']\s*$/;
-            const metaPattern = /^\s*(?:type|card|json|html|content)\s*[:：]\s*[^\[\<{]*$/i;
-            
+            const headerPattern =
+                /^\{\s*["']type["']\s*:\s*["']html["']\s*,\s*["']html["']\s*:\s*["']\s*$/
+            const metaPattern = /^\s*(?:type|card|json|html|content)\s*[:：]\s*[^\[\<{]*$/i
+
             if (headerPattern.test(trimmed) || metaPattern.test(trimmed)) {
-                console.log('[ChatStore] ✅ Rejected header/metadata fragment:', trimmed);
-                return false;
+                console.log('[ChatStore] ✅ Rejected header/metadata fragment:', trimmed)
+                return false
             }
 
             // Filter tail fragment: EXACT match for " } or "}
-            if (trimmed === '"' || trimmed === '"}' || trimmed === '" }' || trimmed === "'}'" || trimmed === "' }") {
-                console.log('[ChatStore] ✅ Rejected tail fragment:', trimmed);
-                return false;
+            if (
+                trimmed === '"' ||
+                trimmed === '"}' ||
+                trimmed === '" }' ||
+                trimmed === "'}'" ||
+                trimmed === "' }"
+            ) {
+                console.log('[ChatStore] ✅ Rejected tail fragment:', trimmed)
+                return false
             }
         }
 
         // 1. Initialize message object
         const newMsg = {
-            id: msg.id || ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, c => (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)),
+            id:
+                msg.id ||
+                ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, (c) =>
+                    (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(
+                        16,
+                    ),
+                ),
             timestamp: msg.timestamp || Date.now(),
             role: msg.role,
             type: msg.type || 'text',
             content: msg.content || '',
             // World Loop Extensions
             senderId: msg.senderId || (msg.role === 'user' ? 'user' : chatId),
-            senderName: msg.senderName || (msg.role === 'user' ? '我' : (chat.isGroup ? (msg.senderName || chat.name) : chat.name)),
-            senderAvatar: msg.senderAvatar || (msg.role === 'user' ? '' : (chat.isGroup ? (msg.senderAvatar || chat.avatar) : chat.avatar)),
+            senderName:
+                msg.senderName ||
+                (msg.role === 'user'
+                    ? '我'
+                    : chat.isGroup
+                      ? msg.senderName || chat.name
+                      : chat.name),
+            senderAvatar:
+                msg.senderAvatar ||
+                (msg.role === 'user'
+                    ? ''
+                    : chat.isGroup
+                      ? msg.senderAvatar || chat.avatar
+                      : chat.avatar),
             image: msg.image || null,
             sticker: msg.sticker || null,
             html: msg.html || null,
@@ -753,13 +974,22 @@ export const useChatStore = defineStore('chat', () => {
             claimedBy: msg.claimedBy || null,
             claimTime: msg.claimTime || null,
             // --- Red Packet fields ---
-            claims: msg.claims || [],              // 已领取记录
-            remainingCount: msg.remainingCount !== undefined ? msg.remainingCount : (msg.type === 'redpacket' ? (msg.count || 1) : undefined),
+            claims: msg.claims || [], // 已领取记录
+            remainingCount:
+                msg.remainingCount !== undefined
+                    ? msg.remainingCount
+                    : msg.type === 'redpacket'
+                      ? msg.count || 1
+                      : undefined,
             duration: msg.duration || 0,
             quote: msg.quote || null,
             paymentId: msg.paymentId || null, // Initialize paymentId
             hidden: msg.hidden || false, // Detection for visualizer-only messages
-            mode: msg.mode || (useSettingsStore().getChatOfflineMode(chatId).isOfflineMode ? 'offline' : 'online'), // 线上/线下模式标记: 'online' | 'offline' | null, 默认为当前聊天模式
+            mode:
+                msg.mode ||
+                (useSettingsStore().getChatOfflineMode(chatId).isOfflineMode
+                    ? 'offline'
+                    : 'online'), // 线上/线下模式标记: 'online' | 'offline' | null, 默认为当前聊天模式
             // --- Gift fields ---
             giftId: msg.giftId || null,
             giftName: msg.giftName || null,
@@ -783,8 +1013,8 @@ export const useChatStore = defineStore('chat', () => {
             orderData: msg.orderData || null,
             // --- Payment Request fields (代付) ---
             paymentRequestId: msg.paymentRequestId || null,
-            items: msg.items || null,           // 代付商品列表
-            isPrePay: msg.isPrePay || false,    // 预支付标记
+            items: msg.items || null, // 代付商品列表
+            isPrePay: msg.isPrePay || false, // 预支付标记
             // --- Inner Voice field ---
             // 优先使用传入的 innerVoice 对象（aiService 解析结果）
             // 若无，则尝试从 content 字符串中提取 [INNER_VOICE]...json...[/INNER_VOICE]
@@ -795,65 +1025,100 @@ export const useChatStore = defineStore('chat', () => {
         // 这样即使 content 里的 [INNER_VOICE] 标签被清掉，心声数据也安全保存在 newMsg.innerVoice
         if (!newMsg.innerVoice && typeof newMsg.content === 'string') {
             // Support [INNER_VOICE], [心声], [内心], [INNER]
-            const ivExtractRegex = /[\\[【]\s*(?:INNER[\s-_]*VOICE|心声|内心|INNER)\s*[\]】]([\s\S]*?)(?:[\\[【]\s*\/\s*(?:INNER[\s-_]*)?VOICE\s*[\]】]|$)/i;
-            const ivExtractMatch = newMsg.content.match(ivExtractRegex);
+            const ivExtractRegex =
+                /[\\[【]\s*(?:INNER[\s-_]*VOICE|心声|内心|INNER)\s*[\]】]([\s\S]*?)(?:[\\[【]\s*\/\s*(?:INNER[\s-_]*)?VOICE\s*[\]】]|$)/i
+            const ivExtractMatch = newMsg.content.match(ivExtractRegex)
             if (ivExtractMatch && ivExtractMatch[1]) {
-                console.log('[ChatStore] InnerVoice tag matched, raw content:', ivExtractMatch[1].substring(0, 200));
+                console.log(
+                    '[ChatStore] InnerVoice tag matched, raw content:',
+                    ivExtractMatch[1].substring(0, 200),
+                )
                 try {
-                    let jsonStr = ivExtractMatch[1].trim()
-                        .replace(/```json/gi, '').replace(/```/g, '')
-                        .replace(/\\"/g, '"').replace(/\\n/g, '\n')
-                        .replace(/,\s*}/g, '}').replace(/,\s*]/g, ']')
-                    console.log('[ChatStore] InnerVoice cleaned json:', jsonStr.substring(0, 200));
+                    let jsonStr = ivExtractMatch[1]
+                        .trim()
+                        .replace(/```json/gi, '')
+                        .replace(/```/g, '')
+                        .replace(/\\"/g, '"')
+                        .replace(/\\n/g, '\n')
+                        .replace(/,\s*}/g, '}')
+                        .replace(/,\s*]/g, ']')
+                    console.log('[ChatStore] InnerVoice cleaned json:', jsonStr.substring(0, 200))
                     const jsonMatch = jsonStr.match(/\{[\s\S]*\}/)
                     if (jsonMatch) {
                         const parsed = JSON.parse(jsonMatch[0])
                         if (parsed && typeof parsed === 'object') {
                             newMsg.innerVoice = parsed
-                            console.log('[ChatStore] InnerVoice parsed OK:', Object.keys(parsed));
+                            console.log('[ChatStore] InnerVoice parsed OK:', Object.keys(parsed))
                         }
                     }
                 } catch (e) {
-                    console.warn('[ChatStore] InnerVoice parse failed:', e.message);
+                    console.warn('[ChatStore] InnerVoice parse failed:', e.message)
                 }
             } else {
-                console.log('[ChatStore] No InnerVoice tag found in content (first 300):', newMsg.content.substring(0, 300));
+                console.log(
+                    '[ChatStore] No InnerVoice tag found in content (first 300):',
+                    newMsg.content.substring(0, 300),
+                )
             }
 
             // 兜底：无标签时，用平衡花括号法从 content 中提取裸露JSON心声块
             if (!newMsg.innerVoice && newMsg.content.includes('{')) {
-                const voiceKeys = ['"status"', '"心声"', '"着装"', '"环境"', '"行为"', '"stats"'];
-                const hasVoiceKey = voiceKeys.some(k => newMsg.content.includes(k));
+                const voiceKeys = ['"status"', '"心声"', '"着装"', '"环境"', '"行为"', '"stats"']
+                const hasVoiceKey = voiceKeys.some((k) => newMsg.content.includes(k))
                 if (hasVoiceKey) {
-                    console.log('[ChatStore] InnerVoice fallback: trying balanced brace extraction');
-                    const vBlocks = [];
-                    let vd = 0, vs = -1;
+                    console.log('[ChatStore] InnerVoice fallback: trying balanced brace extraction')
+                    const vBlocks = []
+                    let vd = 0,
+                        vs = -1
                     for (let i = 0; i < newMsg.content.length; i++) {
-                        if (newMsg.content[i] === '{') { if (vd === 0) vs = i; vd++; }
-                        else if (newMsg.content[i] === '}') { vd--; if (vd === 0 && vs !== -1) { vBlocks.push(newMsg.content.substring(vs, i + 1)); vs = -1; } }
+                        if (newMsg.content[i] === '{') {
+                            if (vd === 0) vs = i
+                            vd++
+                        } else if (newMsg.content[i] === '}') {
+                            vd--
+                            if (vd === 0 && vs !== -1) {
+                                vBlocks.push(newMsg.content.substring(vs, i + 1))
+                                vs = -1
+                            }
+                        }
                     }
-                    console.log('[ChatStore] InnerVoice fallback: found', vBlocks.length, 'JSON blocks');
+                    console.log(
+                        '[ChatStore] InnerVoice fallback: found',
+                        vBlocks.length,
+                        'JSON blocks',
+                    )
                     for (let i = vBlocks.length - 1; i >= 0; i--) {
-                        const block = vBlocks[i];
-                        if (voiceKeys.some(k => block.includes(k))) {
+                        const block = vBlocks[i]
+                        if (voiceKeys.some((k) => block.includes(k))) {
                             try {
-                                const parsed = JSON.parse(block);
+                                const parsed = JSON.parse(block)
                                 if (parsed && typeof parsed === 'object') {
-                                    newMsg.innerVoice = parsed;
-                                    console.log('[ChatStore] InnerVoice fallback parsed OK:', Object.keys(parsed));
+                                    newMsg.innerVoice = parsed
+                                    console.log(
+                                        '[ChatStore] InnerVoice fallback parsed OK:',
+                                        Object.keys(parsed),
+                                    )
                                 }
                             } catch (e) {
-                                console.warn('[ChatStore] InnerVoice fallback parse failed:', e.message);
+                                console.warn(
+                                    '[ChatStore] InnerVoice fallback parse failed:',
+                                    e.message,
+                                )
                             }
-                            break;
+                            break
                         }
                     }
                 }
             }
         }
-        
-        console.log('[ChatStore] addMessage final innerVoice:', newMsg.innerVoice ? 'present' : 'null', 'role:', newMsg.role);
-        
+
+        console.log(
+            '[ChatStore] addMessage final innerVoice:',
+            newMsg.innerVoice ? 'present' : 'null',
+            'role:',
+            newMsg.role,
+        )
+
         // Debug: 记录 HTML 消息
         if (msg.type === 'html' || msg.html) {
             console.log('[ChatStore] addMessage received HTML message:', {
@@ -861,14 +1126,20 @@ export const useChatStore = defineStore('chat', () => {
                 type: msg.type,
                 htmlLength: msg.html?.length,
                 contentLength: msg.content?.length,
-                forceCard: msg.forceCard
-            });
+                forceCard: msg.forceCard,
+            })
         }
 
         // 1.0 STRICT CONTENT FILTER: Reject "undefined", "null", or empty content
-        if (newMsg.type === 'text' && (!newMsg.content || newMsg.content === 'undefined' || newMsg.content === 'null' || newMsg.content.trim() === '')) {
-            console.warn('[ChatStore] Rejected invalid content:', newMsg.content);
-            return false;
+        if (
+            newMsg.type === 'text' &&
+            (!newMsg.content ||
+                newMsg.content === 'undefined' ||
+                newMsg.content === 'null' ||
+                newMsg.content.trim() === '')
+        ) {
+            console.warn('[ChatStore] Rejected invalid content:', newMsg.content)
+            return false
         }
 
         // 1.1 Critical: Ensure all payment messages have paymentId and standardized content
@@ -885,67 +1156,85 @@ export const useChatStore = defineStore('chat', () => {
 
         // 1.3 JSON Command Parsing (For Debugging/User Manual Input)
         if (newMsg.type === 'text' && typeof newMsg.content === 'string') {
-            const content = newMsg.content.trim();
+            const content = newMsg.content.trim()
             // Look for any JSON-like structure that has "type":"html" or similar keywords
-            const suspectedHtml = (content.includes('"type"') && content.includes('"html"')) || 
-                                  (content.includes('"type":') && content.includes('"html":')) ||
-                                  (content.includes('<div') && content.includes('{'));
+            const suspectedHtml =
+                (content.includes('"type"') && content.includes('"html"')) ||
+                (content.includes('"type":') && content.includes('"html":')) ||
+                (content.includes('<div') && content.includes('{'))
 
             if (suspectedHtml) {
-                console.log('[ChatStore] Suspected HTML message detected, content preview:', content.substring(0, 100));
+                console.log(
+                    '[ChatStore] Suspected HTML message detected, content preview:',
+                    content.substring(0, 100),
+                )
                 try {
                     // 首先尝试直接解析整个内容作为 JSON
                     if (content.startsWith('{')) {
                         try {
-                            const parsed = JSON.parse(content);
-                            console.log('[ChatStore] JSON parsed successfully:', parsed.type, parsed.html ? 'has html' : 'no html');
+                            const parsed = JSON.parse(content)
+                            console.log(
+                                '[ChatStore] JSON parsed successfully:',
+                                parsed.type,
+                                parsed.html ? 'has html' : 'no html',
+                            )
                             if (parsed.type === 'html' && (parsed.html || parsed.content)) {
-                                newMsg.type = 'html';
-                                newMsg.html = parsed.html || parsed.content;
-                                newMsg.forceCard = true;
-                                console.log('[ChatStore] Detected Manual HTML Message (JSON Parse), html length:', newMsg.html.length);
+                                newMsg.type = 'html'
+                                newMsg.html = parsed.html || parsed.content
+                                newMsg.forceCard = true
+                                console.log(
+                                    '[ChatStore] Detected Manual HTML Message (JSON Parse), html length:',
+                                    newMsg.html.length,
+                                )
                             }
-                        } catch (e) { 
-                            console.log('[ChatStore] JSON parse failed:', e.message);
+                        } catch (e) {
+                            console.log('[ChatStore] JSON parse failed:', e.message)
                         }
                     }
-                    
+
                     // 如果上面的方法没有成功，尝试简单的关键字检测
                     if (newMsg.type !== 'html') {
-                        if (/["']type["']\s*[:：]\s*["']html["']/i.test(content) || /\[CARD\]/i.test(content)) {
-                            newMsg.type = 'html';
-                            newMsg.forceCard = true; // Flag for component to isolate
-                            console.log('[ChatStore] Detected Manual HTML Message (Keyword Flag)');
+                        if (
+                            /["']type["']\s*[:：]\s*["']html["']/i.test(content) ||
+                            /\[CARD\]/i.test(content)
+                        ) {
+                            newMsg.type = 'html'
+                            newMsg.forceCard = true // Flag for component to isolate
+                            console.log('[ChatStore] Detected Manual HTML Message (Keyword Flag)')
                         }
                     }
                 } catch (e) {
-                    console.log('[ChatStore] HTML detection error:', e.message);
+                    console.log('[ChatStore] HTML detection error:', e.message)
                 }
             }
         }
 
         // 2. Type Auto-Detection (if not specified)
         if (newMsg.type === 'text' && typeof newMsg.content === 'string') {
-            let detectionContent = newMsg.content.replace(/\[INNER_VOICE\][\s\S]*?(?:\[\/INNER_VOICE\]|$)/gi, '').trim();
-            
+            let detectionContent = newMsg.content
+                .replace(/\[INNER_VOICE\][\s\S]*?(?:\[\/INNER_VOICE\]|$)/gi, '')
+                .trim()
+
             // 2.0 Pre-processing: Extract content from [ONLINE]/[OFFLINE] tags for detection
             // This handles cases where红包/转账 is wrapped in mode tags like [ONLINE][红包:...][/ONLINE]
-            let contentForDetection = detectionContent;
-            const onlineMatch = detectionContent.match(/\[ONLINE\]([\s\S]*?)\[\/ONLINE\]/i);
-            const offlineMatch = detectionContent.match(/\[OFFLINE\]([\s\S]*?)\[\/OFFLINE\]/i);
+            let contentForDetection = detectionContent
+            const onlineMatch = detectionContent.match(/\[ONLINE\]([\s\S]*?)\[\/ONLINE\]/i)
+            const offlineMatch = detectionContent.match(/\[OFFLINE\]([\s\S]*?)\[\/OFFLINE\]/i)
             if (onlineMatch) {
-                contentForDetection = onlineMatch[1].trim();
+                contentForDetection = onlineMatch[1].trim()
             } else if (offlineMatch) {
-                contentForDetection = offlineMatch[1].trim();
+                contentForDetection = offlineMatch[1].trim()
             }
-            
+
             // Match the tag ONLY if it is the entire content (minus whitespace/inner voice)
             // For AI messages, use a more relaxed search to find embedded tags
-            const tagMatch = contentForDetection.match(/[\[【](发红包|红包|转账|图片|表情包|DRAW|语音|演奏|MUSIC|VIDEO|FILE|LOCATION|FAMILY_CARD|FAMILY_CARD_APPLY|FAMILY_CARD_REJECT|申请亲属卡|拒绝亲属卡|赠送亲属卡|礼物|GIFT)\s*[:：]\s*([^:：\]】]*)(?:\s*[:：]\s*([^:：\]】]*))?(?:\s*[:：]\s*([^\]】]*))?[\]】]/i)
-            
+            const tagMatch = contentForDetection.match(
+                /[\[【](发红包|红包|转账|图片|表情包|DRAW|语音|演奏|MUSIC|VIDEO|FILE|LOCATION|FAMILY_CARD|FAMILY_CARD_APPLY|FAMILY_CARD_REJECT|申请亲属卡|拒绝亲属卡|赠送亲属卡|礼物|GIFT)\s*[:：]\s*([^:：\]】]*)(?:\s*[:：]\s*([^:：\]】]*))?(?:\s*[:：]\s*([^\]】]*))?[\]】]/i,
+            )
+
             // Only consider it a "tag only" message if it starts and ends with the tag
             const isTagOnly = /^[\[【].*[\]】]$/.test(contentForDetection.trim())
-            
+
             if (tagMatch) {
                 const tagType = tagMatch[1]
                 const val1 = (tagMatch[2] || '').trim()
@@ -994,19 +1283,31 @@ export const useChatStore = defineStore('chat', () => {
                     newMsg.type = 'file'
                 } else if (tagType === 'LOCATION') {
                     newMsg.type = 'location'
-                } else if (tagType.toUpperCase() === 'FAMILY_CARD_APPLY' || tagType === '申请亲属卡') {
+                } else if (
+                    tagType.toUpperCase() === 'FAMILY_CARD_APPLY' ||
+                    tagType === '申请亲属卡'
+                ) {
                     newMsg.type = 'family_card_apply'
-                    newMsg.paymentId = val2 || `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
+                    newMsg.paymentId =
+                        val2 || `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
                     newMsg.note = val1 || '申请亲属卡'
                     newMsg.content = `[申请亲属卡:${newMsg.note}:${newMsg.paymentId}]`
-                } else if (tagType.toUpperCase() === 'FAMILY_CARD_REJECT' || tagType === '拒绝亲属卡') {
+                } else if (
+                    tagType.toUpperCase() === 'FAMILY_CARD_REJECT' ||
+                    tagType === '拒绝亲属卡'
+                ) {
                     newMsg.type = 'family_card_reject'
                     newMsg.paymentId = val1 || ''
-                } else if (tagType.toUpperCase() === 'FAMILY_CARD' || tagType === '赠送亲属卡' || tagType === '亲属卡') {
+                } else if (
+                    tagType.toUpperCase() === 'FAMILY_CARD' ||
+                    tagType === '赠送亲属卡' ||
+                    tagType === '亲属卡'
+                ) {
                     newMsg.type = 'family_card'
                     newMsg.amount = parseFloat(val1) || 0
                     newMsg.note = val2 || '我的钱就是你的钱'
-                    newMsg.paymentId = val3 || `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
+                    newMsg.paymentId =
+                        val3 || `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
                     newMsg.content = `[亲属卡:${newMsg.amount}:${newMsg.note}:${newMsg.paymentId}]`
                 } else if (tagType === '礼物' || tagType.toUpperCase() === 'GIFT') {
                     newMsg.type = 'gift'
@@ -1018,7 +1319,7 @@ export const useChatStore = defineStore('chat', () => {
 
                     if (val3) {
                         newMsg.giftQuantity = parseInt(val2) || 1
-                        rawDescription = val3  // 可能包含描述和DRAW指令
+                        rawDescription = val3 // 可能包含描述和DRAW指令
                     } else if (val2) {
                         const q = parseInt(val2)
                         if (!isNaN(q) && /^\d+$/.test(val2)) {
@@ -1043,23 +1344,33 @@ export const useChatStore = defineStore('chat', () => {
                         // 如果文字部分较短（<20字），视为留言；否则视为描述
                         if (textPart.length <= 20 && textPart.length > 0) {
                             rawNote = textPart
-                            rawDescription = ''  // 短文本作为留言
+                            rawDescription = '' // 短文本作为留言
                         } else if (textPart.length > 20) {
-                            rawDescription = textPart  // 长文本作为描述
+                            rawDescription = textPart // 长文本作为描述
                             rawNote = ''
                         }
 
                         // 生成礼物图片
                         if (imagePrompt) {
-                            console.log('[ChatStore] GIFT DRAW detected, generating image for gift:', newMsg.giftName, 'prompt:', imagePrompt.substring(0, 50));
-                            import('@/utils/aiService').then(m => {
-                                m.generateImage(imagePrompt, { chatId }).then(url => {
-                                    newMsg.giftImage = url
-                                    saveChats()
-                                }).catch(err => {
-                                    console.warn('[ChatStore] GIFT image generation failed:', err)
-                                    // [FIX] 图片生成失败不阻塞礼物发送，静默降级
-                                })
+                            console.log(
+                                '[ChatStore] GIFT DRAW detected, generating image for gift:',
+                                newMsg.giftName,
+                                'prompt:',
+                                imagePrompt.substring(0, 50),
+                            )
+                            import('@/utils/aiService').then((m) => {
+                                m.generateImage(imagePrompt, { chatId })
+                                    .then((url) => {
+                                        newMsg.giftImage = url
+                                        saveChats()
+                                    })
+                                    .catch((err) => {
+                                        console.warn(
+                                            '[ChatStore] GIFT image generation failed:',
+                                            err,
+                                        )
+                                        // [FIX] 图片生成失败不阻塞礼物发送，静默降级
+                                    })
                             })
                         }
                     } else {
@@ -1077,14 +1388,20 @@ export const useChatStore = defineStore('chat', () => {
 
                     // 设置最终字段（确保都有值）
                     if (!newMsg.giftDescription) {
-                        newMsg.giftDescription = rawDescription || `${newMsg.giftName} - 一份珍贵的礼物`
+                        newMsg.giftDescription =
+                            rawDescription || `${newMsg.giftName} - 一份珍贵的礼物`
                     }
                     if (!newMsg.giftNote) {
                         newMsg.giftNote = rawNote || ''
                     }
 
                     newMsg.giftId = `GIFT-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
-                    console.log('[ChatStore] Gift parsed:', { name: newMsg.giftName, quantity: newMsg.giftQuantity, desc: newMsg.giftDescription?.substring(0, 30), note: newMsg.giftNote?.substring(0, 30) })
+                    console.log('[ChatStore] Gift parsed:', {
+                        name: newMsg.giftName,
+                        quantity: newMsg.giftQuantity,
+                        desc: newMsg.giftDescription?.substring(0, 30),
+                        note: newMsg.giftNote?.substring(0, 30),
+                    })
 
                     if (isTagOnly) {
                         newMsg.content = `[礼物:${newMsg.giftName}:${newMsg.giftQuantity}:${newMsg.giftNote || newMsg.giftDescription}:${newMsg.giftId}]`
@@ -1092,48 +1409,54 @@ export const useChatStore = defineStore('chat', () => {
                 }
             } else {
                 // 2.1 Fallback: Loose Parsing for User Inputs like "[转账] 520元" or "[红包] 恭喜发财"
-                const looseMatch = detectionContent.match(/^[\[【](发红包|红包|转账|亲属卡|申请亲属卡|礼物|GIFT)[\]】]\s*(.*)/i);
+                const looseMatch = detectionContent.match(
+                    /^[\[【](发红包|红包|转账|亲属卡|申请亲属卡|礼物|GIFT)[\]】]\s*(.*)/i,
+                )
                 if (looseMatch) {
-                    const tagType = looseMatch[1];
-                    const rawText = looseMatch[2].trim();
+                    const tagType = looseMatch[1]
+                    const rawText = looseMatch[2].trim()
 
                     // Attempt to extract amount (first number found)
-                    const amountMatch = rawText.match(/(\d+(?:\.\d+)?)/);
-                    const amount = amountMatch ? parseFloat(amountMatch[0]) : 0;
+                    const amountMatch = rawText.match(/(\d+(?:\.\d+)?)/)
+                    const amount = amountMatch ? parseFloat(amountMatch[0]) : 0
 
                     // Note is the rest of the text, or default
-                    let note = rawText;
+                    let note = rawText
                     if (amountMatch) {
                         // Remove amount and common currency suffixes from note
-                        note = rawText.replace(amountMatch[0], '').replace(/(元|块|CNY)/gi, '').trim();
+                        note = rawText
+                            .replace(amountMatch[0], '')
+                            .replace(/(元|块|CNY)/gi, '')
+                            .trim()
                     }
 
                     if (tagType === '申请亲属卡') {
-                        newMsg.type = 'family_card_apply';
-                        newMsg.note = rawText || '申请亲属卡';
-                        newMsg.paymentId = `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-                        newMsg.content = `[申请亲属卡:${newMsg.note}:${newMsg.paymentId}]`;
+                        newMsg.type = 'family_card_apply'
+                        newMsg.note = rawText || '申请亲属卡'
+                        newMsg.paymentId = `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
+                        newMsg.content = `[申请亲属卡:${newMsg.note}:${newMsg.paymentId}]`
                     } else if (tagType === '亲属卡') {
-                        newMsg.type = 'family_card';
-                        newMsg.amount = amount;
-                        newMsg.note = note || '我的钱就是你的钱';
-                        newMsg.paymentId = `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-                        newMsg.content = `[亲属卡:${newMsg.amount}:${newMsg.note}:${newMsg.paymentId}]`;
+                        newMsg.type = 'family_card'
+                        newMsg.amount = amount
+                        newMsg.note = note || '我的钱就是你的钱'
+                        newMsg.paymentId = `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
+                        newMsg.content = `[亲属卡:${newMsg.amount}:${newMsg.note}:${newMsg.paymentId}]`
                     } else if (tagType === '礼物' || tagType === 'GIFT') {
-                        newMsg.type = 'gift';
-                        newMsg.giftName = rawText || '礼物';
-                        newMsg.giftQuantity = 1;
-                        newMsg.giftId = `GIFT-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-                        newMsg.content = `[礼物:${newMsg.giftName}:1::${newMsg.giftId}]`;
+                        newMsg.type = 'gift'
+                        newMsg.giftName = rawText || '礼物'
+                        newMsg.giftQuantity = 1
+                        newMsg.giftId = `GIFT-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
+                        newMsg.content = `[礼物:${newMsg.giftName}:1::${newMsg.giftId}]`
                     } else {
-                        if (!note) note = tagType === '转账' ? '转账给您' : '恭喜发财';
-                        newMsg.type = (tagType === '发红包' || tagType === '红包') ? 'redpacket' : 'transfer';
-                        newMsg.amount = amount;
-                        newMsg.note = note;
-                        newMsg.paymentId = `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+                        if (!note) note = tagType === '转账' ? '转账给您' : '恭喜发财'
+                        newMsg.type =
+                            tagType === '发红包' || tagType === '红包' ? 'redpacket' : 'transfer'
+                        newMsg.amount = amount
+                        newMsg.note = note
+                        newMsg.paymentId = `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
                         // Rewrite content with ID
-                        const typeLabel = newMsg.type === 'redpacket' ? '红包' : '转账';
-                        newMsg.content = `[${typeLabel}:${newMsg.amount}:${newMsg.note}:${newMsg.paymentId}]`;
+                        const typeLabel = newMsg.type === 'redpacket' ? '红包' : '转账'
+                        newMsg.content = `[${typeLabel}:${newMsg.amount}:${newMsg.note}:${newMsg.paymentId}]`
                     }
                 }
             }
@@ -1142,36 +1465,36 @@ export const useChatStore = defineStore('chat', () => {
         // 3. Robust AI Payment Handling (ID-based)
         if (newMsg.role === 'ai') {
             // Handle AI claiming by ID: [领取红包:PAY-xxx] or [领取转账:PAY-xxx] or [领取亲属卡:PAY-xxx]
-            const claimRegex = /\[领取(红包|转账|亲属卡):([^\]]+)\]/g;
-            let claimMatch;
-            const claimedPayments = [];
+            const claimRegex = /\[领取(红包|转账|亲属卡):([^\]]+)\]/g
+            let claimMatch
+            const claimedPayments = []
             while ((claimMatch = claimRegex.exec(newMsg.content)) !== null) {
-                const paymentType = claimMatch[1];
-                const paymentId = claimMatch[2].trim();
-                const targetMsg = chat.msgs.find(m => m.paymentId === paymentId);
+                const paymentType = claimMatch[1]
+                const paymentId = claimMatch[2].trim()
+                const targetMsg = chat.msgs.find((m) => m.paymentId === paymentId)
                 if (targetMsg && !targetMsg.isClaimed && !targetMsg.isRejected) {
-                    targetMsg.isClaimed = true;
-                    targetMsg.claimTime = Date.now();
-                    targetMsg.claimedBy = { name: chat.name, avatar: chat.avatar };
-                    console.log(`[ChatStore] AI claimed ${paymentType} ${paymentId}`);
-                    claimedPayments.push(paymentType);
+                    targetMsg.isClaimed = true
+                    targetMsg.claimTime = Date.now()
+                    targetMsg.claimedBy = { name: chat.name, avatar: chat.avatar }
+                    console.log(`[ChatStore] AI claimed ${paymentType} ${paymentId}`)
+                    claimedPayments.push(paymentType)
                 }
             }
 
             // Handle AI rejecting by ID: Support all variations
             // [拒收红包], [退回红包], [拒收转账], [退回转账], [拒收亲属卡], [退回亲属卡]
-            const rejectRegex = /\[(拒收|退回)(红包|转账|亲属卡):([^\]]+)\]/g;
-            let rejectMatch;
-            const rejectedPayments = [];
+            const rejectRegex = /\[(拒收|退回)(红包|转账|亲属卡):([^\]]+)\]/g
+            let rejectMatch
+            const rejectedPayments = []
             while ((rejectMatch = rejectRegex.exec(newMsg.content)) !== null) {
-                const paymentType = rejectMatch[2];
-                const paymentId = rejectMatch[3].trim(); // Note: group 3 now, not 2
-                const targetMsg = chat.msgs.find(m => m.paymentId === paymentId);
+                const paymentType = rejectMatch[2]
+                const paymentId = rejectMatch[3].trim() // Note: group 3 now, not 2
+                const targetMsg = chat.msgs.find((m) => m.paymentId === paymentId)
                 if (targetMsg && !targetMsg.isClaimed && !targetMsg.isRejected) {
-                    targetMsg.isRejected = true;
-                    targetMsg.rejectTime = Date.now();
-                    console.log(`[ChatStore/addMessage] AI rejected ${paymentType} ${paymentId}`);
-                    rejectedPayments.push(paymentType);
+                    targetMsg.isRejected = true
+                    targetMsg.rejectTime = Date.now()
+                    console.log(`[ChatStore/addMessage] AI rejected ${paymentType} ${paymentId}`)
+                    rejectedPayments.push(paymentType)
                 }
             }
 
@@ -1179,24 +1502,27 @@ export const useChatStore = defineStore('chat', () => {
             newMsg.content = newMsg.content
                 .replace(/\[领取(红包|转账|亲属卡):[^\]]+\]/g, '')
                 .replace(/\[(拒收|退回)(红包|转账|亲属卡):[^\]]+\]/g, '')
-                .trim();
+                .trim()
 
             // [BUG FIX] return saveChats() 会返回 Promise, 调用方若做 if(result) 判断会得到 truthy Promise,
             // 且 reject 时成为 unhandled rejection. 改为 fire-and-forget + return.
-            if (!newMsg.content && (claimMatch || rejectMatch)) { saveChats().catch(() => {}); return; }
+            if (!newMsg.content && (claimMatch || rejectMatch)) {
+                saveChats().catch(() => {})
+                return
+            }
 
             // Add system messages for claims/rejects (AFTER AI's message is added)
             if (claimedPayments.length > 0 || rejectedPayments.length > 0) {
                 // We'll add these after pushing newMsg
-                newMsg._pendingSystemMessages = [];
-                claimedPayments.forEach(type => {
+                newMsg._pendingSystemMessages = []
+                claimedPayments.forEach((type) => {
                     newMsg._pendingSystemMessages.push({
                         id: crypto.randomUUID(),
                         role: 'system',
                         type: 'text',
                         content: `${chat.name}领取了${chat.userName || '你'}的${type}`,
-                        timestamp: Date.now() + 50
-                    });
+                        timestamp: Date.now() + 50,
+                    })
                     // For family cards, add additional notification about activation
                     if (type === '亲属卡') {
                         newMsg._pendingSystemMessages.push({
@@ -1204,153 +1530,195 @@ export const useChatStore = defineStore('chat', () => {
                             role: 'system',
                             type: 'text',
                             content: `${chat.name}领取的亲属卡已生效`,
-                            timestamp: Date.now() + 150
-                        });
+                            timestamp: Date.now() + 150,
+                        })
                     }
-                });
-                rejectedPayments.forEach(type => {
+                })
+                rejectedPayments.forEach((type) => {
                     newMsg._pendingSystemMessages.push({
                         id: crypto.randomUUID(),
                         role: 'system',
                         type: 'text',
                         content: `${chat.name}拒收了${chat.userName || '你'}的${type}`,
-                        timestamp: Date.now() + 100
-                    });
-                });
+                        timestamp: Date.now() + 100,
+                    })
+                })
             }
-
         }
 
         // 3.1 BIO (Personal Archive) Updates - Runs for both User and AI
         if (newMsg.content.includes('[UPDATE_BIO:') || newMsg.content.includes('[BIO:')) {
-            const bioRegex = /\[(?:UPDATE_)?BIO:([^:]+):([^\]]+)\]/gi;
-            let match;
-            let bioUpdated = false;
+            const bioRegex = /\[(?:UPDATE_)?BIO:([^:]+):([^\]]+)\]/gi
+            let match
+            let bioUpdated = false
 
             // Map of keys to bio structure
             const keyMap = {
-                'gender': 'gender', '性别': 'gender',
-                'age': 'age', '年龄': 'age',
-                'birthday': 'birthday', '生日': 'birthday',
-                'zodiac': 'zodiac', '星座': 'zodiac',
-                'mbti': 'mbti', '人格': 'mbti',
-                'height': 'height', '身高': 'height',
-                'weight': 'weight', '体重': 'weight',
-                'body': 'body', '身材': 'body',
-                'occupation': 'occupation', '职业': 'occupation',
-                'status': 'status', '婚姻': 'status', '情感': 'status',
-                'scent': 'scent', '气味': 'scent',
-                'style': 'style', '风格': 'style',
-                'idealtype': 'idealType', '理想型': 'idealType',
-                'heartbeat': 'heartbeatMoment', '心动时刻': 'heartbeatMoment',
-                'signature': 'signature', '个性签名': 'signature',
-                'location': 'location', '位置': 'location'
-            };
+                gender: 'gender',
+                性别: 'gender',
+                age: 'age',
+                年龄: 'age',
+                birthday: 'birthday',
+                生日: 'birthday',
+                zodiac: 'zodiac',
+                星座: 'zodiac',
+                mbti: 'mbti',
+                人格: 'mbti',
+                height: 'height',
+                身高: 'height',
+                weight: 'weight',
+                体重: 'weight',
+                body: 'body',
+                身材: 'body',
+                occupation: 'occupation',
+                职业: 'occupation',
+                status: 'status',
+                婚姻: 'status',
+                情感: 'status',
+                scent: 'scent',
+                气味: 'scent',
+                style: 'style',
+                风格: 'style',
+                idealtype: 'idealType',
+                理想型: 'idealType',
+                heartbeat: 'heartbeatMoment',
+                心动时刻: 'heartbeatMoment',
+                signature: 'signature',
+                个性签名: 'signature',
+                location: 'location',
+                位置: 'location',
+            }
 
             while ((match = bioRegex.exec(newMsg.content)) !== null) {
-                const key = match[1].trim().toLowerCase();
-                let val = match[2].trim();
+                const key = match[1].trim().toLowerCase()
+                let val = match[2].trim()
 
                 // Strip any HTML tags the AI might have included (ends "html" issue)
-                val = val.replace(/<[^>]*>/g, '').trim();
+                val = val.replace(/<[^>]*>/g, '').trim()
 
                 // Double check bio exists here to prevent "Cannot set properties of undefined"
-                if (!chat.bio) chat.bio = {};
+                if (!chat.bio) chat.bio = {}
 
                 if (keyMap[key]) {
-                    const bioKey = keyMap[key];
+                    const bioKey = keyMap[key]
                     if (bioKey === 'signature') {
-                        chat.statusText = val;
-                        chat.bio.signature = val;
-                        chat.bio.statusText = val; // Also sync to internal bio for view consistency
+                        chat.statusText = val
+                        chat.bio.signature = val
+                        chat.bio.statusText = val // Also sync to internal bio for view consistency
                     } else {
-                        chat.bio[bioKey] = val;
+                        chat.bio[bioKey] = val
                     }
-                    bioUpdated = true;
+                    bioUpdated = true
                 } else if (key === 'hobby' || key === '爱好') {
                     // Support multiple hobbies in one tag
-                    const list = val.split(/[，, ]+/).filter(v => v.trim());
-                    list.forEach(item => {
+                    const list = val.split(/[，, ]+/).filter((v) => v.trim())
+                    list.forEach((item) => {
                         if (!chat.bio.hobbies.includes(item)) {
-                            chat.bio.hobbies.push(item);
-                            bioUpdated = true;
+                            chat.bio.hobbies.push(item)
+                            bioUpdated = true
                         }
-                    });
+                    })
                 } else if (key === 'trait' || key === '特质') {
-                    const list = val.split(/[，, ]+/).filter(v => v.trim());
-                    list.forEach(item => {
+                    const list = val.split(/[，, ]+/).filter((v) => v.trim())
+                    list.forEach((item) => {
                         if (!chat.bio.traits.includes(item)) {
-                            chat.bio.traits.push(item);
-                            bioUpdated = true;
+                            chat.bio.traits.push(item)
+                            bioUpdated = true
                         }
-                    });
+                    })
                 } else if (key.startsWith('routine_')) {
-                    const rKey = key.split('_')[1].toLowerCase();
+                    const rKey = key.split('_')[1].toLowerCase()
                     if (chat.bio.routine && chat.bio.routine[rKey] !== undefined) {
-                        chat.bio.routine[rKey] = val;
-                        bioUpdated = true;
+                        chat.bio.routine[rKey] = val
+                        bioUpdated = true
                     }
                 } else if (key.startsWith('soulbond_')) {
-                    const label = key.split('_')[1];
-                    chat.bio.soulBonds.push({ label, text: val });
-                    bioUpdated = true;
+                    const label = key.split('_')[1]
+                    chat.bio.soulBonds.push({ label, text: val })
+                    bioUpdated = true
                 } else if (key.startsWith('loveitem_')) {
                     // Supported formats: [BIO:LoveItem_1_羽毛笔:Prompt] or [BIO:LoveItem_1:羽毛笔:Prompt]
-                    const parts = key.split(/[_:]/);
-                    const index = parseInt(parts[1]) - 1;
-                    let itemName = parts[2] || '爱之物';
-                    if (itemName === '物品名') itemName = '爱之物'; // Safety against literal placeholder
+                    const parts = key.split(/[_:]/)
+                    const index = parseInt(parts[1]) - 1
+                    let itemName = parts[2] || '爱之物'
+                    if (itemName === '物品名') itemName = '爱之物' // Safety against literal placeholder
 
                     // Clean value from potential HTML AI might have hallucinated
-                    const cleanVal = val.replace(/<[^>]*>/g, '').trim();
+                    const cleanVal = val.replace(/<[^>]*>/g, '').trim()
 
                     if (index >= 0 && index < 3) {
-                        chat.bio.loveItems[index].name = itemName;
-                        generateImage(cleanVal, { chatId }).then(url => {
-                            chat.bio.loveItems[index].image = url;
-                            saveChats();
-                        }).catch(err => {
-                            console.warn('[ChatStore] Love item image generation failed:', err);
-                        });
-                        bioUpdated = true;
+                        chat.bio.loveItems[index].name = itemName
+                        generateImage(cleanVal, { chatId })
+                            .then((url) => {
+                                chat.bio.loveItems[index].image = url
+                                saveChats()
+                            })
+                            .catch((err) => {
+                                console.warn('[ChatStore] Love item image generation failed:', err)
+                            })
+                        bioUpdated = true
                     }
                 }
             }
 
-            // Note: We no longer strip tags from newMsg.content here. 
-            // We let the UI (ChatWindow.vue) handle formatting for display, 
-            // or we will handle it in a final pass below to ensure the AI 
+            // Note: We no longer strip tags from newMsg.content here.
+            // We let the UI (ChatWindow.vue) handle formatting for display,
+            // or we will handle it in a final pass below to ensure the AI
             // always sees its own tags in history.
 
             if (bioUpdated) {
-                saveChats();
+                saveChats()
                 // [FIX] 给用户可见的档案更新提示
                 triggerToast(`${chat.name} 的档案已更新`, 'info')
             }
         }
 
-
-
         // 3.2 Moment Share Parsing (AI Only)
         // 3.2.1 Handle raw JSON format (AI sometimes outputs JSON without MOMENT_SHARE tag)
-        console.log('[ChatStore] Moment parsing check - role:', newMsg.role, 'content:', newMsg.content.substring(0, 50));
-        if (newMsg.role === 'ai' && !newMsg.content.includes('[MOMENT_SHARE:') && !newMsg.content.includes('[分享朋友圈:')) {
-            const trimmedContent = newMsg.content.trim();
-            console.log('[ChatStore] Checking raw JSON moment format, starts with {:', trimmedContent.startsWith('{'), 'ends with }:', trimmedContent.endsWith('}'));
+        console.log(
+            '[ChatStore] Moment parsing check - role:',
+            newMsg.role,
+            'content:',
+            newMsg.content.substring(0, 50),
+        )
+        if (
+            newMsg.role === 'ai' &&
+            !newMsg.content.includes('[MOMENT_SHARE:') &&
+            !newMsg.content.includes('[分享朋友圈:')
+        ) {
+            const trimmedContent = newMsg.content.trim()
+            console.log(
+                '[ChatStore] Checking raw JSON moment format, starts with {:',
+                trimmedContent.startsWith('{'),
+                'ends with }:',
+                trimmedContent.endsWith('}'),
+            )
             // Check if content is a pure JSON object with moment-related fields
             if (trimmedContent.startsWith('{') && trimmedContent.endsWith('}')) {
                 try {
-                    const parsed = JSON.parse(trimmedContent);
-                    console.log('[ChatStore] Parsed JSON:', parsed);
+                    const parsed = JSON.parse(trimmedContent)
+                    console.log('[ChatStore] Parsed JSON:', parsed)
                     // Validate it has the required moment fields
                     // FIX: Relax validation - accept content with any moment-specific field
                     // Previously required (imagePrompt || location || visibility) which missed simple moments
                     const hasMomentContent = parsed.content || parsed.text || parsed.内容
-                    const hasMomentIndicator = parsed.imagePrompt || parsed.imageDescriptions || parsed.location || parsed.visibility || parsed.interactions || parsed.image || parsed.images || parsed.html || parsed.mentions
+                    const hasMomentIndicator =
+                        parsed.imagePrompt ||
+                        parsed.imageDescriptions ||
+                        parsed.location ||
+                        parsed.visibility ||
+                        parsed.interactions ||
+                        parsed.image ||
+                        parsed.images ||
+                        parsed.html ||
+                        parsed.mentions
                     // Also match if it looks like a moment share (has content + author-like fields)
-                    const looksLikeMoment = hasMomentContent && (hasMomentIndicator || parsed.author || parsed.avatar)
+                    const looksLikeMoment =
+                        hasMomentContent && (hasMomentIndicator || parsed.author || parsed.avatar)
                     if (looksLikeMoment) {
-                        console.log('[ChatStore] Valid moment JSON detected, converting to moment_card');
+                        console.log(
+                            '[ChatStore] Valid moment JSON detected, converting to moment_card',
+                        )
                         const momentData = {
                             id: parsed.id || crypto.randomUUID(),
                             content: parsed.content || parsed.text || parsed.内容 || '',
@@ -1362,30 +1730,40 @@ export const useChatStore = defineStore('chat', () => {
                             visibility: parsed.visibility || 'public',
                             interactions: parsed.interactions || [],
                             mentions: parsed.mentions || [],
-                            html: parsed.html || null
-                        };
-                        
+                            html: parsed.html || null,
+                        }
+
                         // FIX: Generate images from imagePrompt if present
                         const momentImages = parsed.images || []
                         const momentImageDescriptions = parsed.imageDescriptions || []
                         if (parsed.imagePrompt && momentImages.length === 0) {
                             try {
-                                if (typeof parsed.imagePrompt === 'string' && (parsed.imagePrompt.startsWith('http') || parsed.imagePrompt.startsWith('data:'))) {
+                                if (
+                                    typeof parsed.imagePrompt === 'string' &&
+                                    (parsed.imagePrompt.startsWith('http') ||
+                                        parsed.imagePrompt.startsWith('data:'))
+                                ) {
                                     momentImages.push(parsed.imagePrompt)
                                 } else {
-                                    const imageUrl = await generateImage(String(parsed.imagePrompt), { chatId })
+                                    const imageUrl = await generateImage(
+                                        String(parsed.imagePrompt),
+                                        { chatId },
+                                    )
                                     if (imageUrl) momentImages.push(imageUrl)
                                 }
                             } catch (e) {
-                                console.warn('[ChatStore] Failed to generate moment image from prompt:', e)
+                                console.warn(
+                                    '[ChatStore] Failed to generate moment image from prompt:',
+                                    e,
+                                )
                             }
                         }
-                        
+
                         // Convert to moment_card type
-                        newMsg.type = 'moment_card';
-                        newMsg.momentData = momentData;
-                        newMsg.content = JSON.stringify(momentData);
-                        
+                        newMsg.type = 'moment_card'
+                        newMsg.momentData = momentData
+                        newMsg.content = JSON.stringify(momentData)
+
                         // Add to moments feed with all available data
                         const momentResult = await getMomentsStore().addMoment({
                             id: momentData.id,
@@ -1397,24 +1775,27 @@ export const useChatStore = defineStore('chat', () => {
                             visibility: momentData.visibility,
                             mentions: momentData.mentions,
                             interactions: momentData.interactions,
-                            html: momentData.html
-                        });
+                            html: momentData.html,
+                        })
 
                         addMessage(chatId, {
                             role: 'system',
                             type: 'system',
                             content: `${chat.name} 发布了一条朋友圈`,
-                            _momentReferenceId: momentResult?.id
-                        });
+                            _momentReferenceId: momentResult?.id,
+                        })
                     }
                 } catch (e) {
                     // Not valid JSON, ignore
                 }
             }
         }
-        
+
         // 3.2.2 Handle standard MOMENT_SHARE tag format
-        if (newMsg.role === 'ai' && (newMsg.content.includes('[MOMENT_SHARE:') || newMsg.content.includes('[分享朋友圈:'))) {
+        if (
+            newMsg.role === 'ai' &&
+            (newMsg.content.includes('[MOMENT_SHARE:') || newMsg.content.includes('[分享朋友圈:'))
+        ) {
             // [FIX] 使用 brace-counting 提取 payload，兼容嵌套 JSON 中的括号（替代原来的非贪婪正则）
             const tagPattern = /\[(?:MOMENT_SHARE|分享朋友圈)[:：]\s*/i
             const tagMatch = newMsg.content.match(tagPattern)
@@ -1422,18 +1803,33 @@ export const useChatStore = defineStore('chat', () => {
 
             if (tagMatch) {
                 const payloadStart = tagMatch.index + tagMatch[0].length
-                let depth = 0, inStr = false, escaped = false, payloadEnd = -1
+                let depth = 0,
+                    inStr = false,
+                    escaped = false,
+                    payloadEnd = -1
 
                 for (let i = payloadStart; i < newMsg.content.length; i++) {
                     const ch = newMsg.content[i]
-                    if (escaped) { escaped = false; continue }
-                    if (ch === '\\') { escaped = true; continue }
-                    if (ch === '"') { inStr = !inStr; continue }
+                    if (escaped) {
+                        escaped = false
+                        continue
+                    }
+                    if (ch === '\\') {
+                        escaped = true
+                        continue
+                    }
+                    if (ch === '"') {
+                        inStr = !inStr
+                        continue
+                    }
                     if (inStr) continue
                     if (ch === '{' || ch === '[') depth++
                     else if (ch === '}' || ch === ']') {
                         depth--
-                        if (depth < 0) { payloadEnd = i; break } // 找到闭合的 ] 或 }
+                        if (depth < 0) {
+                            payloadEnd = i
+                            break
+                        } // 找到闭合的 ] 或 }
                     }
                 }
 
@@ -1444,60 +1840,70 @@ export const useChatStore = defineStore('chat', () => {
 
             // 兜底：如果 brace-counting 失败，尝试原始正则
             if (!match) {
-                const shareRegex = /\[(?:MOMENT_SHARE|分享朋友圈)[:：]\s*([\s\S]+?)\](?=\s*(?:\[|【|$))/i;
-                match = newMsg.content.match(shareRegex);
+                const shareRegex =
+                    /\[(?:MOMENT_SHARE|分享朋友圈)[:：]\s*([\s\S]+?)\](?=\s*(?:\[|【|$))/i
+                match = newMsg.content.match(shareRegex)
             }
 
             if (match) {
-                let shareContent = match[1].trim();
-                let momentData = null;
+                let shareContent = match[1].trim()
+                let momentData = null
 
                 try {
                     // Pre-process shareContent: handle AI's tendency to escape quotes in tags
-                    const unescapedContent = shareContent.replace(/\\"/g, '"');
-                    
+                    const unescapedContent = shareContent.replace(/\\"/g, '"')
+
                     if (unescapedContent.startsWith('{')) {
-                        momentData = JSON.parse(unescapedContent);
+                        momentData = JSON.parse(unescapedContent)
                     } else if (shareContent.startsWith('{')) {
-                        momentData = JSON.parse(shareContent);
+                        momentData = JSON.parse(shareContent)
                     }
                 } catch (e) {
-                    console.warn('[ChatStore] Failed to parse Moment JSON, falling back to basic data', e);
+                    console.warn(
+                        '[ChatStore] Failed to parse Moment JSON, falling back to basic data',
+                        e,
+                    )
                 }
 
                 // Fallback: If not JSON or failed, treat as simple text
                 if (!momentData) {
                     momentData = {
                         id: crypto.randomUUID(),
-                        text: shareContent.replace(/\\"/g, '"'), 
+                        text: shareContent.replace(/\\"/g, '"'),
                         author: chat.name,
-                        image: chat.avatar
-                    };
+                        image: chat.avatar,
+                    }
                 }
 
                 // Ensure essential fields
-                if (!momentData.id) momentData.id = crypto.randomUUID();
-                if (!momentData.author) momentData.author = chat.name;
-                if (!momentData.avatar) momentData.avatar = chat.avatar;
+                if (!momentData.id) momentData.id = crypto.randomUUID()
+                if (!momentData.author) momentData.author = chat.name
+                if (!momentData.avatar) momentData.avatar = chat.avatar
 
-                // We've found a share tag. We want to convert the WHOLE message to a moment_card ONLY if 
-                // there's no other significant text. If there is other text, the UI component will handle 
+                // We've found a share tag. We want to convert the WHOLE message to a moment_card ONLY if
+                // there's no other significant text. If there is other text, the UI component will handle
                 // stripping the tag and showing the card separately (Mixed rendering).
                 // However, to maintain current architecture where cards are distinct types:
-                newMsg.type = 'moment_card';
-                newMsg.momentData = momentData; // Store structured data for cleaner access
+                newMsg.type = 'moment_card'
+                newMsg.momentData = momentData // Store structured data for cleaner access
                 // Keep content as JSON for persistence if needed, or structured
-                newMsg.content = JSON.stringify(momentData); 
-                
+                newMsg.content = JSON.stringify(momentData)
+
                 // FIX: Generate images from imagePrompt if present
                 const shareImages = momentData.images || []
                 const shareImageDescriptions = momentData.imageDescriptions || []
                 if (momentData.imagePrompt && shareImages.length === 0) {
                     try {
-                        if (typeof momentData.imagePrompt === 'string' && (momentData.imagePrompt.startsWith('http') || momentData.imagePrompt.startsWith('data:'))) {
+                        if (
+                            typeof momentData.imagePrompt === 'string' &&
+                            (momentData.imagePrompt.startsWith('http') ||
+                                momentData.imagePrompt.startsWith('data:'))
+                        ) {
                             shareImages.push(momentData.imagePrompt)
                         } else {
-                            const imageUrl = await generateImage(String(momentData.imagePrompt), { chatId })
+                            const imageUrl = await generateImage(String(momentData.imagePrompt), {
+                                chatId,
+                            })
                             if (imageUrl) shareImages.push(imageUrl)
                         }
                     } catch (e) {
@@ -1516,18 +1922,18 @@ export const useChatStore = defineStore('chat', () => {
                     visibility: momentData.visibility || 'public',
                     mentions: momentData.mentions || [],
                     interactions: momentData.interactions || [],
-                    html: momentData.html || null
-                });
+                    html: momentData.html || null,
+                })
 
-                newMsg._momentReferenceId = momentResult?.id;
-                
+                newMsg._momentReferenceId = momentResult?.id
+
                 // Add system notification to chat using helper to ensure mode inheritance
                 addMessage(chatId, {
                     role: 'system',
                     type: 'system',
                     content: `${chat.name} 发布了一条朋友圈`,
-                    _momentReferenceId: momentResult.id
-                });
+                    _momentReferenceId: momentResult.id,
+                })
             }
         }
 
@@ -1551,7 +1957,7 @@ export const useChatStore = defineStore('chat', () => {
                     role: 'ai',
                     type: 'mcp',
                     content: toolName || '未知工具',
-                    hidden: false
+                    hidden: false,
                 })
 
                 newMsg.content = newMsg.content.replace(mcpMatch[0], '')
@@ -1566,7 +1972,7 @@ export const useChatStore = defineStore('chat', () => {
                         addMessage(chatId, {
                             role: 'system',
                             type: 'system',
-                            content: resultText
+                            content: resultText,
                         })
 
                         const currentChat = chats.value[chatId]
@@ -1593,7 +1999,11 @@ export const useChatStore = defineStore('chat', () => {
                     }
                 } catch (e) {
                     console.error('[ChatStore] agent action failed:', act.verb, e)
-                    addMessage(chatId, { role: 'system', type: 'system', content: `操作 [${act.verb}] 执行失败：${e.message}` })
+                    addMessage(chatId, {
+                        role: 'system',
+                        type: 'system',
+                        content: `操作 [${act.verb}] 执行失败：${e.message}`,
+                    })
                 }
             }
             // 若执行完动作后文本变空，给个占位，避免被内容过滤器拒掉
@@ -1613,34 +2023,52 @@ export const useChatStore = defineStore('chat', () => {
                 const contentStart = dmMatch.index + dmMatch[0].length
 
                 // 提取到下一个顶层 ] 或消息末尾（兼容嵌套括号）
-                let depth = 0, inStr = false, escaped = false, contentEnd = -1
+                let depth = 0,
+                    inStr = false,
+                    escaped = false,
+                    contentEnd = -1
                 for (let i = contentStart; i < newMsg.content.length; i++) {
                     const ch = newMsg.content[i]
-                    if (escaped) { escaped = false; continue }
-                    if (ch === '\\') { escaped = true; continue }
-                    if (ch === '"') { inStr = !inStr; continue }
+                    if (escaped) {
+                        escaped = false
+                        continue
+                    }
+                    if (ch === '\\') {
+                        escaped = true
+                        continue
+                    }
+                    if (ch === '"') {
+                        inStr = !inStr
+                        continue
+                    }
                     if (inStr) continue
                     if (ch === '[') depth++
                     else if (ch === ']') {
-                        if (depth === 0) { contentEnd = i; break }
+                        if (depth === 0) {
+                            contentEnd = i
+                            break
+                        }
                         depth--
                     }
                 }
 
-                const dmContent = contentEnd > contentStart ? newMsg.content.substring(contentStart, contentEnd).trim() : ''
+                const dmContent =
+                    contentEnd > contentStart
+                        ? newMsg.content.substring(contentStart, contentEnd).trim()
+                        : ''
 
                 // Find target character by name
-                const targetChar = Object.values(chats.value).find(c => c.name === targetName);
+                const targetChar = Object.values(chats.value).find((c) => c.name === targetName)
                 if (targetChar && dmContent) {
                     // Inject message into the DM channel
                     setTimeout(() => {
                         addMessage(targetChar.id, {
                             role: 'ai',
                             content: dmContent,
-                            timestamp: Date.now() + 100
-                        });
-                        triggerToast(`收到来自 ${targetName} 的私聊消息`, 'info');
-                    }, 1500);
+                            timestamp: Date.now() + 100,
+                        })
+                        triggerToast(`收到来自 ${targetName} 的私聊消息`, 'info')
+                    }, 1500)
                 }
             }
 
@@ -1653,26 +2081,46 @@ export const useChatStore = defineStore('chat', () => {
                 const contentStart = momentPostMatch.index + momentPostMatch[0].length
 
                 // 提取到下一个顶层 ] 或消息末尾
-                let depth = 0, inStr = false, escaped = false, contentEnd = -1
+                let depth = 0,
+                    inStr = false,
+                    escaped = false,
+                    contentEnd = -1
                 for (let i = contentStart; i < newMsg.content.length; i++) {
                     const ch = newMsg.content[i]
-                    if (escaped) { escaped = false; continue }
-                    if (ch === '\\') { escaped = true; continue }
-                    if (ch === '"') { inStr = !inStr; continue }
+                    if (escaped) {
+                        escaped = false
+                        continue
+                    }
+                    if (ch === '\\') {
+                        escaped = true
+                        continue
+                    }
+                    if (ch === '"') {
+                        inStr = !inStr
+                        continue
+                    }
                     if (inStr) continue
                     if (ch === '[') depth++
                     else if (ch === ']') {
-                        if (depth === 0) { contentEnd = i; break }
+                        if (depth === 0) {
+                            contentEnd = i
+                            break
+                        }
                         depth--
                     }
                 }
 
-                const postText = contentEnd > contentStart ? newMsg.content.substring(contentStart, contentEnd).trim() : ''
+                const postText =
+                    contentEnd > contentStart
+                        ? newMsg.content.substring(contentStart, contentEnd).trim()
+                        : ''
 
                 // Find author for avatar and authorId
-                const authorEntry = Object.entries(chats.value).find(([, c]) => c.name === authorName);
-                const authorId = authorEntry ? authorEntry[0] : chatId;
-                const authorChar = authorEntry ? authorEntry[1] : null;
+                const authorEntry = Object.entries(chats.value).find(
+                    ([, c]) => c.name === authorName,
+                )
+                const authorId = authorEntry ? authorEntry[0] : chatId
+                const authorChar = authorEntry ? authorEntry[1] : null
 
                 setTimeout(() => {
                     const momentResult = getMomentsStore().addMoment({
@@ -1680,32 +2128,31 @@ export const useChatStore = defineStore('chat', () => {
                         authorName,
                         avatar: authorChar?.avatar || '/avatars/default.png',
                         content: postText,
-                        images: []
-                    });
-                    triggerToast(`${authorName} 发布了新动态`, 'info');
+                        images: [],
+                    })
+                    triggerToast(`${authorName} 发布了新动态`, 'info')
                     // [FIX] 聊天内系统提示，使用实际的动态ID
                     addMessage(chatId, {
                         role: 'system',
                         type: 'system',
                         content: `${authorName} 发布了一条朋友圈`,
-                        _momentReferenceId: momentResult?.id
-                    });
-                }, 2000);
+                        _momentReferenceId: momentResult?.id,
+                    })
+                }, 2000)
             }
 
-
             // 3. [好友申请: 角色名]
-            const friendRequestRegex = /\[(?:好友申请|FRIEND_REQUEST):\s*([^\]]+)\]/gi;
-            let friendMatch;
+            const friendRequestRegex = /\[(?:好友申请|FRIEND_REQUEST):\s*([^\]]+)\]/gi
+            let friendMatch
             while ((friendMatch = friendRequestRegex.exec(newMsg.content)) !== null) {
-                const name = friendMatch[1].trim();
+                const name = friendMatch[1].trim()
                 setTimeout(() => {
                     const newChar = createChat(name, {
                         hideFriendRequest: false, // Show the "Accept" card
-                        openingLine: `你好，我是 ${name}，很高兴认识你。`
-                    });
-                    triggerToast(`收到 ${name} 的好友申请`, 'info');
-                }, 3000);
+                        openingLine: `你好，我是 ${name}，很高兴认识你。`,
+                    })
+                    triggerToast(`收到 ${name} 的好友申请`, 'info')
+                }, 3000)
             }
 
             // 4. [PHONE_CMD:...][/PHONE_CMD] — 手机系统指令（原为死标签）
@@ -1717,32 +2164,40 @@ export const useChatStore = defineStore('chat', () => {
                 // 解析并执行手机指令：支持 wifi/bt/亮度/音量/震动等
                 if (/wifi|无线|网络/i.test(cmdText)) triggerToast('已切换WiFi状态', 'info')
                 else if (/蓝牙|bluetooth|BT/i.test(cmdText)) triggerToast('已切换蓝牙', 'info')
-                else if (/亮度|brightness|屏幕/i.test(cmdText)) triggerToast('已调整屏幕亮度', 'info')
+                else if (/亮度|brightness|屏幕/i.test(cmdText))
+                    triggerToast('已调整屏幕亮度', 'info')
                 else if (/音量|volume|声音/i.test(cmdText)) triggerToast('已调整音量', 'info')
                 else if (/震动|vibrate|振动/i.test(cmdText)) {
                     if (navigator.vibrate) navigator.vibrate(200)
                     triggerToast('震动提醒', 'info')
-                }
-                else if (/定位|location|GPS|位置/i.test(cmdText)) triggerToast('正在获取位置...', 'info')
+                } else if (/定位|location|GPS|位置/i.test(cmdText))
+                    triggerToast('正在获取位置...', 'info')
                 else if (/闹钟|alarm|clock/i.test(cmdText)) triggerToast('已设置闹钟', 'info')
-                else if (/手电筒|flashlight|闪光灯/i.test(cmdText)) triggerToast('已切换手电筒', 'info')
+                else if (/手电筒|flashlight|闪光灯/i.test(cmdText))
+                    triggerToast('已切换手电筒', 'info')
                 else triggerToast(`执行指令: ${cmdText.substring(0, 30)}`, 'info')
             }
 
             // 5. [LOVESPACE_CONTRACT/INVITE/REJECT] — 遗留标签名，重定向到 LS_JSON 处理
-            const legacyLSPattern = /\[(?:LOVESPACE_(?:CONTRACT|REJECT|INVITE)|情侣空间(?:邀请|拒绝|契约))[:：]\s*(\{[\s\S]*?\})?\s*\]/gi
+            const legacyLSPattern =
+                /\[(?:LOVESPACE_(?:CONTRACT|REJECT|INVITE)|情侣空间(?:邀请|拒绝|契约))[:：]\s*(\{[\s\S]*?\})?\s*\]/gi
             let lsLegacyMatch
             while ((lsLegacyMatch = legacyLSPattern.exec(newMsg.content)) !== null) {
                 const payload = lsLegacyMatch[1]?.trim()
-                console.log('[ChatStore] Legacy LoveSpace tag detected, redirecting to LS_JSON:', lsLegacyMatch[0].substring(0, 50))
-                import('./loveSpaceStore').then(m => {
-                    const loveSpaceStore = m.useLoveSpaceStore();
-                    loveSpaceStore.executeSpaceCommands(payload || '{}', chat.name, null, chatId)
+                console.log(
+                    '[ChatStore] Legacy LoveSpace tag detected, redirecting to LS_JSON:',
+                    lsLegacyMatch[0].substring(0, 50),
+                )
+                import('./loveSpaceStore').then((m) => {
+                    const loveSpaceStore = m.useLoveSpaceStore()
+                    loveSpaceStore
+                        .executeSpaceCommands(payload || '{}', chat.name, null, chatId)
                         .then((result) => {
-                            if (result && result.success !== false) triggerToast(`${chat.name} 更新了情侣空间`, 'success')
+                            if (result && result.success !== false)
+                                triggerToast(`${chat.name} 更新了情侣空间`, 'success')
                             else triggerToast('情侣空间更新失败（可能未选择伴侣）', 'warning')
                         })
-                        .catch(err => {
+                        .catch((err) => {
                             console.error('[ChatStore] Legacy LS execution failed:', err)
                             triggerToast('情侣空间执行出错', 'error')
                         })
@@ -1757,7 +2212,7 @@ export const useChatStore = defineStore('chat', () => {
         let content = newMsg.content || '' // Local content var
 
         // Robust Call State Check: include all states where the Call UI is visible
-        const isCallActive = callStore.status !== 'none';
+        const isCallActive = callStore.status !== 'none'
 
         // 7.1 User Content Interception
         if (newMsg.role === 'user') {
@@ -1770,9 +2225,13 @@ export const useChatStore = defineStore('chat', () => {
 
             // [FIX] 自然语言朋友圈触发：当用户说"发朋友圈/发动态/发条圈"等时，给AI添加强制hint
             const userText = (newMsg.content || '').trim()
-            const momentTriggerPatterns = /发.*(?:朋友圈|动态|条圈|个圈)|发圈|分享.*到.*圈|po.*(?:圈|动态|moment)|更新.*动态/i
+            const momentTriggerPatterns =
+                /发.*(?:朋友圈|动态|条圈|个圈)|发圈|分享.*到.*圈|po.*(?:圈|动态|moment)|更新.*动态/i
             if (momentTriggerPatterns.test(userText)) {
-                console.log('[ChatStore] Detected natural language moment trigger:', userText.substring(0, 50))
+                console.log(
+                    '[ChatStore] Detected natural language moment trigger:',
+                    userText.substring(0, 50),
+                )
                 // 在 sendMessageToAI 时注入 hiddenHint，通过标记消息实现
                 newMsg._triggerMoment = true
                 triggerToast('已请求对方发布朋友圈~', 'info')
@@ -1783,10 +2242,17 @@ export const useChatStore = defineStore('chat', () => {
         if (newMsg.role === 'ai') {
             // Priority 0: Music & Standalone Call Triggers
             // Added [MUSIC:...] handling
-            if (content.includes('[一起听歌:') || content.includes('<bgm>') || content.includes('[MUSIC:')) {
+            if (
+                content.includes('[一起听歌:') ||
+                content.includes('<bgm>') ||
+                content.includes('[MUSIC:')
+            ) {
                 const { useMusicStore } = await import('./musicStore')
                 const musicStore = useMusicStore()
-                const musicMatch = content.match(/\[一起听歌:([\s\S]+?)\]/i) || content.match(/<bgm>([\s\S]+?)<\/bgm>/i) || content.match(/\[MUSIC:\s*(?:search\s+)?([\s\S]+?)\]/i);
+                const musicMatch =
+                    content.match(/\[一起听歌:([\s\S]+?)\]/i) ||
+                    content.match(/<bgm>([\s\S]+?)<\/bgm>/i) ||
+                    content.match(/\[MUSIC:\s*(?:search\s+)?([\s\S]+?)\]/i)
 
                 if (musicMatch) {
                     const songQuery = musicMatch[1].trim()
@@ -1797,7 +2263,7 @@ export const useChatStore = defineStore('chat', () => {
                         addMessage(chatId, {
                             role: 'system',
                             type: 'system', // Display as "X initiated..."
-                            content: `${chat.name} 发起了 一起听歌`
+                            content: `${chat.name} 发起了 一起听歌`,
                         })
                         musicStore.startTogether({ name: chat.name, avatar: chat.avatar })
                     } else {
@@ -1807,48 +2273,55 @@ export const useChatStore = defineStore('chat', () => {
 
                     if (!musicStore.playerVisible) musicStore.togglePlayer()
 
-                    let songName = songQuery, singer = ''
+                    let songName = songQuery,
+                        singer = ''
                     if (songQuery.includes('-')) {
-                        const parts = songQuery.split('-'), s = parts[0].trim(), n = parts[1].trim();
-                        // Heuristic: usually "Singer - Song" or "Song - Singer"? 
+                        const parts = songQuery.split('-'),
+                            s = parts[0].trim(),
+                            n = parts[1].trim()
+                        // Heuristic: usually "Singer - Song" or "Song - Singer"?
                         // AI log: "周杰伦 - 告白气球" -> Singer - Song
-                        singer = s; songName = n;
+                        singer = s
+                        songName = n
                     }
 
-                    musicStore.searchMusic(songName, singer).then(async results => {
-                        if (results?.[0]) {
-                            const song = results[0];
-                            const url = await musicStore.getSongUrl(song);
-                            if (url) {
-                                musicStore.addSong(url);
-                                musicStore.loadSong(musicStore.playlist.length - 1);
+                    musicStore
+                        .searchMusic(songName, singer)
+                        .then(async (results) => {
+                            if (results?.[0]) {
+                                const song = results[0]
+                                const url = await musicStore.getSongUrl(song)
+                                if (url) {
+                                    musicStore.addSong(url)
+                                    musicStore.loadSong(musicStore.playlist.length - 1)
 
-                                // 2. Add Song Card to Chat
-                                const cardHtml = `
+                                    // 2. Add Song Card to Chat
+                                    const cardHtml = `
                                 <div class="flex items-center gap-3 p-3 bg-white/90 rounded-xl shadow-sm border border-gray-100 max-w-[240px]">
                                     <img src="${song.cover || '/default-music.png'}" class="w-14 h-14 rounded-lg bg-gray-100 object-cover flex-shrink-0" onerror="this.src='/default-music.png'" />
                                     <div class="flex-1 min-w-0 flex flex-col justify-center">
                                         <div class="font-bold text-[15px] leading-tight text-gray-800 truncate mb-1">${song.song}</div>
                                         <div class="text-xs text-gray-500 truncate">${song.singer || '未知歌手'}</div>
                                     </div>
-                                </div>`;
+                                </div>`
 
-                                addMessage(chatId, {
-                                    role: 'ai',
-                                    type: 'html',
-                                    content: `[分享音乐: ${song.song}]`,
-                                    html: cardHtml
-                                });
+                                    addMessage(chatId, {
+                                        role: 'ai',
+                                        type: 'html',
+                                        content: `[分享音乐: ${song.song}]`,
+                                        html: cardHtml,
+                                    })
+                                } else {
+                                    triggerToast(`未找到「${song.song}」的播放链接`, 'warning')
+                                }
                             } else {
-                                triggerToast(`未找到「${song.song}」的播放链接`, 'warning')
+                                triggerToast(`未搜索到「${songName}」`, 'warning')
                             }
-                        } else {
-                            triggerToast(`未搜索到「${songName}」`, 'warning')
-                        }
-                    }).catch(err => {
-                        console.warn('[ChatStore] Music search failed:', err)
-                        triggerToast('音乐搜索服务异常', 'error')
-                    })
+                        })
+                        .catch((err) => {
+                            console.warn('[ChatStore] Music search failed:', err)
+                            triggerToast('音乐搜索服务异常', 'error')
+                        })
                 }
             }
             if (content.includes('[停止听歌]')) {
@@ -1858,14 +2331,20 @@ export const useChatStore = defineStore('chat', () => {
             }
             if (content.includes('[语音通话]') || content.includes('[视频通话]')) {
                 const callType = content.includes('[视频通话]') ? 'video' : 'voice'
-                callStore.receiveCall({ name: chat.name, avatar: chat.avatar, id: chat.id }, callType)
+                callStore.receiveCall(
+                    { name: chat.name, avatar: chat.avatar, id: chat.id },
+                    callType,
+                )
             }
 
             // Priority 1: Handle standalone control tags or tags embedded with other content
             if (content.includes('[接听]') && callStore.status === 'dialing') {
                 callStore.acceptCall()
             }
-            if ((content.includes('[拒绝]') || content.includes('[拒接]')) && callStore.status === 'dialing') {
+            if (
+                (content.includes('[拒绝]') || content.includes('[拒接]')) &&
+                callStore.status === 'dialing'
+            ) {
                 callStore.endCall()
             }
             if (content.includes('[挂断]') && isCallActive) {
@@ -1873,53 +2352,62 @@ export const useChatStore = defineStore('chat', () => {
             }
 
             // Priority 2: Check for Call Protocol Block (Strict or Fuzzy)
-            const hasJsonLike = content.includes('{') && (content.includes('"speech"') || content.includes('"status"') || content.includes('"action"') || content.includes('"行为"') || content.includes('"心声"'));
+            const hasJsonLike =
+                content.includes('{') &&
+                (content.includes('"speech"') ||
+                    content.includes('"status"') ||
+                    content.includes('"action"') ||
+                    content.includes('"行为"') ||
+                    content.includes('"心声"'))
 
-            if (content.includes('[CALL_START]') || content.includes('[CALL_END]') || (isCallActive && hasJsonLike)) {
-                console.log('[ChatStore] Call Protocol Detected (Enhanced)');
+            if (
+                content.includes('[CALL_START]') ||
+                content.includes('[CALL_END]') ||
+                (isCallActive && hasJsonLike)
+            ) {
+                console.log('[ChatStore] Call Protocol Detected (Enhanced)')
 
                 // Ensure we are in active state if we receive protocol data
                 // This allows auto-accepting when AI starts talking during dialing (User calling AI)
                 // WE DO NOT auto-accept if status is 'incoming' (AI calling User)
                 if (callStore.status === 'dialing') {
-                    console.log('[ChatStore] Auto-accepting established call due to protocol data');
-                    callStore.acceptCall();
+                    console.log('[ChatStore] Auto-accepting established call due to protocol data')
+                    callStore.acceptCall()
                 }
 
                 // AI Extraction Logic
-                let callData = null;
-                let textOutsideJson = content;
+                let callData = null
+                let textOutsideJson = content
                 try {
-                    const matches = content.match(/\{[\s\S]*?\}/g);
+                    const matches = content.match(/\{[\s\S]*?\}/g)
                     if (matches) {
-                        const jsonCandidate = matches[matches.length - 1];
-                        callData = JSON.parse(jsonCandidate);
-                        textOutsideJson = content.replace(jsonCandidate, '').trim();
+                        const jsonCandidate = matches[matches.length - 1]
+                        callData = JSON.parse(jsonCandidate)
+                        textOutsideJson = content.replace(jsonCandidate, '').trim()
                     }
-                } catch (e) { }
+                } catch (e) {}
 
-                const protocolRegex = /\[CALL_START\]([\s\S]+?)\[CALL_END\]/i;
-                const tagMatch = content.match(protocolRegex);
+                const protocolRegex = /\[CALL_START\]([\s\S]+?)\[CALL_END\]/i
+                const tagMatch = content.match(protocolRegex)
                 if (tagMatch) {
                     try {
-                        callData = JSON.parse(tagMatch[1]);
-                        textOutsideJson = content.replace(tagMatch[0], '').trim();
-                    } catch (e) { }
+                        callData = JSON.parse(tagMatch[1])
+                        textOutsideJson = content.replace(tagMatch[0], '').trim()
+                    } catch (e) {}
                 }
 
                 if (callData || textOutsideJson) {
                     // Protocol matched: Hide from chat history
-                    newMsg.hidden = true;
+                    newMsg.hidden = true
 
-                    if (callData?.status) callStore.updateStatus(callData.status);
-                    if (callData?.hangup) callStore.endCall();
+                    if (callData?.status) callStore.updateStatus(callData.status)
+                    if (callData?.hangup) callStore.endCall()
                 } else if (callStore.status !== 'none') {
                     // Even if no protocol match, if any call is active/dialing, hide AI chatter from history
-                    newMsg.hidden = true;
+                    newMsg.hidden = true
                 }
 
-                if (newMsg.hidden) return;
-
+                if (newMsg.hidden) return
             }
 
             // Priority 3: Fallback for Normal Text during Active Call
@@ -1928,8 +2416,8 @@ export const useChatStore = defineStore('chat', () => {
             if (isCallActive && content && !content.includes('[CALL_START]')) {
                 // EXCLUSION: Don't add if it's strictly a protocol tag that got through display test
                 if (!isEmptyDisplay) {
-                    const cleanText = displayTest;
-                    callStore.addTranscriptLine('ai', cleanText);
+                    const cleanText = displayTest
+                    callStore.addTranscriptLine('ai', cleanText)
                 }
             }
 
@@ -1937,50 +2425,60 @@ export const useChatStore = defineStore('chat', () => {
             // Tag stripping patterns for checking if bubble will be empty
             const protocolTags = [
                 /\{[\s\S]*?("speech"|"status"|"action"|"转发"|"心声"|"行为")[\s\S]*?\}/gi,
-                /\[CALL_START\][\s\S]*?\[CALL_END\]/gi, /\[CALL_START\]|\[CALL_END\]/gi,
+                /\[CALL_START\][\s\S]*?\[CALL_END\]/gi,
+                /\[CALL_START\]|\[CALL_END\]/gi,
                 /\[语音通话\]|\[视频通话\]|\[接听\]|\[挂断\]|\[拒绝\]/gi,
                 /\[(?:UPDATE_)?BIO:[^\]]+\]/gi,
-                /[\[【]\s*LS_JSON[:：]?\s*[\s\S]*?[\]】]/gi, 
+                /[\[【]\s*LS_JSON[:：]?\s*[\s\S]*?[\]】]/gi,
                 /[\[【]\s*LOVESPACE_(?:CONTRACT|REJECT|INVITE)[:：]?\s*[^\]】]*[\]】]/gi,
                 /\[MOMENT_SHARE:[^\]]+\]|\[分享朋友圈:[^\]]+\]/gi,
                 /\[一起听歌:[^\]]+\]|\[停止听歌\]|<bgm>[\s\S]*?<\/bgm>/gi,
                 /\[领取红包:[^\]]+\]|\[领取转账:[^\]]+\]/gi,
-                /\[LIKE[:：].*?\]/gi, /\[COMMENT[:：].*?\]/gi, /\[REPLY[:：].*?\]/gi,
+                /\[LIKE[:：].*?\]/gi,
+                /\[COMMENT[:：].*?\]/gi,
+                /\[REPLY[:：].*?\]/gi,
                 /[\[【]\s*(?:INNER[-_ ]?VOICE|心声)\s*[\]】][\s\S]*?(?:[\[【]\s*\/\s*(?:INNER[-_ ]?VOICE|心声)\s*[\]】]|(?=\n?\s*[\[【]\s*(?:CARD|LS_JSON|情侣空间|IMAGE|OFFLINE|ONLINE|DONE))|$)/gi,
                 /[\[【]\s*(?:\/?\s*(?:OFFLINE|ONLINE|DONE|DONE_TOKEN))\s*[\]】]/gi,
-                /\[PHONE_CMD\][\s\S]*?\[\/PHONE_CMD\]/gi
-            ];
+                /\[PHONE_CMD\][\s\S]*?\[\/PHONE_CMD\]/gi,
+            ]
 
-            let displayTest = content;
-            protocolTags.forEach(p => { displayTest = displayTest.replace(p, ''); });
-            const isEmptyDisplay = displayTest.trim().length === 0;
+            let displayTest = content
+            protocolTags.forEach((p) => {
+                displayTest = displayTest.replace(p, '')
+            })
+            const isEmptyDisplay = displayTest.trim().length === 0
 
             if (isEmptyDisplay && content.trim().length > 0) {
                 // If it's ONLY tags, hide it from the UI but PRESERVE the content for AI context
-                newMsg.hidden = true;
+                newMsg.hidden = true
             } else if (!newMsg.hidden && typeof newMsg.content === 'string') {
                 // If it HAS text, clean ONLY known strictly internal protocol tags for the bubble display
                 // We keep JSON-like content if it might be an HTML card, as ChatMessageItem will clean it during render
-                const strictlyInternalTags = protocolTags.filter(p => !p.source?.includes('html') && !p.source?.includes('speech'));
-                strictlyInternalTags.forEach(p => { newMsg.content = newMsg.content.replace(p, ''); });
-                newMsg.content = newMsg.content.trim();
+                const strictlyInternalTags = protocolTags.filter(
+                    (p) => !p.source?.includes('html') && !p.source?.includes('speech'),
+                )
+                strictlyInternalTags.forEach((p) => {
+                    newMsg.content = newMsg.content.replace(p, '')
+                })
+                newMsg.content = newMsg.content.trim()
             }
         }
 
         // Filter out empty messages
         if (!newMsg.content || newMsg.content.length === 0) {
-            return null;
+            return null
         }
 
         // 3.3 Moment Reference Indexing
         if (newMsg.type === 'moment_card') {
             try {
-                const data = typeof newMsg.content === 'string' ? JSON.parse(newMsg.content) : newMsg.content;
+                const data =
+                    typeof newMsg.content === 'string' ? JSON.parse(newMsg.content) : newMsg.content
                 if (data && data.id) {
-                    newMsg._momentReferenceId = data.id;
+                    newMsg._momentReferenceId = data.id
                 }
             } catch (e) {
-                console.warn('[ChatStore] Could not index moment_card ID:', e);
+                console.warn('[ChatStore] Could not index moment_card ID:', e)
             }
         }
 
@@ -1993,9 +2491,12 @@ export const useChatStore = defineStore('chat', () => {
             // Remove [LS_JSON:...], [情侣空间:...], [INNER_VOICE]...[/INNER_VOICE], [OFFLINE], [DONE] etc from display if they somehow leaked
             newMsg.content = newMsg.content
                 .replace(/[\[【]\s*(?:LS_JSON|情侣空间)[:：]?\s*\{[\s\S]*?\}(?:\s*[\]】])?/gi, '')
-                .replace(/[\[【]\s*(?:INNER[-_ ]?VOICE|心声)\s*[\]】][\s\S]*?(?:[\[【]\s*\/\s*(?:INNER[-_ ]?VOICE|心声)\s*[\]】]|(?=\n?\s*[\[【]\s*(?:CARD|LS_JSON|情侣空间|IMAGE|OFFLINE|ONLINE|DONE))|$)/gi, '')
+                .replace(
+                    /[\[【]\s*(?:INNER[-_ ]?VOICE|心声)\s*[\]】][\s\S]*?(?:[\[【]\s*\/\s*(?:INNER[-_ ]?VOICE|心声)\s*[\]】]|(?=\n?\s*[\[【]\s*(?:CARD|LS_JSON|情侣空间|IMAGE|OFFLINE|ONLINE|DONE))|$)/gi,
+                    '',
+                )
                 .replace(/[\[【]\s*(?:\/?\s*(?:OFFLINE|ONLINE|DONE|DONE_TOKEN))\s*[\]】]/gi, '')
-                .trim();
+                .trim()
         }
 
         // 4.1 Insert pending system messages (if any)
@@ -2011,8 +2512,11 @@ export const useChatStore = defineStore('chat', () => {
 
         // Trigger Global Notification (Only for AI or other users, not self)
         if (newMsg.role !== 'user') {
-            const contentStr = String(newMsg.content || '');
-            const isToxic = contentStr.includes('display:') || contentStr.includes('border-radius') || contentStr.trim().startsWith('{');
+            const contentStr = String(newMsg.content || '')
+            const isToxic =
+                contentStr.includes('display:') ||
+                contentStr.includes('border-radius') ||
+                contentStr.trim().startsWith('{')
 
             if (!isToxic && contentStr.trim().length > 0) {
                 // App internal notification event
@@ -2021,8 +2525,13 @@ export const useChatStore = defineStore('chat', () => {
                     chatId: chatId,
                     name: chat.name,
                     avatar: chat.avatar,
-                    content: newMsg.type === 'family_card' ? '[亲属卡]' : (newMsg.type === 'image' ? '[图片]' : (newMsg.content || '[消息]')),
-                    timestamp: Date.now()
+                    content:
+                        newMsg.type === 'family_card'
+                            ? '[亲属卡]'
+                            : newMsg.type === 'image'
+                              ? '[图片]'
+                              : newMsg.content || '[消息]',
+                    timestamp: Date.now(),
                 }
             }
 
@@ -2031,7 +2540,6 @@ export const useChatStore = defineStore('chat', () => {
                 playSound('notification')
             }
         }
-
 
         // Auto-generate system messages for family cards
         content = typeof newMsg.content === 'string' ? newMsg.content : ''
@@ -2046,32 +2554,48 @@ export const useChatStore = defineStore('chat', () => {
         if (hasApply) {
             // 用户申请 或 AI 发起申请（统一处理）
             setTimeout(() => {
-                addMessage(chatId, { role: 'system', content: `${newMsg.role === 'user' ? userName : charName}正在${newMsg.role === 'user' ? '向' : ''}${charName}申请绑定亲属卡` })
+                addMessage(chatId, {
+                    role: 'system',
+                    content: `${newMsg.role === 'user' ? userName : charName}正在${newMsg.role === 'user' ? '向' : ''}${charName}申请绑定亲属卡`,
+                })
             }, 100)
         }
 
         if (hasNormalCard && newMsg.role === 'ai') {
-            const match = content.match(/\[FAMILY_CARD[:：](\d+)[:：]([^\]:]+)(?:[:：]([^\]]+))?\]/i)
+            const match = content.match(
+                /\[FAMILY_CARD[:：](\d+)[:：]([^\]:]+)(?:[:：]([^\]]+))?\]/i,
+            )
             const cardName = match ? match[2].trim() : '亲属卡'
             const amount = match ? parseFloat(match[1]) : 0
             const paymentId = match && match[3] ? match[3].trim() : null
-            
+
             // Set message type and data for proper rendering
             newMsg.type = 'family_card'
             newMsg.amount = amount.toString()
             newMsg.text = `送给你的${cardName}`
             if (paymentId) newMsg.paymentId = paymentId
-            
+
             // Sync: Find last family card application and mark it as claimed/responded
-            const lastApply = (chat.msgs || []).slice().reverse().find(m => m.type === 'family_card_apply' || (typeof m.content === 'string' && m.content.includes('[FAMILY_CARD_APPLY:')));
+            const lastApply = (chat.msgs || [])
+                .slice()
+                .reverse()
+                .find(
+                    (m) =>
+                        m.type === 'family_card_apply' ||
+                        (typeof m.content === 'string' &&
+                            m.content.includes('[FAMILY_CARD_APPLY:')),
+                )
             if (lastApply) {
                 updateMessage(chatId, lastApply.id, {
                     status: 'claimed',
-                    isClaimed: true
-                });
-                console.log('[ChatStore] Synced Family Card Apply status using updateMessage', lastApply.id);
+                    isClaimed: true,
+                })
+                console.log(
+                    '[ChatStore] Synced Family Card Apply status using updateMessage',
+                    lastApply.id,
+                )
             }
-            
+
             // Add to wallet immediately
             const walletStore = useWalletStore()
             walletStore.addFamilyCard({
@@ -2079,11 +2603,14 @@ export const useChatStore = defineStore('chat', () => {
                 ownerName: charName,
                 amount: amount,
                 remark: cardName,
-                bindTime: Date.now()
+                bindTime: Date.now(),
             })
-            
+
             setTimeout(() => {
-                addMessage(chatId, { role: 'system', content: `${charName}向您发送了亲属卡「${cardName}」，点击领取` })
+                addMessage(chatId, {
+                    role: 'system',
+                    content: `${charName}向您发送了亲属卡「${cardName}」，点击领取`,
+                })
             }, 100)
         }
 
@@ -2092,17 +2619,23 @@ export const useChatStore = defineStore('chat', () => {
             const rejector = newMsg.role === 'user' ? userName : charName
             const rejectee = newMsg.role === 'user' ? charName : userName
             setTimeout(() => {
-                addMessage(chatId, { role: 'system', content: `${rejector}已拒绝${rejectee}的亲属卡申请` })
+                addMessage(chatId, {
+                    role: 'system',
+                    content: `${rejector}已拒绝${rejectee}的亲属卡申请`,
+                })
                 triggerToast('亲属卡申请已被拒绝', 'info')
             }, 100)
         }
 
-
         history?.checkAutoSummary?.(chatId)
-        
+
         // [FIX] Force immediate save for critical messages (images, red packets, transfers)
         // to prevent data loss if the tab crashes shortly after (common with base64 images).
-        const isCritical = newMsg.type === 'image' || newMsg.image || newMsg.type === 'redpacket' || newMsg.type === 'transfer';
+        const isCritical =
+            newMsg.type === 'image' ||
+            newMsg.image ||
+            newMsg.type === 'redpacket' ||
+            newMsg.type === 'transfer'
         await saveChats(isCritical)
         return newMsg
     }
@@ -2119,8 +2652,14 @@ export const useChatStore = defineStore('chat', () => {
         for (const key of Object.keys(meta)) {
             let val = meta[key]
             if (key === 'avatar' || key === 'userAvatar') {
-                if (typeof val === 'string' && val.startsWith('data:') && val.length > MAX_AVATAR_SIZE) {
-                    console.warn(`[Storage] Trimming oversized ${key} (${Math.round(val.length / 1024)}KB)`)
+                if (
+                    typeof val === 'string' &&
+                    val.startsWith('data:') &&
+                    val.length > MAX_AVATAR_SIZE
+                ) {
+                    console.warn(
+                        `[Storage] Trimming oversized ${key} (${Math.round(val.length / 1024)}KB)`,
+                    )
                     val = null
                 }
             } else if (key === 'summary') {
@@ -2129,15 +2668,34 @@ export const useChatStore = defineStore('chat', () => {
                 }
             } else if (key === 'memory' && Array.isArray(val)) {
                 val = val
-                    .filter(m => typeof m === 'string')
-                    .map(m => m.length > MAX_MEMORY_ENTRY_SIZE ? m.substring(0, MAX_MEMORY_ENTRY_SIZE) + '...' : m)
+                    .filter((m) => typeof m === 'string')
+                    .map((m) =>
+                        m.length > MAX_MEMORY_ENTRY_SIZE
+                            ? m.substring(0, MAX_MEMORY_ENTRY_SIZE) + '...'
+                            : m,
+                    )
                     .slice(-MAX_MEMORY_ENTRIES)
             } else if (key === 'emojis' && Array.isArray(val)) {
-                val = val.map(e => {
-                    if (typeof e === 'string' && e.startsWith('data:') && e.length > MAX_EMOJI_SIZE) return null
-                    if (e && typeof e === 'object' && e.url && typeof e.url === 'string' && e.url.startsWith('data:') && e.url.length > MAX_EMOJI_SIZE) return { ...e, url: null }
-                    return e
-                }).filter(Boolean)
+                val = val
+                    .map((e) => {
+                        if (
+                            typeof e === 'string' &&
+                            e.startsWith('data:') &&
+                            e.length > MAX_EMOJI_SIZE
+                        )
+                            return null
+                        if (
+                            e &&
+                            typeof e === 'object' &&
+                            e.url &&
+                            typeof e.url === 'string' &&
+                            e.url.startsWith('data:') &&
+                            e.url.length > MAX_EMOJI_SIZE
+                        )
+                            return { ...e, url: null }
+                        return e
+                    })
+                    .filter(Boolean)
             } else if (key === 'bio' && val && typeof val === 'object') {
                 const cleanBio = {}
                 for (const bk of Object.keys(val)) {
@@ -2148,7 +2706,12 @@ export const useChatStore = defineStore('chat', () => {
                     cleanBio[bk] = bv
                 }
                 val = cleanBio
-            } else if (key === 'background' && typeof val === 'string' && val.startsWith('data:') && val.length > MAX_AVATAR_SIZE) {
+            } else if (
+                key === 'background' &&
+                typeof val === 'string' &&
+                val.startsWith('data:') &&
+                val.length > MAX_AVATAR_SIZE
+            ) {
                 val = null
             }
             clean[key] = val
@@ -2160,17 +2723,35 @@ export const useChatStore = defineStore('chat', () => {
         if (!Array.isArray(msgs)) return msgs
         const MAX_IMAGE_SIZE = 500 * 1024
         const MAX_CONTENT_SIZE = 500000
-        return msgs.map(m => {
+        return msgs.map((m) => {
             const clean = { ...m }
-            if (clean.image && typeof clean.image === 'string' && clean.image.startsWith('data:') && clean.image.length > MAX_IMAGE_SIZE) {
+            if (
+                clean.image &&
+                typeof clean.image === 'string' &&
+                clean.image.startsWith('data:') &&
+                clean.image.length > MAX_IMAGE_SIZE
+            ) {
                 clean.image = '[图片过大已清理]'
             }
-            if (clean.content && typeof clean.content === 'string' && clean.content.startsWith('data:image') && clean.content.length > MAX_IMAGE_SIZE) {
+            // v1.10.252: 放宽匹配, 覆盖生图消息 content 格式 "[图片:data:image/png;base64,...]"
+            // 原先用 startsWith('data:image') 会漏掉 "[图片:..." 前缀的消息, 导致它们落到下方通用长度截断,
+            // 被切成残缺的 data URL (坏图), 刷新后渲染失败
+            if (
+                clean.content &&
+                typeof clean.content === 'string' &&
+                clean.content.includes('data:image') &&
+                clean.content.length > MAX_IMAGE_SIZE
+            ) {
                 clean.content = '[图片]'
                 clean.type = 'image'
             }
-            if (clean.content && typeof clean.content === 'string' && clean.content.length > MAX_CONTENT_SIZE) {
-                clean.content = clean.content.substring(0, MAX_CONTENT_SIZE) + '... [内容过长已截断]'
+            if (
+                clean.content &&
+                typeof clean.content === 'string' &&
+                clean.content.length > MAX_CONTENT_SIZE
+            ) {
+                clean.content =
+                    clean.content.substring(0, MAX_CONTENT_SIZE) + '... [内容过长已截断]'
             }
             return clean
         })
@@ -2182,25 +2763,32 @@ export const useChatStore = defineStore('chat', () => {
 
         const toRawObj = (obj) => {
             try {
-                const r = toRaw(obj);
-                if (r === null || typeof r !== 'object') return r;
-                if (Array.isArray(r)) return r.map(toRawObj);
-                if (r instanceof Date) return r.toISOString();
-                const out = {};
+                const r = toRaw(obj)
+                if (r === null || typeof r !== 'object') return r
+                if (Array.isArray(r)) return r.map(toRawObj)
+                if (r instanceof Date) return r.toISOString()
+                const out = {}
                 for (const k of Object.keys(r)) {
-                    out[k] = toRawObj(r[k]);
+                    out[k] = toRawObj(r[k])
                 }
-                return out;
+                return out
             } catch (e) {
-                return obj;
+                return obj
             }
-        };
+        }
 
         const isQuotaError = (e) => {
-            return e && (e.name === 'QuotaExceededError' || e.code === 22 ||
-                   (e.message && (e.message.includes('quota') || e.message.includes('QuotaExceeded') ||
-                    e.message.includes('Invalid string length') || e.message.includes('storage limit'))));
-        };
+            return (
+                e &&
+                (e.name === 'QuotaExceededError' ||
+                    e.code === 22 ||
+                    (e.message &&
+                        (e.message.includes('quota') ||
+                            e.message.includes('QuotaExceeded') ||
+                            e.message.includes('Invalid string length') ||
+                            e.message.includes('storage limit'))))
+            )
+        }
 
         // 【修复】真正的 IndexedDB 空间清理：清除 localforage 里的非核心数据
         const freeIndexedDBSpace = async () => {
@@ -2216,12 +2804,17 @@ export const useChatStore = defineStore('chat', () => {
                             const size = JSON.stringify(data).length
                             await localforage.removeItem(k)
                             freed += size
-                            console.log(`[updateCharacter] Freed ${Math.round(size/1024)}KB from ${k}`)
+                            console.log(
+                                `[updateCharacter] Freed ${Math.round(size / 1024)}KB from ${k}`,
+                            )
                         }
                     }
                 }
                 // 2. 清除已删除聊天的 meta
-                if (freed > 0) console.log(`[updateCharacter] Total freed: ${Math.round(freed/1024)}KB from IndexedDB`)
+                if (freed > 0)
+                    console.log(
+                        `[updateCharacter] Total freed: ${Math.round(freed / 1024)}KB from IndexedDB`,
+                    )
                 return freed
             } catch (e) {
                 console.warn('[updateCharacter] freeIndexedDBSpace error:', e)
@@ -2229,8 +2822,8 @@ export const useChatStore = defineStore('chat', () => {
             }
         }
 
-        let metaWriteFailed = false;
-        let quotaError = null;
+        let metaWriteFailed = false
+        let quotaError = null
 
         try {
             Object.assign(chats.value[chatId], updates)
@@ -2244,8 +2837,8 @@ export const useChatStore = defineStore('chat', () => {
             } catch (perChatErr) {
                 console.warn('[updateCharacter] per-chat meta write failed:', perChatErr)
                 if (isQuotaError(perChatErr)) {
-                    quotaError = perChatErr;
-                    metaWriteFailed = true;
+                    quotaError = perChatErr
+                    metaWriteFailed = true
                 }
             }
 
@@ -2253,11 +2846,17 @@ export const useChatStore = defineStore('chat', () => {
                 console.log('[updateCharacter] Quota exceeded, freeing IndexedDB space...')
                 // 清除 localforage 中其他聊天的消息缓存 (这是最大的空间占用)
                 await freeIndexedDBSpace()
-                await new Promise(r => setTimeout(r, 200))
-
-                // 也清理一下 localStorage 里的非核心缓存
-                ['qiaoqiao_avatar_descriptions', 'qiaoqiao-image-cache', 'qiaoqiao-moment-cache', 'qiaoqiao_sticker_cache']
-                    .forEach(k => { try { localStorage.removeItem(k) } catch (e) {} })
+                await new Promise((r) => setTimeout(r, 200))[
+                    // 也清理一下 localStorage 里的非核心缓存
+                    ('qiaoqiao_avatar_descriptions',
+                    'qiaoqiao-image-cache',
+                    'qiaoqiao-moment-cache',
+                    'qiaoqiao_sticker_cache')
+                ].forEach((k) => {
+                    try {
+                        localStorage.removeItem(k)
+                    } catch (e) {}
+                })
 
                 try {
                     const retryMeta = sanitizeMetaForStorage({ ...chatRef, msgs: undefined })
@@ -2276,28 +2875,53 @@ export const useChatStore = defineStore('chat', () => {
                 try {
                     const { compressImage } = await import('../utils/imageUtils')
                     let compressed = 0
-                    for (const m of (chatRef.msgs || [])) {
+                    for (const m of chatRef.msgs || []) {
                         const fields = []
-                        if (m.content && typeof m.content === 'string' && m.content.startsWith('data:image') && m.content.length > 250 * 1024) fields.push('content')
-                        if (m.image && typeof m.image === 'string' && m.image.startsWith('data:image') && m.image.length > 250 * 1024) fields.push('image')
+                        if (
+                            m.content &&
+                            typeof m.content === 'string' &&
+                            m.content.startsWith('data:image') &&
+                            m.content.length > 250 * 1024
+                        )
+                            fields.push('content')
+                        if (
+                            m.image &&
+                            typeof m.image === 'string' &&
+                            m.image.startsWith('data:image') &&
+                            m.image.length > 250 * 1024
+                        )
+                            fields.push('image')
                         for (const f of fields) {
                             const src = m[f]
                             try {
                                 const res = await fetch(src)
                                 const blob = await res.blob()
-                                const file = new File([blob], 'img.jpg', { type: blob.type || 'image/jpeg' })
-                                const c = await compressImage(file, { maxWidth: 1000, maxHeight: 1000, quality: 0.65 })
+                                const file = new File([blob], 'img.jpg', {
+                                    type: blob.type || 'image/jpeg',
+                                })
+                                const c = await compressImage(file, {
+                                    maxWidth: 1000,
+                                    maxHeight: 1000,
+                                    quality: 0.65,
+                                })
                                 if (c && c.length < src.length) {
                                     m[f] = c
                                     compressed++
                                 }
-                            } catch (e) { /* skip */ }
+                            } catch (e) {
+                                /* skip */
+                            }
                         }
                     }
                     if (compressed > 0) {
-                        console.log(`[updateCharacter] Compressed ${compressed} images in chat ${chatId}, retrying save...`)
+                        console.log(
+                            `[updateCharacter] Compressed ${compressed} images in chat ${chatId}, retrying save...`,
+                        )
                         const retryMeta2 = sanitizeMetaForStorage({ ...chatRef, msgs: undefined })
-                        await localforage.setItem(`qiaoqiao_chat_meta_${chatId}`, toRawObj(retryMeta2))
+                        await localforage.setItem(
+                            `qiaoqiao_chat_meta_${chatId}`,
+                            toRawObj(retryMeta2),
+                        )
                         metaWriteFailed = false
                         quotaError = null
                     }
@@ -2307,20 +2931,22 @@ export const useChatStore = defineStore('chat', () => {
             }
 
             // 恢复其他聊天的消息缓存 (异步, 不阻塞)
-            saveChats().catch(e => {
+            saveChats().catch((e) => {
                 console.warn('[updateCharacter] V3 metadata sync failed:', e)
             })
 
             if (quotaError && metaWriteFailed) {
-                console.warn('[updateCharacter] Critical: per-chat meta save failed after all retries')
-                throw quotaError;
+                console.warn(
+                    '[updateCharacter] Critical: per-chat meta save failed after all retries',
+                )
+                throw quotaError
             }
 
             return true
         } catch (err) {
             console.error('[updateCharacter] Error:', err)
             if (isQuotaError(err)) {
-                throw err;
+                throw err
             }
             return false
         }
@@ -2328,9 +2954,7 @@ export const useChatStore = defineStore('chat', () => {
 
     // --- Memory Logic ---
 
-
     // --- Memory Logic ---
-
 
     function getTokenCount(chatId) {
         const stats = getTokenBreakdown(chatId)
@@ -2338,27 +2962,27 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     function acceptPendingRequest(requestId) {
-        const req = pendingRequests.value.find(r => r.id === requestId);
-        if (!req) return;
+        const req = pendingRequests.value.find((r) => r.id === requestId)
+        if (!req) return
 
         if (req.type === 'group_invite') {
             // Join group logic: set inChatList to true so it shows up
-            updateCharacter(req.targetId, { inChatList: true, isExited: false });
-            triggerToast(`已加入群聊: ${req.targetName}`, 'success');
+            updateCharacter(req.targetId, { inChatList: true, isExited: false })
+            triggerToast(`已加入群聊: ${req.targetName}`, 'success')
         } else {
             // Add friend logic: already exists in chats, just show it
-            updateCharacter(req.fromId, { inChatList: true });
-            triggerToast(`已添加好友: ${req.fromName}`, 'success');
+            updateCharacter(req.fromId, { inChatList: true })
+            triggerToast(`已添加好友: ${req.fromName}`, 'success')
         }
 
-        pendingRequests.value = pendingRequests.value.filter(r => r.id !== requestId);
-        saveChats();
+        pendingRequests.value = pendingRequests.value.filter((r) => r.id !== requestId)
+        saveChats()
     }
 
     function rejectPendingRequest(requestId) {
-        pendingRequests.value = pendingRequests.value.filter(r => r.id !== requestId);
-        saveChats();
-        triggerToast('已拒绝申请', 'info');
+        pendingRequests.value = pendingRequests.value.filter((r) => r.id !== requestId)
+        saveChats()
+        triggerToast('已拒绝申请', 'info')
     }
 
     // --- Proactive Chat Logic ---
@@ -2388,7 +3012,7 @@ export const useChatStore = defineStore('chat', () => {
             try {
                 const chatIds = Object.keys(chats.value)
                 console.log(`[Proactive] Tick: checking ${chatIds.length} chats`)
-                chatIds.forEach(chatId => {
+                chatIds.forEach((chatId) => {
                     checkProactive(chatId)
                 })
             } catch (err) {
@@ -2401,11 +3025,11 @@ export const useChatStore = defineStore('chat', () => {
             proactivePageShowHandler = () => {
                 const logger = useLoggerStore()
                 logger.sys('[Proactive] Page loaded/refreshed, checking missed triggers...')
-                Object.keys(chats.value).forEach(chatId => {
+                Object.keys(chats.value).forEach((chatId) => {
                     checkProactive(chatId)
                 })
-            };
-            window.addEventListener('pageshow', proactivePageShowHandler);
+            }
+            window.addEventListener('pageshow', proactivePageShowHandler)
         }
 
         // 4. [BUG FIX] 后台切回前台补偿
@@ -2419,11 +3043,11 @@ export const useChatStore = defineStore('chat', () => {
                 if (document.visibilityState !== 'visible') return
                 const logger = useLoggerStore()
                 logger.sys('[Proactive] Page became visible, checking missed triggers...')
-                Object.keys(chats.value).forEach(chatId => {
+                Object.keys(chats.value).forEach((chatId) => {
                     checkProactive(chatId)
                 })
-            };
-            document.addEventListener('visibilitychange', proactiveVisibilityHandler);
+            }
+            document.addEventListener('visibilitychange', proactiveVisibilityHandler)
         }
     }
 
@@ -2488,9 +3112,9 @@ export const useChatStore = defineStore('chat', () => {
         const now = Date.now()
         const nowDate = new Date(now)
         const currentHour = nowDate.getHours()
-        const currentTimeStr = currentHour + ":" + nowDate.getMinutes().toString().padStart(2, '0')
+        const currentTimeStr = currentHour + ':' + nowDate.getMinutes().toString().padStart(2, '0')
         // 获取用户最后一条消息的时间（而不是 char 刷屏后的时间）
-        const userMsgs = (chat.msgs || []).filter(m => m.role === 'user')
+        const userMsgs = (chat.msgs || []).filter((m) => m.role === 'user')
         const lastUserMsg = userMsgs.slice(-1)[0]
         const lastMsgTime = lastUserMsg ? lastUserMsg.timestamp : now
         const diffMinutes = (now - lastMsgTime) / 1000 / 60
@@ -2501,7 +3125,9 @@ export const useChatStore = defineStore('chat', () => {
         if (chat.proactiveChat && currentChatId.value === chatId) {
             const pInterval = parseInt(chat.proactiveInterval) || 30
             // 检查是否需要触发：距离上次触发时间超过间隔，且距离最后一条消息也超过间隔
-            const timeSinceLastTrigger = chat._lastProactiveTriggeredTime ? (now - chat._lastProactiveTriggeredTime) : Infinity
+            const timeSinceLastTrigger = chat._lastProactiveTriggeredTime
+                ? now - chat._lastProactiveTriggeredTime
+                : Infinity
             if (diffMinutes >= pInterval && timeSinceLastTrigger >= pInterval * 60000) {
                 chat._lastProactiveTriggeredTime = now
                 saveChats() // 保存时间戳
@@ -2514,11 +3140,13 @@ export const useChatStore = defineStore('chat', () => {
                     const callHint = `【系统：距离上次对话已过 ${Math.floor(diffMinutes)} 分钟。】现在，请你立即主动发起一个${callType === 'video' ? '视频' : '语音'}通话给用户。只需回复：[${callType === 'video' ? '视频通话' : '语音通话'}]。请勿重复、复制、抄袭前文输出内容，每次输出必须创新并保证格式正确。`
                     sendMessageToAI(chatId, {
                         hiddenHint: buildSleepAwareHint(callHint, currentHour, diffMinutes),
-                        isProactiveCall: true
+                        isProactiveCall: true,
                     })
                 } else {
                     const idleHint = `【系统：距离上次对话已过 ${Math.floor(diffMinutes)} 分钟。】给用户发条简短的消息。可以带上表情包。请勿重复、复制、抄袭前文输出内容，每次输出必须创新并保证格式正确。`
-                    sendMessageToAI(chatId, { hiddenHint: buildSleepAwareHint(idleHint, currentHour, diffMinutes) })
+                    sendMessageToAI(chatId, {
+                        hiddenHint: buildSleepAwareHint(idleHint, currentHour, diffMinutes),
+                    })
                 }
             }
         }
@@ -2527,7 +3155,9 @@ export const useChatStore = defineStore('chat', () => {
         if (chat.activeChat && currentChatId.value !== chatId) {
             const aInterval = parseInt(chat.activeInterval) || 120
             // 检查是否需要触发：距离上次触发时间超过间隔，且距离最后一条消息也超过间隔
-            const timeSinceLastTrigger = chat._lastActiveTriggeredTime ? (now - chat._lastActiveTriggeredTime) : Infinity
+            const timeSinceLastTrigger = chat._lastActiveTriggeredTime
+                ? now - chat._lastActiveTriggeredTime
+                : Infinity
             if (diffMinutes >= aInterval && timeSinceLastTrigger >= aInterval * 60000) {
                 chat._lastActiveTriggeredTime = now
                 saveChats() // 保存时间戳
@@ -2538,30 +3168,45 @@ export const useChatStore = defineStore('chat', () => {
                 const hint = callChance
                     ? `【系统：距离上次对话已过 ${Math.floor(diffMinutes)} 分钟。】现在是${currentTimeStr}，你很想念用户，请立即通过 [语音通话] 联系对方或发消息询问当前状态。请勿重复、复制、抄袭前文输出内容，每次输出必须创新并保证格式正确。`
                     : `【系统：距离上次对话已过 ${Math.floor(diffMinutes)} 分钟。】现在是${currentTimeStr}，你发现用户已经很久没理你了，发条关怀消息（或分享朋友圈）。请勿重复、复制、抄袭前文输出内容，每次输出必须创新并保证格式正确。`
-                sendMessageToAI(chatId, { hiddenHint: buildSleepAwareHint(hint, currentHour, diffMinutes) })
+                sendMessageToAI(chatId, {
+                    hiddenHint: buildSleepAwareHint(hint, currentHour, diffMinutes),
+                })
             }
         }
 
         // 3. Scheduler Task
         const schedulerStore = useSchedulerStore()
-        const dueTasks = schedulerStore.tasks.filter(t => t.enabled && t.chatId === chatId && t.timestamp <= now)
+        const dueTasks = schedulerStore.tasks.filter(
+            (t) => t.enabled && t.chatId === chatId && t.timestamp <= now,
+        )
         if (dueTasks.length > 0) {
-            dueTasks.forEach(task => {
+            dueTasks.forEach((task) => {
                 logger.sys(`[Proactive] Executing scheduler task: ${task.content}`)
                 schedulerStore.removeTask(task.id)
                 const taskHint = `【系统：距离上次对话已过 ${Math.floor(diffMinutes)} 分钟。】执行定时任务：${task.content}。请根据当前人设发送消息通知用户。请勿重复、复制、抄袭前文输出内容，每次输出必须创新并保证格式正确。`
                 // 白名单: 定时提醒不受深夜静默限制,到点强制送达(v1.10.245)
-                sendMessageToAI(chatId, { hiddenHint: buildSleepAwareHint(taskHint, currentHour, diffMinutes, { bypassSleep: true }) })
+                sendMessageToAI(chatId, {
+                    hiddenHint: buildSleepAwareHint(taskHint, currentHour, diffMinutes, {
+                        bypassSleep: true,
+                    }),
+                })
             })
         }
 
         // 4. Random Proactive
         const randomConfig = schedulerStore.randomConfigs[chatId]
-        if (randomConfig && randomConfig.enabled && randomConfig.nextTrigger > 0 && now >= randomConfig.nextTrigger) {
+        if (
+            randomConfig &&
+            randomConfig.enabled &&
+            randomConfig.nextTrigger > 0 &&
+            now >= randomConfig.nextTrigger
+        ) {
             logger.sys(`[Proactive] Triggering random proactive message for ${chat.name}`)
             schedulerStore.updateNextRandomTrigger(chatId)
             const baseHint = `【系统：距离上次对话已过 ${Math.floor(diffMinutes)} 分钟。】随机触发。现在是 ${currentTimeStr}，根据当前上下文，主动和用户说点什么吧。请勿重复、复制、抄袭前文输出内容，每次输出必须创新并保证格式正确。`
-            sendMessageToAI(chatId, { hiddenHint: buildSleepAwareHint(baseHint, currentHour, diffMinutes) })
+            sendMessageToAI(chatId, {
+                hiddenHint: buildSleepAwareHint(baseHint, currentHour, diffMinutes),
+            })
         }
 
         // 5. 重新排程下一次原生系统通知(任意一次检查后都重排,保证状态变化被感知)
@@ -2572,16 +3217,12 @@ export const useChatStore = defineStore('chat', () => {
     // Initialize proactive loop
     startProactiveLoop()
 
-
-
     async function deleteMessage(chatId, msgId) {
         const chat = chats.value[chatId]
         if (!chat) return
-        chat.msgs = chat.msgs.filter(m => m.id !== msgId)
+        chat.msgs = chat.msgs.filter((m) => m.id !== msgId)
         await saveChats()
     }
-
-
 
     function toggleSearch(chatId) {
         const chat = chats.value[chatId]
@@ -2590,8 +3231,6 @@ export const useChatStore = defineStore('chat', () => {
         saveChats()
         triggerToast(chat.searchEnabled ? '🌐 已开启联网模式' : '📴 已关闭联网模式', 'info')
     }
-
-
 
     async function updateMessage(chatId, msgId, updates) {
         console.log('[ChatStore updateMessage] START:', { chatId, msgId, updates })
@@ -2602,7 +3241,7 @@ export const useChatStore = defineStore('chat', () => {
         }
 
         // Find message index
-        const idx = chat.msgs.findIndex(m => m.id === msgId)
+        const idx = chat.msgs.findIndex((m) => m.id === msgId)
         if (idx === -1) {
             console.error('[ChatStore] Message not found:', msgId)
             return
@@ -2612,7 +3251,7 @@ export const useChatStore = defineStore('chat', () => {
         const oldMsg = chat.msgs[idx]
         const newMsg = {
             ...oldMsg,
-            ...(typeof updates === 'string' ? { content: updates } : updates)
+            ...(typeof updates === 'string' ? { content: updates } : updates),
         }
 
         console.log('[ChatStore] Old message:', oldMsg)
@@ -2633,7 +3272,7 @@ export const useChatStore = defineStore('chat', () => {
         // Convert strict Set/Array to Set for lookup
         const idsToRemove = new Set(msgIds)
 
-        chat.msgs = chat.msgs.filter(m => !idsToRemove.has(m.id))
+        chat.msgs = chat.msgs.filter((m) => !idsToRemove.has(m.id))
 
         if (chat.msgs.length !== originalCount) {
             await saveChats()
@@ -2652,13 +3291,15 @@ export const useChatStore = defineStore('chat', () => {
         // Pass searchEnabled to AI service options
         const aiOptions = {
             ...options,
-            searchEnabled: chat.searchEnabled
+            searchEnabled: chat.searchEnabled,
         }
 
         // --- Silent Sharing Interception ---
         const lastMsg = (chat.msgs || []).slice(-1)[0]
         if (lastMsg && lastMsg.type === 'moment_card' && !options.force) {
-            console.log('[ChatStore] Silent sharing active. AI will not reply to moment_card until next user message.')
+            console.log(
+                '[ChatStore] Silent sharing active. AI will not reply to moment_card until next user message.',
+            )
             isTyping.value = false // Ensure typing indicator is off
             return
         }
@@ -2685,38 +3326,45 @@ export const useChatStore = defineStore('chat', () => {
                 chat._lastHotInject = Date.now()
                 // 异步抓,不 await(失败不影响主流程)
                 Promise.all([
-                    fetch('/v2/hot?platform=douyin').then(r => r.json()).catch(() => null),
-                    fetch('/v2/hot?platform=xiaohongshu').then(r => r.json()).catch(() => null),
-                ]).then(([dy, xhs]) => {
-                    const dyList = Array.isArray(dy?.data) ? dy.data.slice(0, 5) : []
-                    const xhsList = Array.isArray(xhs?.data) ? xhs.data.slice(0, 5) : []
-                    if (dyList.length === 0 && xhsList.length === 0) return
-                    let hotText = '[当前热门内容(可选择性分享给用户)]'
-                    if (dyList.length > 0) {
-                        hotText += '\n抖音热门:\n' + dyList.map((r, i) =>
-                            `${i + 1}. ${r.title} - ${r.url}`
-                        ).join('\n')
-                    }
-                    if (xhsList.length > 0) {
-                        hotText += '\n小红书热门:\n' + xhsList.map((r, i) =>
-                            `${i + 1}. ${r.title} - ${r.url}`
-                        ).join('\n')
-                    }
-                    hotText += '\n(你可以基于这些内容,在合适时机用 [LINK:URL] 主动分享给用户,但要自然,不要硬塞)'
-                    addMessage(chatId, {
-                        role: 'system',
-                        content: hotText,
-                        hidden: true,
-                        mode: 'online'
-                    }).catch(() => {})
-                }).catch(() => {})
+                    fetch('/v2/hot?platform=douyin')
+                        .then((r) => r.json())
+                        .catch(() => null),
+                    fetch('/v2/hot?platform=xiaohongshu')
+                        .then((r) => r.json())
+                        .catch(() => null),
+                ])
+                    .then(([dy, xhs]) => {
+                        const dyList = Array.isArray(dy?.data) ? dy.data.slice(0, 5) : []
+                        const xhsList = Array.isArray(xhs?.data) ? xhs.data.slice(0, 5) : []
+                        if (dyList.length === 0 && xhsList.length === 0) return
+                        let hotText = '[当前热门内容(可选择性分享给用户)]'
+                        if (dyList.length > 0) {
+                            hotText +=
+                                '\n抖音热门:\n' +
+                                dyList.map((r, i) => `${i + 1}. ${r.title} - ${r.url}`).join('\n')
+                        }
+                        if (xhsList.length > 0) {
+                            hotText +=
+                                '\n小红书热门:\n' +
+                                xhsList.map((r, i) => `${i + 1}. ${r.title} - ${r.url}`).join('\n')
+                        }
+                        hotText +=
+                            '\n(你可以基于这些内容,在合适时机用 [LINK:URL] 主动分享给用户,但要自然,不要硬塞)'
+                        addMessage(chatId, {
+                            role: 'system',
+                            content: hotText,
+                            hidden: true,
+                            mode: 'online',
+                        }).catch(() => {})
+                    })
+                    .catch(() => {})
             }
         }
 
         // --- 时间感知逻辑 ---
         const now = Date.now()
         // 查找 AI 的最后一条消息，以此计算时隔多久回复
-        const aiMessages = (chat.msgs || []).filter(m => m.role === 'ai')
+        const aiMessages = (chat.msgs || []).filter((m) => m.role === 'ai')
         const lastAiMsg = aiMessages.slice(-1)[0]
         const lastAiTime = lastAiMsg ? lastAiMsg.timestamp : now
         const diffMinutes = Math.floor((now - lastAiTime) / 1000 / 60)
@@ -2741,12 +3389,12 @@ export const useChatStore = defineStore('chat', () => {
 
         // 1. 准备上下文：根据设置动态截取消息历史
         const contextLimit = chat.contextLimit || 20
-        const rawContext = getLastNTurns(chat.msgs || [], contextLimit).map(m => {
-            let content = ""
+        const rawContext = getLastNTurns(chat.msgs || [], contextLimit).map((m) => {
+            let content = ''
             if (typeof m.content === 'string') {
                 content = m.content
             } else if (Array.isArray(m.content)) {
-                content = m.content.map(p => p.text || '').join('\n')
+                content = m.content.map((p) => p.text || '').join('\n')
             } else {
                 content = String(m.content || '')
             }
@@ -2759,79 +3407,119 @@ export const useChatStore = defineStore('chat', () => {
             }
             if (m.type === 'moment_card') {
                 try {
-                    const data = typeof m.content === 'string' ? JSON.parse(m.content) : m.content;
+                    const data = typeof m.content === 'string' ? JSON.parse(m.content) : m.content
                     content = `[用户分享了一条朋友圈动态] 作者: ${data.author || '未知'}, 文案: ${data.text || '（无文案）'}${data.image ? ' (包含一张图片)' : ''}`
-                } catch (e) { content = '[朋友圈动态]' }
+                } catch (e) {
+                    content = '[朋友圈动态]'
+                }
             } else if (m.type === 'favorite_card') {
                 try {
-                    const data = typeof m.content === 'string' ? JSON.parse(m.content) : m.content;
+                    const data = typeof m.content === 'string' ? JSON.parse(m.content) : m.content
                     content = `[用户分享了一条收藏内容] 来源: ${data.source || '未知'}, 内容详情: ${data.fullContent || data.preview || '暂无内容'}`
-                } catch (e) { content = '[收藏内容]' }
+                } catch (e) {
+                    content = '[收藏内容]'
+                }
             } else if (m.type === 'link_card') {
                 try {
-                    const data = typeof m.content === 'string' ? JSON.parse(m.content) : m.content;
-                    const role = m.role === 'user' ? '用户' : '我';
+                    const data = typeof m.content === 'string' ? JSON.parse(m.content) : m.content
+                    const role = m.role === 'user' ? '用户' : '我'
                     content = `[${role}分享了一个${data.source || '网页'}链接] 标题: ${data.title || '无标题'}${data.description ? ', 描述: ' + data.description : ''}${data.author ? ', 作者: ' + data.author : ''}, 链接: ${data.url || ''}`
                     if (data.videoUrl) {
-                        content += `。(这是视频内容,我只能看到封面图${data.image ? '(已附)' : ''}和作者描述,无法观看视频本身,请不要瞎编视频里演了什么,基于标题/描述/评论来讨论)`;
+                        content += `。(这是视频内容,我只能看到封面图${data.image ? '(已附)' : ''}和作者描述,无法观看视频本身,请不要瞎编视频里演了什么,基于标题/描述/评论来讨论)`
                     }
                     if (Array.isArray(data.comments) && data.comments.length > 0) {
-                        const commentsText = data.comments.slice(0, 10).map((c, i) =>
-                            `${i + 1}. ${c.user || '匿名'}: "${c.text}"${c.likes > 0 ? `(赞${c.likes})` : ''}`
-                        ).join('; ');
-                        content += `。热门评论: ${commentsText}`;
+                        const commentsText = data.comments
+                            .slice(0, 10)
+                            .map(
+                                (c, i) =>
+                                    `${i + 1}. ${c.user || '匿名'}: "${c.text}"${c.likes > 0 ? `(赞${c.likes})` : ''}`,
+                            )
+                            .join('; ')
+                        content += `。热门评论: ${commentsText}`
                     }
                     if (data.image) {
-                        content += `。(注意: 这是链接封面图/截图,不是发给你换头像的,禁止用此图设置头像)`;
+                        content += `。(注意: 这是链接封面图/截图,不是发给你换头像的,禁止用此图设置头像)`
                     }
-                } catch (e) { content = '[网页链接]' }
+                } catch (e) {
+                    content = '[网页链接]'
+                }
             } else if (m.type === 'tarot_card' || m.type === 'tarot_interpretation') {
                 // 塔罗牌分享：将牌面和解析详情发送到AI上下文
                 try {
-                    const cards = m.tarotCards || [];
-                    const question = m.tarotQuestion || '';
-                    const spread = m.tarotSpread?.name || '塔罗牌阵';
-                    const interpretation = m.tarotInterpretation || '';
-                    
-                    const cardNames = cards.map(c => `${c.name}${c.isReversed ? '(逆位)' : '(正位)'}`).join('、');
-                    
+                    const cards = m.tarotCards || []
+                    const question = m.tarotQuestion || ''
+                    const spread = m.tarotSpread?.name || '塔罗牌阵'
+                    const interpretation = m.tarotInterpretation || ''
+
+                    const cardNames = cards
+                        .map((c) => `${c.name}${c.isReversed ? '(逆位)' : '(正位)'}`)
+                        .join('、')
+
                     if (m.type === 'tarot_interpretation' && interpretation) {
-                        content = `[塔罗解牌分享] 问题: ${question || '未指定'} | 牌阵: ${spread} | 牌面: ${cardNames} | 解析: ${interpretation.substring(0, 200)}${interpretation.length > 200 ? '...' : ''}`;
+                        content = `[塔罗解牌分享] 问题: ${question || '未指定'} | 牌阵: ${spread} | 牌面: ${cardNames} | 解析: ${interpretation.substring(0, 200)}${interpretation.length > 200 ? '...' : ''}`
                     } else {
-                        content = `[塔罗占卜分享] 问题: ${question || '未指定'} | 牌阵: ${spread} | 牌面: ${cardNames}`;
+                        content = `[塔罗占卜分享] 问题: ${question || '未指定'} | 牌阵: ${spread} | 牌面: ${cardNames}`
                     }
-                } catch (e) { content = '[塔罗牌分享]' }
+                } catch (e) {
+                    content = '[塔罗牌分享]'
+                }
             } else if (m.type === 'voice') {
                 content = `[语音消息:${content}]`
             } else if (m.type === 'sticker') {
                 // 表情包：提取名称或直接使用内容
-                const stickerMatch = content.match(/\[表情包[:：]\s*(.+?)\]/);
-                const stickerName = stickerMatch ? stickerMatch[1] : (content || '表情');
+                const stickerMatch = content.match(/\[表情包[:：]\s*(.+?)\]/)
+                const stickerName = stickerMatch ? stickerMatch[1] : content || '表情'
                 content = `[表情包:${stickerName}]`
-            } else if (m.type === 'lovespace_diary' || m.type === 'lovespace_message' || m.type === 'lovespace_letter') {
+            } else if (
+                m.type === 'lovespace_diary' ||
+                m.type === 'lovespace_message' ||
+                m.type === 'lovespace_letter'
+            ) {
                 try {
-                    const data = typeof m.content === 'string' ? JSON.parse(m.content) : m.content;
+                    const data = typeof m.content === 'string' ? JSON.parse(m.content) : m.content
                     const spaceType = {
-                        'lovespace_diary': '日记',
-                        'lovespace_message': '留言',
-                        'lovespace_letter': '情书'
-                    }[m.type];
+                        lovespace_diary: '日记',
+                        lovespace_message: '留言',
+                        lovespace_letter: '情书',
+                    }[m.type]
                     // 添加时间戳
-                    const timeStr = m.timestamp ? new Date(m.timestamp).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
-                    content = `[情侣空间·${spaceType}${timeStr ? `·${timeStr}` : ''}] ${data.author || 'TA'}: ${data.title || data.content || ''}`;
-                } catch (e) { content = '[情侣空间动态]' }
-            } else if (m.type === 'lovespace_album' || m.type === 'lovespace_sticky' || m.type === 'lovespace_anniversary') {
+                    const timeStr = m.timestamp
+                        ? new Date(m.timestamp).toLocaleString('zh-CN', {
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                          })
+                        : ''
+                    content = `[情侣空间·${spaceType}${timeStr ? `·${timeStr}` : ''}] ${data.author || 'TA'}: ${data.title || data.content || ''}`
+                } catch (e) {
+                    content = '[情侣空间动态]'
+                }
+            } else if (
+                m.type === 'lovespace_album' ||
+                m.type === 'lovespace_sticky' ||
+                m.type === 'lovespace_anniversary'
+            ) {
                 try {
-                    const data = typeof m.content === 'string' ? JSON.parse(m.content) : m.content;
+                    const data = typeof m.content === 'string' ? JSON.parse(m.content) : m.content
                     const spaceType = {
-                        'lovespace_album': '相册',
-                        'lovespace_sticky': '便利贴',
-                        'lovespace_anniversary': '纪念日'
-                    }[m.type];
+                        lovespace_album: '相册',
+                        lovespace_sticky: '便利贴',
+                        lovespace_anniversary: '纪念日',
+                    }[m.type]
                     // 添加时间戳
-                    const timeStr = m.timestamp ? new Date(m.timestamp).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
-                    content = `[情侣空间·${spaceType}${timeStr ? `·${timeStr}` : ''}] ${data.author || 'TA'}: ${data.title || data.content || data.name || ''}`;
-                } catch (e) { content = '[情侣空间动态]' }
+                    const timeStr = m.timestamp
+                        ? new Date(m.timestamp).toLocaleString('zh-CN', {
+                              month: '2-digit',
+                              day: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                          })
+                        : ''
+                    content = `[情侣空间·${spaceType}${timeStr ? `·${timeStr}` : ''}] ${data.author || 'TA'}: ${data.title || data.content || data.name || ''}`
+                } catch (e) {
+                    content = '[情侣空间动态]'
+                }
             }
 
             if (m.role === 'ai') {
@@ -2839,34 +3527,47 @@ export const useChatStore = defineStore('chat', () => {
                 // 这能保证AI在接下来的回复中能维持人设和当前情绪的一致性。
                 const ivRegex = /\[INNER_VOICE\]([\s\S]*?)(?:\[\/INNER_VOICE\]|$)/gi
                 const ivMatches = [...content.matchAll(ivRegex)]
-                
+
                 // 同时检测 naked JSON (用平衡花括号匹配，支持嵌套对象)
-                let foundIv = null;
+                let foundIv = null
 
                 if (ivMatches.length > 0) {
-                    foundIv = ivMatches[0][0]; // 使用找到的首个带标签心声
+                    foundIv = ivMatches[0][0] // 使用找到的首个带标签心声
                 } else {
                     // 平衡花括号法提取完整JSON块
-                    const jsonBlocks = [];
-                    let depth = 0, start = -1;
+                    const jsonBlocks = []
+                    let depth = 0,
+                        start = -1
                     for (let i = 0; i < content.length; i++) {
-                        if (content[i] === '{') { if (depth === 0) start = i; depth++; }
-                        else if (content[i] === '}') { depth--; if (depth === 0 && start !== -1) { jsonBlocks.push(content.substring(start, i + 1)); start = -1; } }
+                        if (content[i] === '{') {
+                            if (depth === 0) start = i
+                            depth++
+                        } else if (content[i] === '}') {
+                            depth--
+                            if (depth === 0 && start !== -1) {
+                                jsonBlocks.push(content.substring(start, i + 1))
+                                start = -1
+                            }
+                        }
                     }
                     for (const block of jsonBlocks) {
-                        if (block.includes('"status"') || block.includes('"心声"') || 
-                            block.includes('"着装"') || block.includes('"行为"')) {
-                            foundIv = `\n[INNER_VOICE]\n${block}\n[/INNER_VOICE]`;
-                            content = content.replace(block, '').trim();
-                            break;
+                        if (
+                            block.includes('"status"') ||
+                            block.includes('"心声"') ||
+                            block.includes('"着装"') ||
+                            block.includes('"行为"')
+                        ) {
+                            foundIv = `\n[INNER_VOICE]\n${block}\n[/INNER_VOICE]`
+                            content = content.replace(block, '').trim()
+                            break
                         }
                     }
                 }
 
                 // FIX: 如果content中提取不到心声，从消息的innerVoice字段恢复
                 if (!foundIv && m.innerVoice && typeof m.innerVoice === 'object') {
-                    foundIv = `\n[INNER_VOICE]\n${JSON.stringify(m.innerVoice)}\n[/INNER_VOICE]`;
-                    console.log('[ChatStore] 从innerVoice字段恢复心声到上下文');
+                    foundIv = `\n[INNER_VOICE]\n${JSON.stringify(m.innerVoice)}\n[/INNER_VOICE]`
+                    console.log('[ChatStore] 从innerVoice字段恢复心声到上下文')
                 }
 
                 if (foundIv) {
@@ -2875,7 +3576,7 @@ export const useChatStore = defineStore('chat', () => {
             }
 
             if (m.quote) {
-                const quoteAuthor = m.quote.role === 'user' ? '我' : (chat.name || '对方')
+                const quoteAuthor = m.quote.role === 'user' ? '我' : chat.name || '对方'
                 content = `（引用来自 ${quoteAuthor} 的消息: "${m.quote.content}"）\n${content}`
             }
 
@@ -2884,41 +3585,41 @@ export const useChatStore = defineStore('chat', () => {
                 role: m.role === 'ai' ? 'assistant' : 'user',
                 content: content,
                 image: m.image,
-                id: m.id,              // 保留消息ID，供aiService Vision策略判断"未读"状态 + 生成正确的图片引用ID
-                type: m.type,          // 保留类型，区分image/sticker等
-                mode: m.mode || 'online'  // 保留模式信息用于后续统一包裹
+                id: m.id, // 保留消息ID，供aiService Vision策略判断"未读"状态 + 生成正确的图片引用ID
+                type: m.type, // 保留类型，区分image/sticker等
+                mode: m.mode || 'online', // 保留模式信息用于后续统一包裹
             }
         })
 
         // --- 角色轮替保护 + 模式保留：智能合并消息 ---
         // 只在"相同角色 AND 相同模式"时才合并，确保线上线下消息不被混淆
-        const mergedContext = [];
-        rawContext.forEach(m => {
-            const last = mergedContext[mergedContext.length - 1];
-            const lastMode = (last && last.mode) || 'online';
-            const currentMode = m.mode || 'online';
+        const mergedContext = []
+        rawContext.forEach((m) => {
+            const last = mergedContext[mergedContext.length - 1]
+            const lastMode = (last && last.mode) || 'online'
+            const currentMode = m.mode || 'online'
 
             // 只有当角色相同且模式相同时才合并
             if (last && last.role === m.role && lastMode === currentMode) {
                 if (typeof last.content === 'string' && typeof m.content === 'string') {
-                    last.content += `\n\n${m.content}`;
+                    last.content += `\n\n${m.content}`
                 }
-                if (m.image) last.image = m.image;
+                if (m.image) last.image = m.image
             } else {
-                mergedContext.push({...m});
+                mergedContext.push({ ...m })
             }
-        });
+        })
 
         // 为每条消息添加对应的模式标签（基于消息自身的mode字段）
-        mergedContext.forEach(m => {
-            const msgMode = m.mode || 'online';
+        mergedContext.forEach((m) => {
+            const msgMode = m.mode || 'online'
             if (msgMode === 'offline') {
-                m.content = `[OFFLINE]\n${m.content}\n[/OFFLINE]`;
+                m.content = `[OFFLINE]\n${m.content}\n[/OFFLINE]`
             } else {
-                m.content = `[ONLINE]\n${m.content}\n[/ONLINE]`;
+                m.content = `[ONLINE]\n${m.content}\n[/ONLINE]`
             }
-            delete m.mode;
-        });
+            delete m.mode
+        })
 
         // 2. 注入提示 (Hidden Hint / 时间感知 / 通话引导)
         const callStatus = callStore.status
@@ -2927,8 +3628,9 @@ export const useChatStore = defineStore('chat', () => {
             const callType = callStore.type === 'video' ? '视频' : '语音'
             // If status is 'dialing', it means the USER initiated a call to the AI.
             // If status is 'incoming', it means the AI initiated a call to the USER.
-            const callHint = callStatus === 'dialing'
-                ? `【系统提示：${userName}正在呼叫你（${callType}通话）。请立即做出选择：
+            const callHint =
+                callStatus === 'dialing'
+                    ? `【系统提示：${userName}正在呼叫你（${callType}通话）。请立即做出选择：
 
 **选项1：接听**
 回复格式：
@@ -2946,13 +3648,13 @@ export const useChatStore = defineStore('chat', () => {
 回复：[拒绝] 并说明理由
 
 注意：如果接听，必须严格按照上述 JSON 格式输出，不要使用 INNER_VOICE 或其他标签。】`
-                : `【系统提示：你正在发起呼叫 ${userName}（${callType}通话），等待对方响应...】`
+                    : `【系统提示：你正在发起呼叫 ${userName}（${callType}通话），等待对方响应...】`
 
-            console.log(`[ChatStore] Injecting call hint for status: ${callStatus}`);
+            console.log(`[ChatStore] Injecting call hint for status: ${callStatus}`)
 
-            const callTag = (options.mode || 'online') === 'offline' ? 'OFFLINE' : 'ONLINE';
-            const wrappedCallHint = `[${callTag}]\n${callHint}\n[/${callTag}]`;
-            
+            const callTag = (options.mode || 'online') === 'offline' ? 'OFFLINE' : 'ONLINE'
+            const wrappedCallHint = `[${callTag}]\n${callHint}\n[/${callTag}]`
+
             const last = mergedContext[mergedContext.length - 1]
             if (last && last.role === 'user') {
                 last.content += `\n\n${wrappedCallHint}`
@@ -2960,7 +3662,7 @@ export const useChatStore = defineStore('chat', () => {
                 mergedContext.push({ role: 'user', content: wrappedCallHint })
             }
         } else if (callStatus === 'active') {
-            const callTag = (options.mode || 'online') === 'offline' ? 'OFFLINE' : 'ONLINE';
+            const callTag = (options.mode || 'online') === 'offline' ? 'OFFLINE' : 'ONLINE'
             const callActiveHint = `[${callTag}]\n【系统：当前通话已接通。请继续与用户愉快地聊天，直接输出对话 JSON 即可，严禁再次回复“[接听]”或重复开场动作。】\n[/${callTag}]`
             const last = mergedContext[mergedContext.length - 1]
             if (last && last.role === 'user') {
@@ -2969,19 +3671,21 @@ export const useChatStore = defineStore('chat', () => {
                 mergedContext.push({ role: 'user', content: callActiveHint })
             }
         } else if (options.hiddenHint) {
-            const last = mergedContext[mergedContext.length - 1];
-            const hintTag = (options.mode || 'online') === 'offline' ? 'OFFLINE' : 'ONLINE';
-            const wrappedHint = `[${hintTag}]\n[系统要求] ${options.hiddenHint}\n[/${hintTag}]`;
+            const last = mergedContext[mergedContext.length - 1]
+            const hintTag = (options.mode || 'online') === 'offline' ? 'OFFLINE' : 'ONLINE'
+            const wrappedHint = `[${hintTag}]\n[系统要求] ${options.hiddenHint}\n[/${hintTag}]`
 
             if (last && last.role === 'user') {
-                last.content += `\n\n${wrappedHint}`;
+                last.content += `\n\n${wrappedHint}`
             } else {
-                mergedContext.push({ role: 'user', content: wrappedHint });
+                mergedContext.push({ role: 'user', content: wrappedHint })
             }
         }
         // [FIX] 自然语言朋友圈触发：检测用户消息上的 _triggerMoment 标记，注入强制发圈 hint
         else {
-            const lastUserMsg = (chat.msgs || []).slice(-1).find(m => m.role === 'user' && m._triggerMoment)
+            const lastUserMsg = (chat.msgs || [])
+                .slice(-1)
+                .find((m) => m.role === 'user' && m._triggerMoment)
             if (lastUserMsg) {
                 const momentHint = `[ONLINE]\n【系统要求：用户请求你发布一条朋友圈动态。你必须输出 [MOMENT_SHARE: {"content": "动态正文内容", "image": "可选图片描述或URL", "location": "可选地点"}] 格式的标签。内容要符合你当前的人设和最近聊天中的真实事件/情绪状态。】\n[/ONLINE]`
                 const last = mergedContext[mergedContext.length - 1]
@@ -2995,31 +3699,30 @@ export const useChatStore = defineStore('chat', () => {
             }
         }
         if (diffMinutes >= 1) {
-            const last = mergedContext[mergedContext.length - 1];
+            const last = mergedContext[mergedContext.length - 1]
             if (last && last.role === 'user') {
                 const hours = Math.floor(diffMinutes / 60)
                 const mins = diffMinutes % 60
-                const timeStr = hours > 0 ? `${hours}小时${mins}分` : `${mins}分`;
-                const timeTag = (options.mode || 'online') === 'offline' ? 'OFFLINE' : 'ONLINE';
-                const wrappedTime = `[${timeTag}]\n【系统提示：当前时间为 ${currentVirtualTime}，距离上次互动已过去 ${timeStr}。请勿重复、复制、抄袭前文输出内容，每次输出必须创新并保证格式正确。】\n[/${timeTag}]`;
-                last.content += ` \n\n${wrappedTime}`;
+                const timeStr = hours > 0 ? `${hours}小时${mins}分` : `${mins}分`
+                const timeTag = (options.mode || 'online') === 'offline' ? 'OFFLINE' : 'ONLINE'
+                const wrappedTime = `[${timeTag}]\n【系统提示：当前时间为 ${currentVirtualTime}，距离上次互动已过去 ${timeStr}。请勿重复、复制、抄袭前文输出内容，每次输出必须创新并保证格式正确。】\n[/${timeTag}]`
+                last.content += ` \n\n${wrappedTime}`
             }
         }
 
         // --- 处理继续生成模式（页面刷新后自动恢复）---
         if (options._continuationMode && options._partialContent) {
-            const last = mergedContext[mergedContext.length - 1];
-            const continuationHint = `[系统提示：由于页面刷新，之前的回复被中断。已生成的内容："${options._partialContent.substring(0, 100)}${options._partialContent.length > 100 ? '...' : ''}" 请继续完成剩余内容，不要重复已生成的部分。]`;
-            
+            const last = mergedContext[mergedContext.length - 1]
+            const continuationHint = `[系统提示：由于页面刷新，之前的回复被中断。已生成的内容："${options._partialContent.substring(0, 100)}${options._partialContent.length > 100 ? '...' : ''}" 请继续完成剩余内容，不要重复已生成的部分。]`
+
             if (last && last.role === 'user') {
-                last.content += `\n\n${continuationHint}`;
+                last.content += `\n\n${continuationHint}`
             } else {
-                mergedContext.push({ role: 'user', content: continuationHint });
+                mergedContext.push({ role: 'user', content: continuationHint })
             }
         }
 
-        const context = mergedContext;
-
+        const context = mergedContext
 
         // 3. 调用 AI
         try {
@@ -3037,7 +3740,7 @@ export const useChatStore = defineStore('chat', () => {
                 gender: chat.gender || '无',
                 description: (chat.prompt || '') + momentsAwareness,
                 memory: chat.memory || [],
-                msgs: chat.msgs || [],  // ← 关键！对话阶段检测依赖此字段
+                msgs: chat.msgs || [], // ← 关键！对话阶段检测依赖此字段
                 userName: chat.userName || '用户',
                 userGender: chat.userGender || '无',
                 userPersona: chat.userPersona || '',
@@ -3053,7 +3756,7 @@ export const useChatStore = defineStore('chat', () => {
                 locationSync: chat.locationSync,
                 charLocation: chat.charLocation || null,
                 // [FIX] 将最新心声状态传递给 AI，确保上下文连贯
-                mindscape: chat.bio?.mindscape || null
+                mindscape: chat.bio?.mindscape || null,
             }
 
             // Inject Drawing Capability Hint globally if not explicitly disabled
@@ -3093,13 +3796,13 @@ export const useChatStore = defineStore('chat', () => {
                 charInfo: {
                     name: charInfo.name,
                     memoryCount: charInfo.memory?.length || 0,
-                    virtualTime: charInfo.virtualTime
+                    virtualTime: charInfo.virtualTime,
                 },
                 payload: {
                     messages: context,
                     model: 'Context Preview',
-                    temperature: 1.0
-                }
+                    temperature: 1.0,
+                },
             })
 
             // Use Call System Prompt ONLY when call is active (not during incoming/dialing)
@@ -3108,65 +3811,68 @@ export const useChatStore = defineStore('chat', () => {
             const isCallContext = isCallActive // Only use call prompt when actually in call
 
             // Track if we are in a call to handle message shadowing/hiding
-            const isCallMode = callStore.status !== 'none';
+            const isCallMode = callStore.status !== 'none'
 
             // Streaming handler for ALL modes (Fixes stuttering/lag)
-            let hasAddedCallLine = false;
-            let currentMessageId = null;
-            
+            let hasAddedCallLine = false
+            let currentMessageId = null
+
             const onChunk = (delta, full) => {
-                const finalMode = options.mode || 'online';
-                
+                const finalMode = options.mode || 'online'
+
                 // --- Safe UI Streaming Update ---
                 if (!currentMessageId) {
-                    currentMessageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                    currentMessageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
                     // Inject a placeholder message to DOM immediately to avoid sudden mount stuttering
-                    addMessage(chatId, { 
-                        id: currentMessageId, 
-                        role: 'ai', 
-                        content: '', 
-                        _isStreaming: true, 
-                        mode: finalMode 
-                    });
+                    addMessage(chatId, {
+                        id: currentMessageId,
+                        role: 'ai',
+                        content: '',
+                        _isStreaming: true,
+                        mode: finalMode,
+                    })
                 }
-                
+
                 if (isCallActive) {
                     // Call mode specific streaming
                     if (full.includes('"speech"') && !hasAddedCallLine) {
-                        hasAddedCallLine = true;
+                        hasAddedCallLine = true
                     }
                 } else {
                     // Normal mode streaming: update the placeholder message directly
                     // To prevent JSON leakage during streaming, we apply a strict guard:
                     // If it looks like raw JSON without closing brace, we don't show the text yet
-                    let safeContent = full;
-                    
+                    let safeContent = full
+
                     // Simple partial JSON guard: if it contains an unclosed brace block that has inner voice keys
                     if (safeContent.includes('{') || safeContent.includes('[')) {
-                         safeContent = '...思考中...';
+                        safeContent = '...思考中...'
                     } else {
-                         // Only show if it's clearly clean text
-                         safeContent = full.replace(/\[\s*INNER[\s-_]*VOICE\s*\][\s\S]*/i, '...思考中...');
+                        // Only show if it's clearly clean text
+                        safeContent = full.replace(
+                            /\[\s*INNER[\s-_]*VOICE\s*\][\s\S]*/i,
+                            '...思考中...',
+                        )
                     }
-                    
+
                     if (full.includes('[/INNER_VOICE]') || full.includes('}')) {
-                         // Once closed, try to use the actual cleaned text
+                        // Once closed, try to use the actual cleaned text
                     }
 
                     // Only update the message visually
                     updateMessage(chatId, currentMessageId, {
                         content: safeContent,
-                        _isStreaming: true
-                    });
+                        _isStreaming: true,
+                    })
                 }
-            };
+            }
 
             // Force streaming for ALL interactions to improve perceived performance
             const result = await generateReply(context, charInfo, signal, {
                 ...aiOptions,
                 isCall: isCallContext,
                 stream: true, // ENFORCE STREAMING FOR FLUID UX
-                onChunk: onChunk
+                onChunk: onChunk,
             })
 
             // [BUG FIX] 重新获取 chat 引用. await generateReply 可能耗时数秒到数十秒,
@@ -3185,22 +3891,24 @@ export const useChatStore = defineStore('chat', () => {
             // 后续代码用 chatAfter 而非 chat 进行写入; chat 仍可用于读"调用前快照"
             // (但任何写入都必须用 chatAfter).
 
-
-
             // Clear controller on success
             delete abortControllers[chatId]
             clearRequestPending(chatId) // 请求已完成，清除 pending 状态
-            
+
             // --- Remove Streaming Placeholder ---
             if (currentMessageId) {
-                deleteMessage(chatId, currentMessageId);
+                deleteMessage(chatId, currentMessageId)
             }
 
             if (result.error) {
                 // Ignore abort errors which happen on hangup
-                if (result.error.name === 'AbortError' || String(result.error).includes('aborted') || String(result.error).includes('canceled')) {
-                    console.log('[ChatStore] Generation aborted (likely due to hangup).');
-                    return;
+                if (
+                    result.error.name === 'AbortError' ||
+                    String(result.error).includes('aborted') ||
+                    String(result.error).includes('canceled')
+                ) {
+                    console.log('[ChatStore] Generation aborted (likely due to hangup).')
+                    return
                 }
                 addMessage(chatId, { role: 'system', content: `[系统错误] ${result.error}` })
                 return
@@ -3208,7 +3916,7 @@ export const useChatStore = defineStore('chat', () => {
 
             // 3. 添加 AI 回复 (拆分消息 - Data Level Splitting)
             if (result.content) {
-                let fullContent = result.content;
+                let fullContent = result.content
                 // _pendingMomentCardData = null; // MOVED TO TOP
 
                 setStreamingMessage(chatId, null, fullContent, options.mode || 'online')
@@ -3216,90 +3924,130 @@ export const useChatStore = defineStore('chat', () => {
                 // --- Pre-process: Strip Character Name Prefixes (防止剧本格式) ---
                 // Regex matches names like "乔笙: ", "乔笙：", "乔笙 " at start of lines or message
                 if (chatAfter.name) {
-                    const nameEscaped = chatAfter.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    const nameRegex = new RegExp(`^\\s*${nameEscaped}\\s*[:：\\s-]\\s*`, 'gm');
-                    fullContent = fullContent.replace(nameRegex, '').trim();
+                    const nameEscaped = chatAfter.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+                    const nameRegex = new RegExp(`^\\s*${nameEscaped}\\s*[:：\\s-]\\s*`, 'gm')
+                    fullContent = fullContent.replace(nameRegex, '').trim()
                 }
 
                 // --- EARLY: Extract and Execute LS_JSON blocks BEFORE any other processing ---
                 // This is critical because LS_JSON contains nested brackets/JSON that break naive regexes.
                 // We use balanced brace matching on the raw fullContent to ensure complete extraction.
-                let lsJsonExecuted = false;
+                let lsJsonExecuted = false
                 try {
-                    const earlyLsMarkerRegex = /\[\s*LS_JSON[:：]?\s*/gi;
-                    const earlyLsBlocks = [];
-                    let earlyLsMatch;
-                    const earlyLsSearch = new RegExp(earlyLsMarkerRegex.source, earlyLsMarkerRegex.flags);
+                    const earlyLsMarkerRegex = /\[\s*LS_JSON[:：]?\s*/gi
+                    const earlyLsBlocks = []
+                    let earlyLsMatch
+                    const earlyLsSearch = new RegExp(
+                        earlyLsMarkerRegex.source,
+                        earlyLsMarkerRegex.flags,
+                    )
                     while ((earlyLsMatch = earlyLsSearch.exec(fullContent)) !== null) {
-                        const lsStartIdx = earlyLsMatch.index;
-                        const lsContentStart = lsStartIdx + earlyLsMatch[0].length;
-                        const lsFirstBrace = fullContent.indexOf('{', lsContentStart);
-                        if (lsFirstBrace === -1) continue;
-                        let bd = 0, biStr = false, biEsc = false, lsEndIdx = -1;
+                        const lsStartIdx = earlyLsMatch.index
+                        const lsContentStart = lsStartIdx + earlyLsMatch[0].length
+                        const lsFirstBrace = fullContent.indexOf('{', lsContentStart)
+                        if (lsFirstBrace === -1) continue
+                        let bd = 0,
+                            biStr = false,
+                            biEsc = false,
+                            lsEndIdx = -1
                         for (let i = lsFirstBrace; i < fullContent.length; i++) {
-                            const c = fullContent[i];
-                            if (biEsc) { biEsc = false; continue; }
-                            if (c === '\\') { biEsc = true; continue; }
-                            if (c === '"') { biStr = !biStr; continue; }
+                            const c = fullContent[i]
+                            if (biEsc) {
+                                biEsc = false
+                                continue
+                            }
+                            if (c === '\\') {
+                                biEsc = true
+                                continue
+                            }
+                            if (c === '"') {
+                                biStr = !biStr
+                                continue
+                            }
                             if (!biStr) {
-                                if (c === '{') bd++;
-                                else if (c === '}') { bd--; if (bd === 0) { lsEndIdx = i; break; } }
+                                if (c === '{') bd++
+                                else if (c === '}') {
+                                    bd--
+                                    if (bd === 0) {
+                                        lsEndIdx = i
+                                        break
+                                    }
+                                }
                             }
                         }
-                        if (lsEndIdx === -1) continue;
-                        let blockEnd = lsEndIdx + 1;
-                        const afterBrace = fullContent.substring(lsEndIdx + 1, lsEndIdx + 10);
-                        const bracketMatch = afterBrace.match(/^\s*[\]】]/);
-                        if (bracketMatch) blockEnd = lsEndIdx + 1 + bracketMatch[0].length;
-                        const lsBlock = fullContent.substring(lsStartIdx, blockEnd);
-                        earlyLsBlocks.push({ start: lsStartIdx, end: blockEnd, content: lsBlock });
-                        earlyLsSearch.lastIndex = blockEnd;
+                        if (lsEndIdx === -1) continue
+                        let blockEnd = lsEndIdx + 1
+                        const afterBrace = fullContent.substring(lsEndIdx + 1, lsEndIdx + 10)
+                        const bracketMatch = afterBrace.match(/^\s*[\]】]/)
+                        if (bracketMatch) blockEnd = lsEndIdx + 1 + bracketMatch[0].length
+                        const lsBlock = fullContent.substring(lsStartIdx, blockEnd)
+                        earlyLsBlocks.push({ start: lsStartIdx, end: blockEnd, content: lsBlock })
+                        earlyLsSearch.lastIndex = blockEnd
                     }
                     if (earlyLsBlocks.length > 0) {
-                        console.log(`[ChatStore] Early extraction: Found ${earlyLsBlocks.length} LS_JSON blocks, executing...`);
-                        const { useLoveSpaceStore } = await import('./loveSpaceStore');
-                        const loveSpaceStore = useLoveSpaceStore();
+                        console.log(
+                            `[ChatStore] Early extraction: Found ${earlyLsBlocks.length} LS_JSON blocks, executing...`,
+                        )
+                        const { useLoveSpaceStore } = await import('./loveSpaceStore')
+                        const loveSpaceStore = useLoveSpaceStore()
                         for (const block of earlyLsBlocks) {
-                            const braceStart = block.content.indexOf('{');
-                            const braceEnd = block.content.lastIndexOf('}');
+                            const braceStart = block.content.indexOf('{')
+                            const braceEnd = block.content.lastIndexOf('}')
                             if (braceStart !== -1 && braceEnd > braceStart) {
-                                let jsonStr = block.content.substring(braceStart, braceEnd + 1);
-                                jsonStr = jsonStr.replace(/^[\s,]+/, '');
-                                let parseOk = false;
+                                let jsonStr = block.content.substring(braceStart, braceEnd + 1)
+                                jsonStr = jsonStr.replace(/^[\s,]+/, '')
+                                let parseOk = false
                                 try {
-                                    JSON.parse(jsonStr);
-                                    parseOk = true;
+                                    JSON.parse(jsonStr)
+                                    parseOk = true
                                 } catch (e) {
-                                    const repaired = jsonStr.replace(/\\\\"/g, '\\"').replace(/\\\\\\\\/g, '\\\\');
+                                    const repaired = jsonStr
+                                        .replace(/\\\\"/g, '\\"')
+                                        .replace(/\\\\\\\\/g, '\\\\')
                                     try {
-                                        JSON.parse(repaired);
-                                        jsonStr = repaired;
-                                        parseOk = true;
+                                        JSON.parse(repaired)
+                                        jsonStr = repaired
+                                        parseOk = true
                                     } catch (e2) {
-                                        console.warn('[ChatStore] Early LS_JSON parse failed:', e2.message, 'raw:', jsonStr.substring(0, 100));
+                                        console.warn(
+                                            '[ChatStore] Early LS_JSON parse failed:',
+                                            e2.message,
+                                            'raw:',
+                                            jsonStr.substring(0, 100),
+                                        )
                                     }
                                 }
                                 if (parseOk) {
-                                    console.log('[ChatStore] Early LS_JSON executing:', jsonStr.substring(0, 120));
-                                    const execResult = await loveSpaceStore.executeSpaceCommands(jsonStr, chat.name, null, chatId);
-                                    console.log('[ChatStore] Early LS_JSON executed:', execResult);
+                                    console.log(
+                                        '[ChatStore] Early LS_JSON executing:',
+                                        jsonStr.substring(0, 120),
+                                    )
+                                    const execResult = await loveSpaceStore.executeSpaceCommands(
+                                        jsonStr,
+                                        chat.name,
+                                        null,
+                                        chatId,
+                                    )
+                                    console.log('[ChatStore] Early LS_JSON executed:', execResult)
                                     if (execResult && execResult.success !== false) {
-                                        lsJsonExecuted = true;
+                                        lsJsonExecuted = true
                                     }
                                 }
                             }
                         }
                         for (let i = earlyLsBlocks.length - 1; i >= 0; i--) {
-                            const b = earlyLsBlocks[i];
-                            fullContent = fullContent.substring(0, b.start).replace(/[,，:：\s\r\n]+$/, '') + fullContent.substring(b.end);
+                            const b = earlyLsBlocks[i]
+                            fullContent =
+                                fullContent.substring(0, b.start).replace(/[,，:：\s\r\n]+$/, '') +
+                                fullContent.substring(b.end)
                         }
-                        fullContent = fullContent.trim();
+                        fullContent = fullContent.trim()
                         if (lsJsonExecuted) {
-                            triggerToast(`${chat.name} 更新了情侣空间`, 'success');
+                            triggerToast(`${chat.name} 更新了情侣空间`, 'success')
                         }
                     }
                 } catch (lsErr) {
-                    console.error('[ChatStore] Early LS_JSON extraction failed:', lsErr);
+                    console.error('[ChatStore] Early LS_JSON extraction failed:', lsErr)
                 }
 
                 updateStreamingContent(chatId, fullContent)
@@ -3307,145 +4055,185 @@ export const useChatStore = defineStore('chat', () => {
                 // --- Handle Call Signal Interception ([接听] / [拒绝]) ---
                 if (callStore.status === 'dialing') {
                     if (fullContent.includes('[接听]')) {
-                        console.log('[ChatStore] AI accepted the call');
-                        callStore.acceptCall();
+                        console.log('[ChatStore] AI accepted the call')
+                        callStore.acceptCall()
 
                         // 直接解析通话 JSON，不再触发第二次 AI 调用
-                        const callMatch = fullContent.match(/\[CALL_START\]\s*(\{[\s\S]*?\})\s*\[CALL_END\]/i);
+                        const callMatch = fullContent.match(
+                            /\[CALL_START\]\s*(\{[\s\S]*?\})\s*\[CALL_END\]/i,
+                        )
                         if (callMatch) {
                             try {
-                                const jsonStr = callMatch[1].trim();
-                                const callData = JSON.parse(jsonStr);
+                                const jsonStr = callMatch[1].trim()
+                                const callData = JSON.parse(jsonStr)
 
                                 // 添加到通话记录
                                 if (callData.speech) {
-                                    callStore.addTranscriptLine('ai', callData.speech, callData.action || '');
+                                    callStore.addTranscriptLine(
+                                        'ai',
+                                        callData.speech,
+                                        callData.action || '',
+                                    )
 
                                     // 播放语音
                                     if (window.speechSynthesis && callData.speech) {
-                                        const utterance = new SpeechSynthesisUtterance(callData.speech);
-                                        utterance.lang = 'zh-CN';
-                                        utterance.rate = 1.0;
-                                        window.speechSynthesis.speak(utterance);
+                                        const utterance = new SpeechSynthesisUtterance(
+                                            callData.speech,
+                                        )
+                                        utterance.lang = 'zh-CN'
+                                        utterance.rate = 1.0
+                                        window.speechSynthesis.speak(utterance)
                                     }
                                 }
 
-                                return; // 不添加消息到聊天记录
+                                return // 不添加消息到聊天记录
                             } catch (e) {
-                                console.error('[ChatStore] Failed to parse call JSON:', e);
+                                console.error('[ChatStore] Failed to parse call JSON:', e)
                             }
                         }
 
                         // 如果没有找到 JSON 或解析失败，不显示消息
-                        return;
+                        return
                     } else if (fullContent.includes('[拒绝]') || fullContent.includes('[拒接]')) {
-                        console.log('[ChatStore] AI rejected the call');
-                        callStore.rejectCall();
+                        console.log('[ChatStore] AI rejected the call')
+                        callStore.rejectCall()
                         // 拒绝消息正常显示
                     }
                 }
 
                 // --- Handle Call Mode Post-Processing ---
                 // Strict Check: Call must currently be active to play audio/process JSON
-                const isActuallyActive = (callStore.status === 'active' || isCallActive) && callStore.status !== 'ended' && callStore.status !== 'none';
+                const isActuallyActive =
+                    (callStore.status === 'active' || isCallActive) &&
+                    callStore.status !== 'ended' &&
+                    callStore.status !== 'none'
                 if (isActuallyActive) {
-                    callStore.isSpeaking = false;
+                    callStore.isSpeaking = false
                     // Extract final speech/action from the JSON
-                    const finalMatch = fullContent.match(/\[CALL_START\]\s*(\{[\s\S]*?\}|[\s\S]*?)\s*\[CALL_END\]/i);
+                    const finalMatch = fullContent.match(
+                        /\[CALL_START\]\s*(\{[\s\S]*?\}|[\s\S]*?)\s*\[CALL_END\]/i,
+                    )
                     if (finalMatch) {
                         try {
-                            const jsonStr = finalMatch[1].trim();
-                            const callData = JSON.parse(jsonStr);
+                            const jsonStr = finalMatch[1].trim()
+                            const callData = JSON.parse(jsonStr)
                             if (callData.speech) {
                                 // MANDATORY: If we are in active call, the "speech" is what we want to record in chat.
                                 // We replace the fullContent so nothing else (narrations) is saved/displayed.
-                                fullContent = callData.speech;
-                                if (callData.action) fullContent += ` (${callData.action})`;
+                                fullContent = callData.speech
+                                if (callData.action) fullContent += ` (${callData.action})`
 
                                 if (!hasAddedCallLine) {
-                                    callStore.addTranscriptLine('ai', callData.speech, callData.action || '');
+                                    callStore.addTranscriptLine(
+                                        'ai',
+                                        callData.speech,
+                                        callData.action || '',
+                                    )
                                 } else {
-                                    callStore.updateLastTranscriptLine(callData.speech);
-                                    const lastLine = callStore.transcript[callStore.transcript.length - 1];
-                                    if (lastLine) lastLine.action = callData.action || '';
+                                    callStore.updateLastTranscriptLine(callData.speech)
+                                    const lastLine =
+                                        callStore.transcript[callStore.transcript.length - 1]
+                                    if (lastLine) lastLine.action = callData.action || ''
                                 }
 
                                 // TTS logic: Strip bracketed content for speech only
                                 if (callStore.isSpeakerOn && window.speechSynthesis) {
-                                    window.speechSynthesis.cancel(); // Prevent stacking
-                                    const ttsText = callData.speech.replace(/\([\s\S]*?\)/g, '').replace(/（[\s\S]*?）/g, '').trim();
+                                    window.speechSynthesis.cancel() // Prevent stacking
+                                    const ttsText = callData.speech
+                                        .replace(/\([\s\S]*?\)/g, '')
+                                        .replace(/（[\s\S]*?）/g, '')
+                                        .trim()
                                     if (ttsText) {
-                                        const utterance = new SpeechSynthesisUtterance(ttsText);
-                                        utterance.lang = 'zh-CN';
-                                        window.speechSynthesis.speak(utterance);
+                                        const utterance = new SpeechSynthesisUtterance(ttsText)
+                                        utterance.lang = 'zh-CN'
+                                        window.speechSynthesis.speak(utterance)
                                     }
                                 }
                             }
                             if (callData.hangup) {
-                                callStore.endCall();
+                                callStore.endCall()
                             }
                         } catch (e) {
-                            console.warn('[ChatStore] Failed to parse final call JSON', e);
+                            console.warn('[ChatStore] Failed to parse final call JSON', e)
                         }
                     } else {
                         // FALLBACK: If tags [CALL_START] are missing, but it LOOKS like JSON, try to extract speech field
-                        let speechText = '';
-                        const speechMatch = fullContent.match(/"speech"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+                        let speechText = ''
+                        const speechMatch = fullContent.match(/"speech"\s*:\s*"((?:[^"\\]|\\.)*)"/)
                         if (speechMatch && speechMatch[1]) {
                             // Correctly handle escaped characters in the regex match
-                            speechText = speechMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\');
+                            speechText = speechMatch[1]
+                                .replace(/\\"/g, '"')
+                                .replace(/\\n/g, '\n')
+                                .replace(/\\\\/g, '\\')
                         } else {
                             // Remove [INNER_VOICE] and other tags
-                            let clean = fullContent.replace(/\[INNER[-_ ]?VOICE\][\s\S]*?\[\/INNER[-_ ]?VOICE\]/gi, '');
-                            clean = clean.replace(/\[MOMENT\][\s\S]*?\[\/MOMENT\]/gi, '');
-                            clean = clean.replace(/\[[\s\S]*?\]/g, '');
-                            speechText = clean.trim();
+                            let clean = fullContent.replace(
+                                /\[INNER[-_ ]?VOICE\][\s\S]*?\[\/INNER[-_ ]?VOICE\]/gi,
+                                '',
+                            )
+                            clean = clean.replace(/\[MOMENT\][\s\S]*?\[\/MOMENT\]/gi, '')
+                            clean = clean.replace(/\[[\s\S]*?\]/g, '')
+                            speechText = clean.trim()
                         }
 
                         if (speechText) {
-                            fullContent = speechText;
-                            callStore.addTranscriptLine('ai', speechText);
+                            fullContent = speechText
+                            callStore.addTranscriptLine('ai', speechText)
                             if (callStore.isSpeakerOn && window.speechSynthesis) {
-                                window.speechSynthesis.cancel(); // Prevent stacking
-                                const ttsText = speechText.replace(/\([\s\S]*?\)/g, '').replace(/（[\s\S]*?）/g, '').trim();
+                                window.speechSynthesis.cancel() // Prevent stacking
+                                const ttsText = speechText
+                                    .replace(/\([\s\S]*?\)/g, '')
+                                    .replace(/（[\s\S]*?）/g, '')
+                                    .trim()
                                 if (ttsText) {
-                                    const utterance = new SpeechSynthesisUtterance(ttsText);
-                                    utterance.lang = 'zh-CN';
-                                    window.speechSynthesis.speak(utterance);
+                                    const utterance = new SpeechSynthesisUtterance(ttsText)
+                                    utterance.lang = 'zh-CN'
+                                    window.speechSynthesis.speak(utterance)
                                 }
                             }
                         }
                     }
                 }
 
-
-
                 // --- Pre-process: Auto-Fix Missing [/INNER_VOICE] ---
                 // If we detect [INNER_VOICE] but no closing tag, we try to auto-close it at the end of the JSON block
-                if (fullContent.match(/\[\s*INNER[-_ ]?VOICE\s*\]/i) && !fullContent.match(/\[\/\s*(?:INNER[-_ ]?)?VOICE\s*\]/i)) {
-                    const startMatch = fullContent.match(/\[\s*INNER[-_ ]?VOICE\s*\]/i);
+                if (
+                    fullContent.match(/\[\s*INNER[-_ ]?VOICE\s*\]/i) &&
+                    !fullContent.match(/\[\/\s*(?:INNER[-_ ]?)?VOICE\s*\]/i)
+                ) {
+                    const startMatch = fullContent.match(/\[\s*INNER[-_ ]?VOICE\s*\]/i)
                     if (startMatch) {
-                        const startIndex = startMatch.index + startMatch[0].length;
-                        const jsonStart = fullContent.indexOf('{', startIndex);
+                        const startIndex = startMatch.index + startMatch[0].length
+                        const jsonStart = fullContent.indexOf('{', startIndex)
 
                         if (jsonStart !== -1) {
-                            let balance = 0;
-                            let inString = false;
-                            let isEscaped = false;
-                            let endPos = -1;
+                            let balance = 0
+                            let inString = false
+                            let isEscaped = false
+                            let endPos = -1
 
                             for (let i = jsonStart; i < fullContent.length; i++) {
-                                const char = fullContent[i];
-                                if (isEscaped) { isEscaped = false; continue; }
-                                if (char === '\\') { isEscaped = true; continue; }
-                                if (char === '"') { inString = !inString; continue; }
+                                const char = fullContent[i]
+                                if (isEscaped) {
+                                    isEscaped = false
+                                    continue
+                                }
+                                if (char === '\\') {
+                                    isEscaped = true
+                                    continue
+                                }
+                                if (char === '"') {
+                                    inString = !inString
+                                    continue
+                                }
                                 if (!inString) {
-                                    if (char === '{') balance++;
+                                    if (char === '{') balance++
                                     else if (char === '}') {
-                                        balance--;
+                                        balance--
                                         if (balance === 0) {
-                                            endPos = i + 1; // Position after the closing brace
-                                            break;
+                                            endPos = i + 1 // Position after the closing brace
+                                            break
                                         }
                                     }
                                 }
@@ -3453,8 +4241,13 @@ export const useChatStore = defineStore('chat', () => {
 
                             if (endPos !== -1) {
                                 // Auto-insert closing tag
-                                fullContent = fullContent.slice(0, endPos) + '\n[/INNER_VOICE]\n' + fullContent.slice(endPos);
-                                console.log('[ChatStore] Auto-closed missing [/INNER_VOICE] tag based on JSON balance');
+                                fullContent =
+                                    fullContent.slice(0, endPos) +
+                                    '\n[/INNER_VOICE]\n' +
+                                    fullContent.slice(endPos)
+                                console.log(
+                                    '[ChatStore] Auto-closed missing [/INNER_VOICE] tag based on JSON balance',
+                                )
                             }
                         }
                     }
@@ -3465,7 +4258,7 @@ export const useChatStore = defineStore('chat', () => {
                     contentLength: fullContent.length,
                     content: fullContent,
                     hasInnerVoice: !!result.innerVoice,
-                    usage: result.usage
+                    usage: result.usage,
                 })
 
                 // --- Save Token Stats ---
@@ -3478,7 +4271,7 @@ export const useChatStore = defineStore('chat', () => {
                         memory: 0,
                         history: result.usage.input_tokens || 0,
                         summaryLib: 0,
-                        totalContext: result.usage.input_tokens || 0
+                        totalContext: result.usage.input_tokens || 0,
                     }
                     saveChats()
                 }
@@ -3488,29 +4281,60 @@ export const useChatStore = defineStore('chat', () => {
                     charInfo.mindscape = result.innerVoice
 
                     // AI Status Update Feature
-                    const newStatus = result.innerVoice.status || result.innerVoice.状态;
+                    const newStatus = result.innerVoice.status || result.innerVoice.状态
                     if (newStatus && chatAfter) {
-                        chatAfter.statusText = String(newStatus).substring(0, 30); // Limit length
-                        chatAfter.isOnline = true; // AI is active
+                        chatAfter.statusText = String(newStatus).substring(0, 30) // Limit length
+                        chatAfter.isOnline = true // AI is active
                     }
 
                     // Auto-write to Memory Log from Inner Voice data
                     const iv = result.innerVoice
-                    if (iv['心声']) appendLog(chatAfter.id, { type: '💭', content: iv['心声'].substring(0, 200), time: Date.now() })
-                    if (iv['着装'] && iv['着装'] !== '上装：日常穿搭 下装：休闲裤 鞋子：小白鞋 装饰：无') {
-                        appendLog(chatAfter.id, { type: '👔', content: iv['着装'], time: Date.now() })
+                    if (iv['心声'])
+                        appendLog(chatAfter.id, {
+                            type: '💭',
+                            content: iv['心声'].substring(0, 200),
+                            time: Date.now(),
+                        })
+                    if (
+                        iv['着装'] &&
+                        iv['着装'] !== '上装：日常穿搭 下装：休闲裤 鞋子：小白鞋 装饰：无'
+                    ) {
+                        appendLog(chatAfter.id, {
+                            type: '👔',
+                            content: iv['着装'],
+                            time: Date.now(),
+                        })
                     }
-                    if (iv['环境']) appendLog(chatAfter.id, { type: '📍', content: iv['环境'].substring(0, 100), time: Date.now() })
+                    if (iv['环境'])
+                        appendLog(chatAfter.id, {
+                            type: '📍',
+                            content: iv['环境'].substring(0, 100),
+                            time: Date.now(),
+                        })
                     if (iv['行为'] && !iv['行为'].includes('正拿着手机回复')) {
-                        appendLog(chatAfter.id, { type: '🎭', content: iv['行为'].substring(0, 200), time: Date.now() })
+                        appendLog(chatAfter.id, {
+                            type: '🎭',
+                            content: iv['行为'].substring(0, 200),
+                            time: Date.now(),
+                        })
                     }
 
                     // Write key facts (persistent attributes)
                     if (iv.stats?.emotion) {
                         const emotionVal = iv.stats.emotion
-                        const emotionLabel = typeof emotionVal === 'object' ? (emotionVal.label || '未知') : String(emotionVal).replace(/\d+$/, '').trim()
-                        const emotionNum = typeof emotionVal === 'object' ? (emotionVal.value || 0) : (String(emotionVal).match(/(\d+)/)?.[1] || 0)
-                        appendLog(chatAfter.id, { type: '😊', content: `心情: ${emotionLabel} (${emotionNum}%)`, time: Date.now() })
+                        const emotionLabel =
+                            typeof emotionVal === 'object'
+                                ? emotionVal.label || '未知'
+                                : String(emotionVal).replace(/\d+$/, '').trim()
+                        const emotionNum =
+                            typeof emotionVal === 'object'
+                                ? emotionVal.value || 0
+                                : String(emotionVal).match(/(\d+)/)?.[1] || 0
+                        appendLog(chatAfter.id, {
+                            type: '😊',
+                            content: `心情: ${emotionLabel} (${emotionNum}%)`,
+                            time: Date.now(),
+                        })
                     }
                 }
 
@@ -3520,123 +4344,191 @@ export const useChatStore = defineStore('chat', () => {
                 // Stop at closing tag, OR start of another command, OR end of file.
                 // NOTE: We do NOT use Lookahead for Newline+Bracket as strict delimiter here, to allow AI to continue comfortably.
                 // The explicit closing tag is preferred, but we must stop if we see another major system tag.
-                const innerVoiceRegex = /\[\s*INNER[\s-_]*VOICE\s*\]([\s\S]*?)(?:\[\/\s*(?:INNER[\s-_]*)?VOICE\s*\]|(?=\n?\s*\[\/?(?:CARD|ONLINE|OFFLINE|IMAGE|VIDEO|AUDIO|FILE|MOMENT|LS_JSON|DRAW|MUSIC|DICE|TAROT|红包|转账|表情包|图片|SET_|NUDGE|REPLY|FAMILY_CARD|LIKE|COMMENT))|$)/gi;
+                const innerVoiceRegex =
+                    /\[\s*INNER[\s-_]*VOICE\s*\]([\s\S]*?)(?:\[\/\s*(?:INNER[\s-_]*)?VOICE\s*\]|(?=\n?\s*\[\/?(?:CARD|ONLINE|OFFLINE|IMAGE|VIDEO|AUDIO|FILE|MOMENT|LS_JSON|DRAW|MUSIC|DICE|TAROT|红包|转账|表情包|图片|SET_|NUDGE|REPLY|FAMILY_CARD|LIKE|COMMENT))|$)/gi
 
                 // Extract ALL inner voice blocks for canonical storage
-                const allVoiceMatches = [...fullContent.matchAll(innerVoiceRegex)];
-                let innerVoiceBlock = allVoiceMatches.length > 0 ? allVoiceMatches[0][0] : '';
+                const allVoiceMatches = [...fullContent.matchAll(innerVoiceRegex)]
+                let innerVoiceBlock = allVoiceMatches.length > 0 ? allVoiceMatches[0][0] : ''
 
                 // Pure Dialogue extraction
-                let pureDialogue = fullContent.replace(innerVoiceRegex, '').trim();
+                let pureDialogue = fullContent.replace(innerVoiceRegex, '').trim()
 
                 // Failsafe: If regex failed but AI Service successfully parsed Inner Voice, OR if we can find a JSON block manually
                 if (!innerVoiceBlock) {
                     if (result.innerVoice) {
                         // Case A: AI Service already parsed it (reliable)
                         try {
-                            console.log('[ChatStore] Regex failed check, reconstructing Inner Voice from parsed result');
-                            const jsonContent = JSON.stringify(result.innerVoice, null, 2);
-                            innerVoiceBlock = `\n[INNER_VOICE]\n${jsonContent}\n[/INNER_VOICE]`;
+                            console.log(
+                                '[ChatStore] Regex failed check, reconstructing Inner Voice from parsed result',
+                            )
+                            const jsonContent = JSON.stringify(result.innerVoice, null, 2)
+                            innerVoiceBlock = `\n[INNER_VOICE]\n${jsonContent}\n[/INNER_VOICE]`
 
                             // If it's not caught by the regex, it's likely untagged JSON in the text
                             // We need to find and remove it from pureDialogue
-                            if (pureDialogue.includes('{') && (
-                                pureDialogue.includes('"status"') || pureDialogue.includes('"心声"') ||
-                                pureDialogue.includes('"VOICE"') || pureDialogue.includes('"mind"') ||
-                                pureDialogue.includes('"stats"') || pureDialogue.includes('"heartRate"')
-                            )) {
-                                const innerBlocks = [];
-                                let bd = 0, bs = -1;
+                            if (
+                                pureDialogue.includes('{') &&
+                                (pureDialogue.includes('"status"') ||
+                                    pureDialogue.includes('"心声"') ||
+                                    pureDialogue.includes('"VOICE"') ||
+                                    pureDialogue.includes('"mind"') ||
+                                    pureDialogue.includes('"stats"') ||
+                                    pureDialogue.includes('"heartRate"'))
+                            ) {
+                                const innerBlocks = []
+                                let bd = 0,
+                                    bs = -1
                                 for (let i = 0; i < pureDialogue.length; i++) {
-                                    if (pureDialogue[i] === '{') { if (bd === 0) bs = i; bd++; }
-                                    else if (pureDialogue[i] === '}') { bd--; if (bd === 0 && bs !== -1) { innerBlocks.push(pureDialogue.substring(bs, i + 1)); bs = -1; } }
+                                    if (pureDialogue[i] === '{') {
+                                        if (bd === 0) bs = i
+                                        bd++
+                                    } else if (pureDialogue[i] === '}') {
+                                        bd--
+                                        if (bd === 0 && bs !== -1) {
+                                            innerBlocks.push(pureDialogue.substring(bs, i + 1))
+                                            bs = -1
+                                        }
+                                    }
                                 }
                                 for (let i = innerBlocks.length - 1; i >= 0; i--) {
                                     const block = innerBlocks[i]
-                                    if (block.includes('"status"') || block.includes('"心声"') || block.includes('"着装"') || 
-                                        block.includes('"VOICE"') || block.includes('"mind"') || block.includes('"heartRate"')) {
+                                    if (
+                                        block.includes('"status"') ||
+                                        block.includes('"心声"') ||
+                                        block.includes('"着装"') ||
+                                        block.includes('"VOICE"') ||
+                                        block.includes('"mind"') ||
+                                        block.includes('"heartRate"')
+                                    ) {
                                         pureDialogue = pureDialogue.replace(block, '').trim()
                                         break
                                     }
                                 }
                             }
                         } catch (e) {
-                            console.error('[ChatStore] Failed to reconstruct Inner Voice', e);
+                            console.error('[ChatStore] Failed to reconstruct Inner Voice', e)
                         }
-                    } else if (fullContent.includes('{') && (fullContent.includes('"status"') || fullContent.includes('"心声"'))) {
+                    } else if (
+                        fullContent.includes('{') &&
+                        (fullContent.includes('"status"') || fullContent.includes('"心声"'))
+                    ) {
                         // Case B: AI Service didn't catch it, and it's not in result, but looks like JSON is there.
                         try {
-                            const braceStarts = [];
+                            const braceStarts = []
                             for (let i = 0; i < fullContent.length; i++) {
-                                if (fullContent[i] === '{') braceStarts.push(i);
+                                if (fullContent[i] === '{') braceStarts.push(i)
                             }
 
                             for (let i = braceStarts.length - 1; i >= 0; i--) {
-                                const startIdx = braceStarts[i];
+                                const startIdx = braceStarts[i]
                                 // Use balanced matcher
-                                let balance = 0, inStr = false, isEsc = false, endPos = -1;
+                                let balance = 0,
+                                    inStr = false,
+                                    isEsc = false,
+                                    endPos = -1
                                 for (let j = startIdx; j < fullContent.length; j++) {
-                                    const char = fullContent[j];
-                                    if (isEsc) { isEsc = false; continue; }
-                                    if (char === '\\') { isEsc = true; continue; }
-                                    if (char === '"') { inStr = !inStr; continue; }
+                                    const char = fullContent[j]
+                                    if (isEsc) {
+                                        isEsc = false
+                                        continue
+                                    }
+                                    if (char === '\\') {
+                                        isEsc = true
+                                        continue
+                                    }
+                                    if (char === '"') {
+                                        inStr = !inStr
+                                        continue
+                                    }
                                     if (!inStr) {
-                                        if (char === '{') balance++;
+                                        if (char === '{') balance++
                                         else if (char === '}') {
-                                            balance--;
-                                            if (balance === 0) { endPos = j; break; }
+                                            balance--
+                                            if (balance === 0) {
+                                                endPos = j
+                                                break
+                                            }
                                         }
                                     }
                                 }
 
                                 if (endPos !== -1) {
-                                    const candidate = fullContent.substring(startIdx, endPos + 1);
+                                    const candidate = fullContent.substring(startIdx, endPos + 1)
                                     // Enhanced check: Look for inner voice markers at ANY nesting level
                                     // Supports: {"status":...}, {"VOICE":{"status":...}}, {"inner_voice":{...}}, etc.
-                                    const hasVoiceMarker = (
-                                        candidate.includes('"status"') || candidate.includes('"心声"') ||
-                                        candidate.includes('"着装"') || candidate.includes('"环境"') ||
-                                        candidate.includes('"行为"') || candidate.includes('"渴望"') ||
-                                        candidate.includes('"结论"') || candidate.includes('"心情"') ||
-                                        candidate.includes('"mind"') || candidate.includes('"mood"') ||
-                                        candidate.includes('"stats"') || candidate.includes('"heartRate"') ||
-                                        candidate.includes('"VOICE"') || candidate.includes('"voice"') ||
-                                        candidate.includes('"INNER_VOICE"') || candidate.includes('"inner_voice"') ||
-                                        candidate.includes('"speech"') || candidate.includes('"thought"')
-                                    );
+                                    const hasVoiceMarker =
+                                        candidate.includes('"status"') ||
+                                        candidate.includes('"心声"') ||
+                                        candidate.includes('"着装"') ||
+                                        candidate.includes('"环境"') ||
+                                        candidate.includes('"行为"') ||
+                                        candidate.includes('"渴望"') ||
+                                        candidate.includes('"结论"') ||
+                                        candidate.includes('"心情"') ||
+                                        candidate.includes('"mind"') ||
+                                        candidate.includes('"mood"') ||
+                                        candidate.includes('"stats"') ||
+                                        candidate.includes('"heartRate"') ||
+                                        candidate.includes('"VOICE"') ||
+                                        candidate.includes('"voice"') ||
+                                        candidate.includes('"INNER_VOICE"') ||
+                                        candidate.includes('"inner_voice"') ||
+                                        candidate.includes('"speech"') ||
+                                        candidate.includes('"thought"')
                                     if (hasVoiceMarker) {
-                                        console.log('[ChatStore] Found raw JSON block in balanced fallback, treating as Inner Voice');
-                                        innerVoiceBlock = `\n[INNER_VOICE]\n${candidate}\n[/INNER_VOICE]`;
-                                        pureDialogue = pureDialogue.replace(candidate, '').trim();
+                                        console.log(
+                                            '[ChatStore] Found raw JSON block in balanced fallback, treating as Inner Voice',
+                                        )
+                                        innerVoiceBlock = `\n[INNER_VOICE]\n${candidate}\n[/INNER_VOICE]`
+                                        pureDialogue = pureDialogue.replace(candidate, '').trim()
 
                                         // Special Cleanup: If the JSON was the sole content of an [OFFLINE] or [ONLINE] block, remove the empty tags
                                         // e.g. [OFFLINE]\n{...}\n[/OFFLINE] -> avoid leaving [OFFLINE][/OFFLINE]
-                                        pureDialogue = pureDialogue.replace(/\[(OFFLINE|ONLINE)\]\s*\[\/(OFFLINE|ONLINE)\]/gi, '').trim();
+                                        pureDialogue = pureDialogue
+                                            .replace(
+                                                /\[(OFFLINE|ONLINE)\]\s*\[\/(OFFLINE|ONLINE)\]/gi,
+                                                '',
+                                            )
+                                            .trim()
 
                                         // Parse it to update status immediately
                                         try {
-                                            let ivObj = JSON.parse(candidate);
+                                            let ivObj = JSON.parse(candidate)
                                             // Handle nested VOICE wrapper: {"VOICE": {...}}
-                                            if (ivObj.VOICE) ivObj = ivObj.VOICE;
-                                            if (ivObj.inner_voice) ivObj = ivObj.inner_voice;
-                                            
-                                            const newStatus = ivObj.status || ivObj.状态 || 
-                                                (typeof ivObj["心声"] === 'string' ? ivObj["心声"] : null);
+                                            if (ivObj.VOICE) ivObj = ivObj.VOICE
+                                            if (ivObj.inner_voice) ivObj = ivObj.inner_voice
+
+                                            const newStatus =
+                                                ivObj.status ||
+                                                ivObj.状态 ||
+                                                (typeof ivObj['心声'] === 'string'
+                                                    ? ivObj['心声']
+                                                    : null)
                                             if (newStatus && chatAfter) {
-                                                chatAfter.statusText = String(newStatus).substring(0, 30);
-                                                chatAfter.isOnline = true;
+                                                chatAfter.statusText = String(newStatus).substring(
+                                                    0,
+                                                    30,
+                                                )
+                                                chatAfter.isOnline = true
                                             }
-                                            charInfo.mindscape = ivObj;
-                                            useLoggerStore().debug('Successfully updated Mindscape from balanced fallback', ivObj);
+                                            charInfo.mindscape = ivObj
+                                            useLoggerStore().debug(
+                                                'Successfully updated Mindscape from balanced fallback',
+                                                ivObj,
+                                            )
                                         } catch (parseErr) {
-                                            console.warn('[ChatStore] Fallback balanced JSON parse failed', candidate.substring(0, 50));
+                                            console.warn(
+                                                '[ChatStore] Fallback balanced JSON parse failed',
+                                                candidate.substring(0, 50),
+                                            )
                                         }
-                                        break;
+                                        break
                                     }
                                 }
                             }
                         } catch (e) {
-                            console.warn('[ChatStore] Failed to extract balanced JSON fallback', e);
+                            console.warn('[ChatStore] Failed to extract balanced JSON fallback', e)
                         }
                     }
                 }
@@ -3645,48 +4537,72 @@ export const useChatStore = defineStore('chat', () => {
                 if (pureDialogue && pureDialogue.length > 10) {
                     const theaterMatches = pureDialogue.match(/‖([\s\S]{10,200}?)‖/g)
                     if (theaterMatches) {
-                        theaterMatches.forEach(t => appendLog(chat.id, { type: '🎬', content: t.replace(/‖/g, '').trim().substring(0, 150), time: Date.now() }))
+                        theaterMatches.forEach((t) =>
+                            appendLog(chat.id, {
+                                type: '🎬',
+                                content: t.replace(/‖/g, '').trim().substring(0, 150),
+                                time: Date.now(),
+                            }),
+                        )
                     } else {
                         const cleanContent = pureDialogue
-                            .replace(/\[\/?(?:ONLINE|OFFLINE|INNER_VOICE|LS_JSON|表情包|图片|MOMENT)[^\]]*\][\s]*/gi, '')
+                            .replace(
+                                /\[\/?(?:ONLINE|OFFLINE|INNER_VOICE|LS_JSON|表情包|图片|MOMENT)[^\]]*\][\s]*/gi,
+                                '',
+                            )
                             .replace(/__CARD_PLACEHOLDER_\d+__/gi, '[卡片]')
                             .trim()
                         if (cleanContent.length > 15) {
-                            appendLog(chat.id, { type: '💬', content: cleanContent.substring(0, 150), time: Date.now() })
+                            appendLog(chat.id, {
+                                type: '💬',
+                                content: cleanContent.substring(0, 150),
+                                time: Date.now(),
+                            })
                         }
                     }
                 }
 
                 // --- V18 ULTIMATE TDZ PREVENTION (Variable Hoisting) ---
-                let _pendingMomentCardData = null;
-                let aiQuote = null;
-                let properlyOrderedContent = pureDialogue + (innerVoiceBlock ? '\n' + innerVoiceBlock : '');
-                
+                let _pendingMomentCardData = null
+                let aiQuote = null
+                let properlyOrderedContent =
+                    pureDialogue + (innerVoiceBlock ? '\n' + innerVoiceBlock : '')
+
                 // Regexes declared early
-                let bgmRegex = /<bgm>([\s\S]*?)<\/bgm>/i;
-                let patRegex = /\[SET_PAT:(.+?)(?::(.+?))?\]/i;
-                let replyRegex = /\[REPLY:\s*(.*?)\]/i;
-                let nudgeRegex = /\[(NUDGE(?:_SELF)?)(?::(.+?))?\]/i;
-                let recallRegex = /\[(?:RECALL|撤回)(?::(.+?))?\]/i;
-                let momentRegex = /\[(?:MOMENT|朋友圈)\]([\s\S]*?)(?:\[\/(?:MOMENT|朋友圈)\]|(?=\[\s*(?:INNER_VOICE|DRAW|CARD|LS_JSON|SET_AVATAR|SET_PAT|NUDGE|REPLY|红包|转账|图片|表情包))|$)/i;
-                let momentShareRegex = /\[(?:MOMENT_SHARE|分享朋友圈):\s*([\s\S]+?)\](?=\s*(?:\[[A-Z_]|【|\[INNER_VOICE|\[\/\w|$))/i;
-                
+                let bgmRegex = /<bgm>([\s\S]*?)<\/bgm>/i
+                let patRegex = /\[SET_PAT:(.+?)(?::(.+?))?\]/i
+                let replyRegex = /\[REPLY:\s*(.*?)\]/i
+                let nudgeRegex = /\[(NUDGE(?:_SELF)?)(?::(.+?))?\]/i
+                let recallRegex = /\[(?:RECALL|撤回)(?::(.+?))?\]/i
+                let momentRegex =
+                    /\[(?:MOMENT|朋友圈)\]([\s\S]*?)(?:\[\/(?:MOMENT|朋友圈)\]|(?=\[\s*(?:INNER_VOICE|DRAW|CARD|LS_JSON|SET_AVATAR|SET_PAT|NUDGE|REPLY|红包|转账|图片|表情包))|$)/i
+                let momentShareRegex =
+                    /\[(?:MOMENT_SHARE|分享朋友圈):\s*([\s\S]+?)\](?=\s*(?:\[[A-Z_]|【|\[INNER_VOICE|\[\/\w|$))/i
+
                 // Matches and temporary variables
-                let bgmMatch, patMatch, replyMatch, nudgeMatch, recallMatch, momentMatch, momentShareMatch;
-                let command, modifier, action, target, suffix, keyword, targetIdx;
-                let jsonStr, momentData, newMoment, momentResult;
-                let shareJsonStr, shareMomentData, newShareMoment, shareMomentResult;
-                let rawSegments = [], currentRawSegment = "", cardBlocks = [];
-                let targetId = "";
+                let bgmMatch,
+                    patMatch,
+                    replyMatch,
+                    nudgeMatch,
+                    recallMatch,
+                    momentMatch,
+                    momentShareMatch
+                let command, modifier, action, target, suffix, keyword, targetIdx
+                let jsonStr, momentData, newMoment, momentResult
+                let shareJsonStr, shareMomentData, newShareMoment, shareMomentResult
+                let rawSegments = [],
+                    currentRawSegment = '',
+                    cardBlocks = []
+                let targetId = ''
 
                 // --- Handle <bgm> Tag ---
-                bgmMatch = properlyOrderedContent.match(bgmRegex);
+                bgmMatch = properlyOrderedContent.match(bgmRegex)
                 if (bgmMatch) {
-                    const tagContent = bgmMatch[1].trim();
-                    const musicStore = useMusicStore();
+                    const tagContent = bgmMatch[1].trim()
+                    const musicStore = useMusicStore()
                     // Trigger asynchronous music search and playback
-                    musicStore.playFromBgmTag(tagContent);
-                    console.log('[ChatStore] BGM Tag detected:', tagContent);
+                    musicStore.playFromBgmTag(tagContent)
+                    console.log('[ChatStore] BGM Tag detected:', tagContent)
                 }
 
                 // --- Handle [SET_PAT] Command ---
@@ -3705,96 +4621,139 @@ export const useChatStore = defineStore('chat', () => {
 
                 // --- Handle Quote (REPLY) ---
                 if (replyMatch && chatAfter.msgs) {
-                    const keyword = replyMatch[1].trim();
-                    const quotedMsg = chatAfter.msgs.findLast(m =>
-                        m.role === 'user' &&
-                        (m.content?.includes(keyword) || (m.type === 'text' && m.content === keyword))
-                    );
+                    const keyword = replyMatch[1].trim()
+                    const quotedMsg = chatAfter.msgs.findLast(
+                        (m) =>
+                            m.role === 'user' &&
+                            (m.content?.includes(keyword) ||
+                                (m.type === 'text' && m.content === keyword)),
+                    )
                     if (quotedMsg) {
                         aiQuote = {
                             id: quotedMsg.id,
                             name: '我',
                             content: quotedMsg.content,
-                            timestamp: quotedMsg.timestamp
-                        };
+                            timestamp: quotedMsg.timestamp,
+                        }
                     }
                 }
 
                 // --- Pass -1: Extract INNER_VOICE early using balanced braces ---
                 // We do this BEFORE any other regex-based cleaning to preserve the structure.
-                let rawInnerVoiceBlock = "";
-                const ivResult = { innerVoice: undefined };  // Renamed from 'result' to avoid TDZ conflict with line 2627
-                const ivMarkerRegex = /\[\s*INNER[-_ ]?VOICE\s*\]\s*/gi;
-                let ivMatch = ivMarkerRegex.exec(properlyOrderedContent);
+                let rawInnerVoiceBlock = ''
+                const ivResult = { innerVoice: undefined } // Renamed from 'result' to avoid TDZ conflict with line 2627
+                const ivMarkerRegex = /\[\s*INNER[-_ ]?VOICE\s*\]\s*/gi
+                let ivMatch = ivMarkerRegex.exec(properlyOrderedContent)
                 if (ivMatch) {
-                    console.log('[ChatStore] InnerVoice marker found at index:', ivMatch.index);
-                    const startIdx = ivMatch.index;
-                    const jsonStart = properlyOrderedContent.indexOf('{', startIdx + ivMatch[0].length);
+                    console.log('[ChatStore] InnerVoice marker found at index:', ivMatch.index)
+                    const startIdx = ivMatch.index
+                    const jsonStart = properlyOrderedContent.indexOf(
+                        '{',
+                        startIdx + ivMatch[0].length,
+                    )
                     if (jsonStart !== -1) {
-                        let braceCount = 0, inString = false, isEscaped = false, jsonEndIdx = -1;
+                        let braceCount = 0,
+                            inString = false,
+                            isEscaped = false,
+                            jsonEndIdx = -1
                         for (let i = jsonStart; i < properlyOrderedContent.length; i++) {
-                            const char = properlyOrderedContent[i];
-                            if (isEscaped) { isEscaped = false; continue; }
-                            if (char === '\\') { isEscaped = true; continue; }
-                            if (char === '"') { inString = !inString; continue; }
+                            const char = properlyOrderedContent[i]
+                            if (isEscaped) {
+                                isEscaped = false
+                                continue
+                            }
+                            if (char === '\\') {
+                                isEscaped = true
+                                continue
+                            }
+                            if (char === '"') {
+                                inString = !inString
+                                continue
+                            }
                             if (!inString) {
-                                if (char === '{') braceCount++;
-                                else if (char === '}') { braceCount--; if (braceCount === 0) { jsonEndIdx = i; break; } }
+                                if (char === '{') braceCount++
+                                else if (char === '}') {
+                                    braceCount--
+                                    if (braceCount === 0) {
+                                        jsonEndIdx = i
+                                        break
+                                    }
+                                }
                             }
                         }
                         if (jsonEndIdx !== -1) {
-                            rawInnerVoiceBlock = properlyOrderedContent.substring(startIdx, jsonEndIdx + 1);
-                            const remaining = properlyOrderedContent.substring(jsonEndIdx + 1, jsonEndIdx + 5);
-                            const closeMatch = remaining.match(/^\s*[\]】]/);
-                            if (closeMatch) rawInnerVoiceBlock += closeMatch[0];
-                            console.log('[ChatStore] InnerVoice rawBlock extracted, length:', rawInnerVoiceBlock.length);
+                            rawInnerVoiceBlock = properlyOrderedContent.substring(
+                                startIdx,
+                                jsonEndIdx + 1,
+                            )
+                            const remaining = properlyOrderedContent.substring(
+                                jsonEndIdx + 1,
+                                jsonEndIdx + 5,
+                            )
+                            const closeMatch = remaining.match(/^\s*[\]】]/)
+                            if (closeMatch) rawInnerVoiceBlock += closeMatch[0]
+                            console.log(
+                                '[ChatStore] InnerVoice rawBlock extracted, length:',
+                                rawInnerVoiceBlock.length,
+                            )
 
                             try {
-                                const jsonStr = properlyOrderedContent.substring(jsonStart, jsonEndIdx + 1);
-                                ivResult.innerVoice = JSON.parse(jsonStr);  // Use ivResult instead of result
-                                console.log('[ChatStore] Top-level InnerVoice extracted successfully.', Object.keys(ivResult.innerVoice));
+                                const jsonStr = properlyOrderedContent.substring(
+                                    jsonStart,
+                                    jsonEndIdx + 1,
+                                )
+                                ivResult.innerVoice = JSON.parse(jsonStr) // Use ivResult instead of result
+                                console.log(
+                                    '[ChatStore] Top-level InnerVoice extracted successfully.',
+                                    Object.keys(ivResult.innerVoice),
+                                )
                             } catch (e) {
-                                console.warn('[ChatStore] Top-level InnerVoice parse failed:', e);
+                                console.warn('[ChatStore] Top-level InnerVoice parse failed:', e)
                             }
                         } else {
-                            console.warn('[ChatStore] InnerVoice JSON brace matching failed');
+                            console.warn('[ChatStore] InnerVoice JSON brace matching failed')
                         }
                     } else {
-                        console.warn('[ChatStore] InnerVoice: no { found after marker');
+                        console.warn('[ChatStore] InnerVoice: no { found after marker')
                     }
                 } else {
-                    console.log('[ChatStore] No InnerVoice marker in content');
+                    console.log('[ChatStore] No InnerVoice marker in content')
                 }
 
                 // [FIX] 将从 content 中提取的心声赋值给 result.innerVoice
                 if (ivResult.innerVoice && !result.innerVoice) {
-                    result.innerVoice = ivResult.innerVoice;
-                    console.log('[ChatStore] ivResult.innerVoice assigned to result.innerVoice');
+                    result.innerVoice = ivResult.innerVoice
+                    console.log('[ChatStore] ivResult.innerVoice assigned to result.innerVoice')
                 }
 
                 // --- Handle [NUDGE] Command (Updated) ---
-                nudgeMatch = properlyOrderedContent.match(nudgeRegex);
+                nudgeMatch = properlyOrderedContent.match(nudgeRegex)
                 if (nudgeMatch) {
-                    command = nudgeMatch[1].toUpperCase();
-                    modifier = nudgeMatch[2] ? nudgeMatch[2].trim() : '';
+                    command = nudgeMatch[1].toUpperCase()
+                    modifier = nudgeMatch[2] ? nudgeMatch[2].trim() : ''
 
-                    action = chatAfter.patAction || '拍了拍';
-                    target = 'user';
-                    suffix = chatAfter.patSuffix || '的头'; // Default suffix fixes "user undefined" issue
+                    action = chatAfter.patAction || '拍了拍'
+                    target = 'user'
+                    suffix = chatAfter.patSuffix || '的头' // Default suffix fixes "user undefined" issue
 
-                    if (command === 'NUDGE_SELF' || modifier === 'self' || modifier === '自己' || modifier === 'me') {
-                        suffix = '自己' + (chatAfter.patSuffix || '的脸'); // Contextual suffix
-                        target = 'ai';
+                    if (
+                        command === 'NUDGE_SELF' ||
+                        modifier === 'self' ||
+                        modifier === '自己' ||
+                        modifier === 'me'
+                    ) {
+                        suffix = '自己' + (chatAfter.patSuffix || '的脸') // Contextual suffix
+                        target = 'ai'
                         // System message: "AI 拍了拍 自己XXX"
                         // To make it look like "AI patted themselves", we need special handling in stored msg?
                         // "ChatName 拍了拍 自己..."
                     } else if (modifier && modifier !== 'user' && modifier !== '我') {
                         // NUDGE:CharacterName
-                        suffix = modifier; // "CharacterName"
+                        suffix = modifier // "CharacterName"
                         // System message: "ChatName 拍了拍 CharacterName"
                     } else {
                         // Nudge User
-                        suffix = '我' + (chatAfter.patSuffix ? '' : '的头'); // "我" here means User from AI perspective?
+                        suffix = '我' + (chatAfter.patSuffix ? '' : '的头') // "我" here means User from AI perspective?
                         // Wait, logic at line 471 in ChatWindow says:
                         // targetName = msg.role === 'user' ? '我' : '对方'
                         // Here we are creating a SYSTEM message.
@@ -3806,9 +4765,9 @@ export const useChatStore = defineStore('chat', () => {
                         type: 'system',
                         role: 'system',
                         content: `"${chat.name || '对方'}" ${action} ${suffix}`,
-                        isRecallTip: true
-                    });
-                    triggerPatEffect(chatId, target);
+                        isRecallTip: true,
+                    })
+                    triggerPatEffect(chatId, target)
                 }
 
                 // --- Handle [RECALL] / [撤回] Command ---
@@ -3821,43 +4780,51 @@ export const useChatStore = defineStore('chat', () => {
                     if (keyword) {
                         // Find last message from AI containing keyword
                         for (let i = msgs.length - 1; i >= 0; i--) {
-                            if (msgs[i].role === 'ai' && !msgs[i].isRecallTip && ensureString(msgs[i].content).includes(keyword)) {
-                                targetIdx = i; break;
+                            if (
+                                msgs[i].role === 'ai' &&
+                                !msgs[i].isRecallTip &&
+                                ensureString(msgs[i].content).includes(keyword)
+                            ) {
+                                targetIdx = i
+                                break
                             }
                         }
                     }
                     // Fallback to "last one" removed as per user request ("太智障了")
 
                     if (targetIdx !== -1) {
-                        const originalMsg = msgs[targetIdx];
+                        const originalMsg = msgs[targetIdx]
                         // Using Object.assign to avoid spread operator ambiguity in some IDEs
                         const recallMsg = Object.assign({}, originalMsg, {
                             type: 'system',
                             content: `${chat.name || '对方'}撤回了一条消息`,
                             isRecallTip: true,
-                            realContent: originalMsg.content || ''
-                        });
-                        msgs.splice(targetIdx, 1, recallMsg);
-                        saveChats();
-                        useLoggerStore().addLog('AI', '指令执行: 撤回消息', { keyword, index: targetIdx });
+                            realContent: originalMsg.content || '',
+                        })
+                        msgs.splice(targetIdx, 1, recallMsg)
+                        saveChats()
+                        useLoggerStore().addLog('AI', '指令执行: 撤回消息', {
+                            keyword,
+                            index: targetIdx,
+                        })
                     }
                 }
 
-
                 // --- Handle [MOMENT] Command (Enhanced with Chinese Tag Support) ---
                 // REGEX FIX: Stop before next command tag, NOT just any '[' (which breaks JSON arrays)
-                momentMatch = properlyOrderedContent.match(momentRegex);
+                momentMatch = properlyOrderedContent.match(momentRegex)
                 if (momentMatch) {
                     try {
                         jsonStr = momentMatch[1].trim()
-                        jsonStr = jsonStr.replace(/\\"/g, '"');
+                        jsonStr = jsonStr.replace(/\\"/g, '"')
                         if (jsonStr.startsWith('{') && !jsonStr.endsWith('}')) jsonStr += '}'
 
                         momentData = JSON.parse(jsonStr)
 
                         const content = momentData.content || momentData.内容
                         const interactions = momentData.interactions || momentData.互动 || []
-                        const imagePrompt = momentData.imagePrompt || momentData.配图 || momentData.图片
+                        const imagePrompt =
+                            momentData.imagePrompt || momentData.配图 || momentData.图片
 
                         if (momentData && (content || momentData.html)) {
                             const newMoment = {
@@ -3866,30 +4833,44 @@ export const useChatStore = defineStore('chat', () => {
                                 html: momentData.html,
                                 images: [],
                                 imageDescriptions: [],
-                                interactions: interactions.map(i => ({
-                                    type: i.type || (i.类型 === '点赞' ? 'like' : (i.类型 === '评论' ? 'comment' : (i.类型 === '回复' ? 'reply' : i.类型))),
+                                interactions: interactions.map((i) => ({
+                                    type:
+                                        i.type ||
+                                        (i.类型 === '点赞'
+                                            ? 'like'
+                                            : i.类型 === '评论'
+                                              ? 'comment'
+                                              : i.类型 === '回复'
+                                                ? 'reply'
+                                                : i.类型),
                                     author: i.author || i.作者 || i.名字,
                                     text: i.text || i.内容 || i.文本 || i.content,
-                                    replyTo: i.replyTo || i.回复对象 || i.回复
-                                }))
+                                    replyTo: i.replyTo || i.回复对象 || i.回复,
+                                })),
                             }
 
                             if (imagePrompt) {
-                                if (typeof imagePrompt === 'string' && (imagePrompt.startsWith('http') || imagePrompt.startsWith('data:'))) {
+                                if (
+                                    typeof imagePrompt === 'string' &&
+                                    (imagePrompt.startsWith('http') ||
+                                        imagePrompt.startsWith('data:'))
+                                ) {
                                     newMoment.images.push(imagePrompt)
                                 } else {
-                                    const imageUrl = await generateImage(String(imagePrompt), { chatId })
+                                    const imageUrl = await generateImage(String(imagePrompt), {
+                                        chatId,
+                                    })
                                     newMoment.images.push(imageUrl)
                                 }
                             }
 
-                            const momentResult = await momentsStore.addMoment(newMoment);
+                            const momentResult = await momentsStore.addMoment(newMoment)
 
                             addMessage(chatId, {
                                 type: 'system',
                                 content: `"${chat.name}" 发布了一条朋友圈`,
-                                _momentReferenceId: momentResult?.id
-                            });
+                                _momentReferenceId: momentResult?.id,
+                            })
                         }
                     } catch (e) {
                         console.error('[ChatStore] Failed to parse [MOMENT]', e)
@@ -3899,18 +4880,20 @@ export const useChatStore = defineStore('chat', () => {
 
                 // --- Handle [MOMENT_SHARE] / [分享朋友圈] Command ---
                 // AI uses this format to share moments inline within conversation
-                momentShareMatch = properlyOrderedContent.match(momentShareRegex);
+                momentShareMatch = properlyOrderedContent.match(momentShareRegex)
                 if (momentShareMatch) {
                     try {
-                        shareJsonStr = momentShareMatch[1].trim();
-                        shareJsonStr = shareJsonStr.replace(/\\"/g, '"');
-                        if (shareJsonStr.startsWith('{') && !shareJsonStr.endsWith('}')) shareJsonStr += '}';
+                        shareJsonStr = momentShareMatch[1].trim()
+                        shareJsonStr = shareJsonStr.replace(/\\"/g, '"')
+                        if (shareJsonStr.startsWith('{') && !shareJsonStr.endsWith('}'))
+                            shareJsonStr += '}'
 
-                        shareMomentData = JSON.parse(shareJsonStr);
+                        shareMomentData = JSON.parse(shareJsonStr)
 
-                        const shareContent = shareMomentData.content || shareMomentData.内容 || '';
-                        const shareImagePrompt = shareMomentData.imagePrompt || shareMomentData.配图 || '';
-                        const shareLocation = shareMomentData.location || '';
+                        const shareContent = shareMomentData.content || shareMomentData.内容 || ''
+                        const shareImagePrompt =
+                            shareMomentData.imagePrompt || shareMomentData.配图 || ''
+                        const shareLocation = shareMomentData.location || ''
 
                         if (shareContent || shareMomentData.html) {
                             const newShareMoment = {
@@ -3924,26 +4907,42 @@ export const useChatStore = defineStore('chat', () => {
                                 visibility: shareMomentData.visibility || 'public',
                                 images: [],
                                 imageDescriptions: [],
-                                html: shareMomentData.html
-                            };
+                                html: shareMomentData.html,
+                            }
 
                             if (shareImagePrompt) {
-                                if (typeof shareImagePrompt === 'string' && (shareImagePrompt.startsWith('http') || shareImagePrompt.startsWith('data:'))) {
-                                    newShareMoment.images.push(shareImagePrompt);
+                                if (
+                                    typeof shareImagePrompt === 'string' &&
+                                    (shareImagePrompt.startsWith('http') ||
+                                        shareImagePrompt.startsWith('data:'))
+                                ) {
+                                    newShareMoment.images.push(shareImagePrompt)
                                 } else {
-                                    const shareImageUrl = await generateImage(String(shareImagePrompt), { chatId });
-                                    newShareMoment.images.push(shareImageUrl);
+                                    const shareImageUrl = await generateImage(
+                                        String(shareImagePrompt),
+                                        { chatId },
+                                    )
+                                    newShareMoment.images.push(shareImageUrl)
                                 }
                             }
 
-                            const shareMomentResult = await momentsStore.addMoment(newShareMoment);
-                            console.log('[ChatStore] MOMENT_SHARE published to moments feed:', shareMomentResult?.id);
+                            const shareMomentResult = await momentsStore.addMoment(newShareMoment)
+                            console.log(
+                                '[ChatStore] MOMENT_SHARE published to moments feed:',
+                                shareMomentResult?.id,
+                            )
 
                             // Mark this message as a moment_card so UI renders it properly
-                            properlyOrderedContent = properlyOrderedContent.replace(momentShareRegex, '');
-                            
+                            properlyOrderedContent = properlyOrderedContent.replace(
+                                momentShareRegex,
+                                '',
+                            )
+
                             // Track that we have a pending moment_card to attach to the message
-                            _pendingMomentCardData = { ...newShareMoment, _momentReferenceId: shareMomentResult?.id };
+                            _pendingMomentCardData = {
+                                ...newShareMoment,
+                                _momentReferenceId: shareMomentResult?.id,
+                            }
                         }
                     } catch (e) {
                         console.error('[ChatStore] Failed to parse [MOMENT_SHARE]', e)
@@ -3952,144 +4951,208 @@ export const useChatStore = defineStore('chat', () => {
                 }
 
                 // --- Handle Active Interactions [LIKE], [COMMENT], [REPLY] ---
-                const likeRegex = /\[LIKE[:：]\s*([^\]\s]+)\]/gi;
-                let likeMatch;
+                const likeRegex = /\[LIKE[:：]\s*([^\]\s]+)\]/gi
+                let likeMatch
                 while ((likeMatch = likeRegex.exec(properlyOrderedContent)) !== null) {
-                    targetId = likeMatch[1].trim();
+                    targetId = likeMatch[1].trim()
                     // Fallback Logic: Try to find actual moment if ID is hallucinated
-                    if (!momentsStore.moments.some(m => m.id === targetId)) {
-                        const ref = [...chat.msgs].reverse().find(m => m._momentReferenceId);
-                        if (ref) targetId = ref._momentReferenceId;
+                    if (!momentsStore.moments.some((m) => m.id === targetId)) {
+                        const ref = [...chat.msgs].reverse().find((m) => m._momentReferenceId)
+                        if (ref) targetId = ref._momentReferenceId
                     }
-                    momentsStore.addLike(targetId, chatId, chat.name);
+                    momentsStore.addLike(targetId, chatId, chat.name)
                 }
 
-                const commentRegex = /\[COMMENT[:：]\s*([^\]\s:]+)[:：]\s*([\s\S]+?)\]/gi;
-                let commentMatch;
+                const commentRegex = /\[COMMENT[:：]\s*([^\]\s:]+)[:：]\s*([\s\S]+?)\]/gi
+                let commentMatch
                 while ((commentMatch = commentRegex.exec(properlyOrderedContent)) !== null) {
-                    targetId = commentMatch[1].trim();
-                    if (!momentsStore.moments.some(m => m.id === targetId)) {
-                        const ref = [...chat.msgs].reverse().find(m => m._momentReferenceId);
-                        if (ref) targetId = ref._momentReferenceId;
+                    targetId = commentMatch[1].trim()
+                    if (!momentsStore.moments.some((m) => m.id === targetId)) {
+                        const ref = [...chat.msgs].reverse().find((m) => m._momentReferenceId)
+                        if (ref) targetId = ref._momentReferenceId
                     }
                     momentsStore.addComment(targetId, {
                         authorId: chatId,
                         authorName: chat.name,
-                        content: commentMatch[2].trim()
-                    });
+                        content: commentMatch[2].trim(),
+                    })
                 }
 
-                const momentActionReplyRegex = /\[REPLY[:：]\s*([^\]\s:]+)[:：]\s*([^\]\s:]+)[:：]\s*([\s\S]+?)\]/gi;
-                let momentActionReplyMatch;
-                while ((momentActionReplyMatch = momentActionReplyRegex.exec(properlyOrderedContent)) !== null) {
-                    let momentId = momentActionReplyMatch[1].trim();
-                    const commentId = momentActionReplyMatch[2].trim();
-                    const content = momentActionReplyMatch[3].trim();
+                const momentActionReplyRegex =
+                    /\[REPLY[:：]\s*([^\]\s:]+)[:：]\s*([^\]\s:]+)[:：]\s*([\s\S]+?)\]/gi
+                let momentActionReplyMatch
+                while (
+                    (momentActionReplyMatch =
+                        momentActionReplyRegex.exec(properlyOrderedContent)) !== null
+                ) {
+                    let momentId = momentActionReplyMatch[1].trim()
+                    const commentId = momentActionReplyMatch[2].trim()
+                    const content = momentActionReplyMatch[3].trim()
 
-                    if (!momentsStore.moments.some(m => m.id === momentId)) {
-                        const ref = [...chat.msgs].reverse().find(m => m._momentReferenceId);
-                        if (ref) momentId = ref._momentReferenceId;
+                    if (!momentsStore.moments.some((m) => m.id === momentId)) {
+                        const ref = [...chat.msgs].reverse().find((m) => m._momentReferenceId)
+                        if (ref) momentId = ref._momentReferenceId
                     }
 
-                    const moment = momentsStore.moments.find(m => m.id === momentId);
-                    const targetComment = moment?.comments.find(c => c.id === commentId);
+                    const moment = momentsStore.moments.find((m) => m.id === momentId)
+                    const targetComment = moment?.comments.find((c) => c.id === commentId)
 
                     momentsStore.addComment(momentId, {
                         authorId: chatId,
                         authorName: chat.name,
                         content,
-                        replyTo: targetComment ? targetComment.authorName : null
-                    });
+                        replyTo: targetComment ? targetComment.authorName : null,
+                    })
                 }
 
                 // --- Handle [FAMILY_CARD] Command ---
                 // Extract FAMILY_CARD tags and store them for separate delivery
                 // FIX: Use [\s\S] for multiline match
-                const familyCardRegex = /\[FAMILY_CARD(?:_APPLY)?:[\s\S]*?\]/gi;
-                const familyCardMatches = [];
-                let familyCardMatch;
+                const familyCardRegex = /\[FAMILY_CARD(?:_APPLY)?:[\s\S]*?\]/gi
+                const familyCardMatches = []
+                let familyCardMatch
                 while ((familyCardMatch = familyCardRegex.exec(properlyOrderedContent)) !== null) {
-                    familyCardMatches.push(familyCardMatch[0]);
+                    familyCardMatches.push(familyCardMatch[0])
                 }
 
                 // --- Handle [SET_AVATAR] Command ---
-                const setAvatarRegex = /\[SET_AVATAR[:：]\s*(.+?)\s*\]/gi  // Use GLOBAL flag to handle multiple occurrences
-                let avatarMatch;
+                const setAvatarRegex = /\[SET_AVATAR[:：]\s*(.+?)\s*\]/gi // Use GLOBAL flag to handle multiple occurrences
+                let avatarMatch
                 // Loop to find the last valid avatar command (or first? let's stick to first for now but consume all)
                 // Actually, let's just use the first valid one we find
-                const firstAvatarMatch = setAvatarRegex.exec(properlyOrderedContent);
+                const firstAvatarMatch = setAvatarRegex.exec(properlyOrderedContent)
 
                 if (firstAvatarMatch) {
                     try {
-                        let rawContent = firstAvatarMatch[1].trim();
-                        let newAvatarUrl = '';
+                        let rawContent = firstAvatarMatch[1].trim()
+                        let newAvatarUrl = ''
 
                         // Helper to find most recent valid image
                         const findLastImage = () => {
-                            const reversed = [...chat.msgs].reverse();
-                            const imgMsg = reversed.find(m => {
-                                const forbiddenTypes = new Set(['link_card', 'moment_card', 'favorite_card', 'tarot_card', 'tarot_interpretation', 'html']);
-                                if (forbiddenTypes.has(m.type)) return false;
-                                if (m.type === 'image' && m.content && (m.content.startsWith('http') || m.content.startsWith('data:image'))) return true;
-                                if (typeof m.content === 'string' && /\[(?:图片|IMAGE)[:：]((?:https?:\/\/|data:image\/)[^\]]+)\]/i.test(m.content)) return true;
-                                return false;
-                            });
+                            const reversed = [...chat.msgs].reverse()
+                            const imgMsg = reversed.find((m) => {
+                                const forbiddenTypes = new Set([
+                                    'link_card',
+                                    'moment_card',
+                                    'favorite_card',
+                                    'tarot_card',
+                                    'tarot_interpretation',
+                                    'html',
+                                ])
+                                if (forbiddenTypes.has(m.type)) return false
+                                if (
+                                    m.type === 'image' &&
+                                    m.content &&
+                                    (m.content.startsWith('http') ||
+                                        m.content.startsWith('data:image'))
+                                )
+                                    return true
+                                if (
+                                    typeof m.content === 'string' &&
+                                    /\[(?:图片|IMAGE)[:：]((?:https?:\/\/|data:image\/)[^\]]+)\]/i.test(
+                                        m.content,
+                                    )
+                                )
+                                    return true
+                                return false
+                            })
                             if (imgMsg) {
-                                if (imgMsg.type === 'image') return imgMsg.content;
-                                const match = imgMsg.content.match(/\[(?:图片|IMAGE)[:：]((?:https?:\/\/|data:image\/)[^\]]+)\]/i);
-                                return match ? match[1] : null;
+                                if (imgMsg.type === 'image') return imgMsg.content
+                                const match = imgMsg.content.match(
+                                    /\[(?:图片|IMAGE)[:：]((?:https?:\/\/|data:image\/)[^\]]+)\]/i,
+                                )
+                                return match ? match[1] : null
                             }
-                            return null;
-                        };
+                            return null
+                        }
 
                         // 1. Try URL extraction
-                        let urlMatch = rawContent.match(/(https?:\/\/[^\s"'\)）]+|data:image\/[^\s"'\)）]+)/);
+                        let urlMatch = rawContent.match(
+                            /(https?:\/\/[^\s"'\)）]+|data:image\/[^\s"'\)）]+)/,
+                        )
 
                         // Smart Logic: Verify URL existence to prevent Hallucination
                         if (urlMatch) {
-                            const extractedUrl = urlMatch[0];
+                            const extractedUrl = urlMatch[0]
                             // Check if this URL actually exists in history (User input or AI generation)
-                            const existsInHistory = chat.msgs.some(m => m.content && typeof m.content === 'string' && m.content.includes(extractedUrl));
+                            const existsInHistory = chat.msgs.some(
+                                (m) =>
+                                    m.content &&
+                                    typeof m.content === 'string' &&
+                                    m.content.includes(extractedUrl),
+                            )
 
                             if (existsInHistory) {
-                                newAvatarUrl = extractedUrl;
+                                newAvatarUrl = extractedUrl
                             } else {
-                                console.warn('[ChatStore] AI provided a URL not found in history (Hallucination?):', extractedUrl);
+                                console.warn(
+                                    '[ChatStore] AI provided a URL not found in history (Hallucination?):',
+                                    extractedUrl,
+                                )
                                 // Fallback: Use the most recent image
-                                newAvatarUrl = findLastImage();
-                                if (newAvatarUrl) console.log('[ChatStore] Fallback to most recent image:', newAvatarUrl);
+                                newAvatarUrl = findLastImage()
+                                if (newAvatarUrl)
+                                    console.log(
+                                        '[ChatStore] Fallback to most recent image:',
+                                        newAvatarUrl,
+                                    )
                             }
                         } else {
                             // 2. Try ID Lookup
-                            const possibleId = rawContent.replace(/^["'\[\(]|["'\]\)]$/g, '').trim();
+                            const possibleId = rawContent.replace(/^["'\[\(]|["'\]\)]$/g, '').trim()
                             // Specific check for keywords
-                            if (['curr', 'current', 'this', 'latest', 'image', 'undefined'].includes(possibleId.toLowerCase())) {
-                                newAvatarUrl = findLastImage();
+                            if (
+                                [
+                                    'curr',
+                                    'current',
+                                    'this',
+                                    'latest',
+                                    'image',
+                                    'undefined',
+                                ].includes(possibleId.toLowerCase())
+                            ) {
+                                newAvatarUrl = findLastImage()
                             } else {
-                                const targetMsg = chat.msgs.find(m => m.id === possibleId || (m.id && possibleId.includes(m.id)));
+                                const targetMsg = chat.msgs.find(
+                                    (m) =>
+                                        m.id === possibleId || (m.id && possibleId.includes(m.id)),
+                                )
                                 if (targetMsg) {
-                                    if (targetMsg.type === 'image' && targetMsg.content && (targetMsg.content.startsWith('http') || targetMsg.content.startsWith('data:image'))) {
-                                        newAvatarUrl = targetMsg.content;
+                                    if (
+                                        targetMsg.type === 'image' &&
+                                        targetMsg.content &&
+                                        (targetMsg.content.startsWith('http') ||
+                                            targetMsg.content.startsWith('data:image'))
+                                    ) {
+                                        newAvatarUrl = targetMsg.content
                                     } else {
-                                        const embeddedMatch = targetMsg.content?.match(/\[(?:图片|IMAGE)[:：]((?:https?:\/\/|data:image\/)[^\]]+)\]/i);
-                                        if (embeddedMatch) newAvatarUrl = embeddedMatch[1];
+                                        const embeddedMatch = targetMsg.content?.match(
+                                            /\[(?:图片|IMAGE)[:：]((?:https?:\/\/|data:image\/)[^\]]+)\]/i,
+                                        )
+                                        if (embeddedMatch) newAvatarUrl = embeddedMatch[1]
                                     }
                                 } else {
                                     // ID not found, fallback to most recent image if input is short/ambiguous
-                                    if (rawContent.length < 50) newAvatarUrl = findLastImage();
+                                    if (rawContent.length < 50) newAvatarUrl = findLastImage()
                                 }
                             }
                         }
 
                         // Apply
-                        if (newAvatarUrl && (newAvatarUrl.startsWith('http') || newAvatarUrl.startsWith('data:image'))) {
+                        if (
+                            newAvatarUrl &&
+                            (newAvatarUrl.startsWith('http') ||
+                                newAvatarUrl.startsWith('data:image'))
+                        ) {
                             if (chat.avatar !== newAvatarUrl) {
-                                console.log('[ChatStore] Updating Avatar:', newAvatarUrl);
+                                console.log('[ChatStore] Updating Avatar:', newAvatarUrl)
                                 chat.avatar = newAvatarUrl
                                 saveChats()
                                 triggerToast('对方更换了头像', 'info')
                             } else {
-                                console.log('[ChatStore] Avatar is already set to this URL, skipping toast.');
+                                console.log(
+                                    '[ChatStore] Avatar is already set to this URL, skipping toast.',
+                                )
                             }
                         } else {
                             console.warn('[ChatStore] Invalid Avatar URL ignored:', rawContent)
@@ -4100,11 +5163,9 @@ export const useChatStore = defineStore('chat', () => {
                     }
                 }
 
-
-
                 // --- Handle Payment Operations (ID-based) ---
-                const claimRegex = /\[领取(红包|转账):([^\]]+)\]/g;
-                const rejectRegex = /\[(拒收|退回)(红包|转账):([^\]]+)\]/g;
+                const claimRegex = /\[领取(红包|转账):([^\]]+)\]/g
+                const rejectRegex = /\[(拒收|退回)(红包|转账):([^\]]+)\]/g
 
                 let cleanContent = properlyOrderedContent
                     .replace(patRegex, '')
@@ -4118,35 +5179,59 @@ export const useChatStore = defineStore('chat', () => {
                     .replace(/\[COMMENT[:：].*?\]/gi, '')
                     .replace(/\[REPLY[:：].*?\]/gi, '')
                     .replace(/\[MUSIC:\s*.*?\]/gi, '') // Remove MUSIC command tags
-                    .trim();
-                
+                    .trim()
+
                 // --- Pass 0: Robust LS_JSON Extraction (Balanced Braces) ---
                 // We do this first to nuke them completely before they get split
-                const lsMarkerRegex = /\[\s*LS_JSON[:：]?\s*/gi;
-                let lsMatch;
+                const lsMarkerRegex = /\[\s*LS_JSON[:：]?\s*/gi
+                let lsMatch
                 while ((lsMatch = lsMarkerRegex.exec(properlyOrderedContent)) !== null) {
-                    const startIdx = lsMatch.index;
-                    const jsonStart = properlyOrderedContent.indexOf('{', startIdx + lsMatch[0].length);
+                    const startIdx = lsMatch.index
+                    const jsonStart = properlyOrderedContent.indexOf(
+                        '{',
+                        startIdx + lsMatch[0].length,
+                    )
                     if (jsonStart !== -1) {
-                        let braceCount = 0, inString = false, isEscaped = false, jsonEndIdx = -1;
+                        let braceCount = 0,
+                            inString = false,
+                            isEscaped = false,
+                            jsonEndIdx = -1
                         for (let i = jsonStart; i < properlyOrderedContent.length; i++) {
-                            const char = properlyOrderedContent[i];
-                            if (isEscaped) { isEscaped = false; continue; }
-                            if (char === '\\') { isEscaped = true; continue; }
-                            if (char === '"') { inString = !inString; continue; }
+                            const char = properlyOrderedContent[i]
+                            if (isEscaped) {
+                                isEscaped = false
+                                continue
+                            }
+                            if (char === '\\') {
+                                isEscaped = true
+                                continue
+                            }
+                            if (char === '"') {
+                                inString = !inString
+                                continue
+                            }
                             if (!inString) {
-                                if (char === '{') braceCount++;
-                                else if (char === '}') { braceCount--; if (braceCount === 0) { jsonEndIdx = i; break; } }
+                                if (char === '{') braceCount++
+                                else if (char === '}') {
+                                    braceCount--
+                                    if (braceCount === 0) {
+                                        jsonEndIdx = i
+                                        break
+                                    }
+                                }
                             }
                         }
                         if (jsonEndIdx !== -1) {
-                            let blockEnd = jsonEndIdx + 1;
-                            const remaining = properlyOrderedContent.substring(jsonEndIdx + 1, jsonEndIdx + 5);
-                            const closeMatch = remaining.match(/^\s*[\]】]/);
-                            if (closeMatch) blockEnd = jsonEndIdx + 1 + closeMatch[0].length;
+                            let blockEnd = jsonEndIdx + 1
+                            const remaining = properlyOrderedContent.substring(
+                                jsonEndIdx + 1,
+                                jsonEndIdx + 5,
+                            )
+                            const closeMatch = remaining.match(/^\s*[\]】]/)
+                            if (closeMatch) blockEnd = jsonEndIdx + 1 + closeMatch[0].length
                             // Nuke this whole block from cleanContent
-                            const blockText = properlyOrderedContent.substring(startIdx, blockEnd);
-                            cleanContent = cleanContent.replace(blockText, '').trim();
+                            const blockText = properlyOrderedContent.substring(startIdx, blockEnd)
+                            cleanContent = cleanContent.replace(blockText, '').trim()
                         }
                     }
                 }
@@ -4154,112 +5239,151 @@ export const useChatStore = defineStore('chat', () => {
                 // Final sanitization: remove common leaked structured content or CSS leaking
                 if (cleanContent.includes('author:') && cleanContent.includes('content:')) {
                     // If AI leaked parsed JSON summary into text (Step 1 observation), discard it
-                    if (cleanContent.length < 500 && cleanContent.split('\n').every(line => line.includes(':') || line.trim() === '')) {
-                        console.log('[ChatStore] AI leaked summary detected, stripping heavy structural debris...');
-                        cleanContent = '';
+                    if (
+                        cleanContent.length < 500 &&
+                        cleanContent
+                            .split('\n')
+                            .every((line) => line.includes(':') || line.trim() === '')
+                    ) {
+                        console.log(
+                            '[ChatStore] AI leaked summary detected, stripping heavy structural debris...',
+                        )
+                        cleanContent = ''
                     }
                 }
                 // Strip CSS-like debris (Step 2 observation)
-                cleanContent = cleanContent.replace(/transform:\s*translateX\(.*?\);/gi, '');
+                cleanContent = cleanContent.replace(/transform:\s*translateX\(.*?\);/gi, '')
 
                 // Clean AI Hallucinations & Residual Tags & TOXIC CSS
                 cleanContent = cleanContent
                     .replace(/\[Image Reference ID:.*?\]/gi, '')
                     .replace(/Here is the original image:/gi, '')
                     .replace(/\(我发送了一张图片\)/gi, '')
-                    .replace(/\[\/?(MOMENT|REPLY|SET_AVATAR|FAMILY_CARD|FAMILY_CARD_APPLY|FAMILY_CARD_REJECT)\]/gi, '')
+                    .replace(
+                        /\[\/?(MOMENT|REPLY|SET_AVATAR|FAMILY_CARD|FAMILY_CARD_APPLY|FAMILY_CARD_REJECT)\]/gi,
+                        '',
+                    )
                     // Strip system context hints parrotted by AI
-                    .replace(/[\[\(]?(系统|System)[:：\s]*(图片|语音|IMAGE|VOICE|心声|INNER[-_ ]?VOICE)消息[\]\)]?/gi, '')
+                    .replace(
+                        /[\[\(]?(系统|System)[:：\s]*(图片|语音|IMAGE|VOICE|心声|INNER[-_ ]?VOICE)消息[\]\)]?/gi,
+                        '',
+                    )
                     .replace(/\[(?:图片消息|语音消息|心声数据)\]/gi, '')
                     // Aggressively remove residual JSON markers often leaked by AI
-                    .replace(/(?:^|\n)\s*["']?(?:type|data|commands|inner_voice|status|innerVoice)["']?\s*[:：]\s*$/gim, '')
+                    .replace(
+                        /(?:^|\n)\s*["']?(?:type|data|commands|inner_voice|status|innerVoice)["']?\s*[:：]\s*$/gim,
+                        '',
+                    )
                     .replace(/\[done\]$/gi, '')
-                    .trim();
+                    .trim()
 
                 // --- Pre-process: Extract and Protect CARD blocks (Enhanced V2) ---
                 // cardBlocks = []; // ALREADY INITIALIZED AT TOP
 
                 // Pass 1: Handle Markdown HTML code blocks & JSON code blocks (Stupid AI protection)
-                cleanContent = cleanContent.replace(/```(?:html|xml|json)?\s*([\s\S]*?)```/gi, (match, code) => {
-                    const trimmed = code.trim();
-                    if (trimmed.includes('<') && trimmed.includes('>')) {
-                        const json = JSON.stringify({ type: 'html', html: trimmed });
-                        return `\n[CARD]${json}\n`;
-                    } else if (trimmed.startsWith('{') && (trimmed.includes('"type"') || trimmed.includes('"html"'))) {
-                        return `\n[CARD]${trimmed}\n`;
-                    }
-                    return match;
-                });
+                cleanContent = cleanContent.replace(
+                    /```(?:html|xml|json)?\s*([\s\S]*?)```/gi,
+                    (match, code) => {
+                        const trimmed = code.trim()
+                        if (trimmed.includes('<') && trimmed.includes('>')) {
+                            const json = JSON.stringify({ type: 'html', html: trimmed })
+                            return `\n[CARD]${json}\n`
+                        } else if (
+                            trimmed.startsWith('{') &&
+                            (trimmed.includes('"type"') || trimmed.includes('"html"'))
+                        ) {
+                            return `\n[CARD]${trimmed}\n`
+                        }
+                        return match
+                    },
+                )
 
                 // Pass 1.5: Catch emoji-prefixed metadata (e.g., "😡 心情：", "🥺 渴望：")
                 // We do this before HTML extraction so it doesn't get tangled
-                cleanContent = cleanContent.replace(/^[ \t]*[\u2700-\u27bf\u1f300-\u1faff\ud83c\ud83d\ud83e][ \t]*(?:心情|渴望|结论|心声|着装|环境|行为|stats|mind|mood|status|spirit|heartRate|location|distance|energy|stress|intimacy|hunger|thirst|bladder|sleepiness)\s*[:：].*?(?:\n|$)/gm, '');
+                cleanContent = cleanContent.replace(
+                    /^[ \t]*[\u2700-\u27bf\u1f300-\u1faff\ud83c\ud83d\ud83e][ \t]*(?:心情|渴望|结论|心声|着装|环境|行为|stats|mind|mood|status|spirit|heartRate|location|distance|energy|stress|intimacy|hunger|thirst|bladder|sleepiness)\s*[:：].*?(?:\n|$)/gm,
+                    '',
+                )
 
                 // Pass 1.8: Extract [INNER_VOICE] blocks for context but remove from cleanContent.
-                const ivStripRegex = /\[\s*INNER[-_ ]?VOICE\s*\]([\s\S]*?)(\[\/\s*(?:INNER[-_ ]?)?VOICE\s*\]|(?=\n?\s*\[\/?(?:CARD|DRAW|MOMENT|LS_JSON|红包|转账|表情包|图片|SET_|NUDGE|REPLY|FAMILY_CARD|LIKE|COMMENT|ONLINE|OFFLINE|IMAGE|VIDEO|AUDIO|FILE))|$)/gi;
-                const activeInnerVoice = rawInnerVoiceBlock || ""; // 使用之前通过平衡括号法提取的完整块
-                cleanContent = cleanContent.replace(ivStripRegex, ""); 
+                const ivStripRegex =
+                    /\[\s*INNER[-_ ]?VOICE\s*\]([\s\S]*?)(\[\/\s*(?:INNER[-_ ]?)?VOICE\s*\]|(?=\n?\s*\[\/?(?:CARD|DRAW|MOMENT|LS_JSON|红包|转账|表情包|图片|SET_|NUDGE|REPLY|FAMILY_CARD|LIKE|COMMENT|ONLINE|OFFLINE|IMAGE|VIDEO|AUDIO|FILE))|$)/gi
+                const activeInnerVoice = rawInnerVoiceBlock || '' // 使用之前通过平衡括号法提取的完整块
+                cleanContent = cleanContent.replace(ivStripRegex, '')
 
                 // Pass 2: Extraction using robust brace matcher (The Protectors)
                 // Aggressively match anything starting with [CARD]{, { "type":, or type: html {
                 // NOTE: INNER_VOICE intentionally excluded — handled by Pass 1.8 placeholder above
-                const cardStartRegex = /(?:\[\s*(?:CARD|LS_JSON|JSON)\s*\]\s*\{)|(?:\{\s*\\?["'][^"']+\\?["']\s*[:：]\s*)|(?:type\s*[:：]\s*html[\s\S]*?\{)/gi;
-                let cardMatch;
-                const cardPositions = [];
+                const cardStartRegex =
+                    /(?:\[\s*(?:CARD|LS_JSON|JSON)\s*\]\s*\{)|(?:\{\s*\\?["'][^"']+\\?["']\s*[:：]\s*)|(?:type\s*[:：]\s*html[\s\S]*?\{)/gi
+                let cardMatch
+                const cardPositions = []
 
                 while ((cardMatch = cardStartRegex.exec(cleanContent)) !== null) {
-                    let startPos = cardMatch.index;
-                    let jsonStart = cardMatch.index + cardMatch[0].indexOf('{');
-                    let isNaked = !cardMatch[0].trim().toUpperCase().startsWith('[');
+                    let startPos = cardMatch.index
+                    let jsonStart = cardMatch.index + cardMatch[0].indexOf('{')
+                    let isNaked = !cardMatch[0].trim().toUpperCase().startsWith('[')
 
-                    let braceCount = 1;
-                    let endPos = jsonStart + 1;
-                    let inString = false;
-                    let isEscaped = false;
+                    let braceCount = 1
+                    let endPos = jsonStart + 1
+                    let inString = false
+                    let isEscaped = false
 
                     while (endPos < cleanContent.length && braceCount > 0) {
-                        const char = cleanContent[endPos];
-                        if (isEscaped) { isEscaped = false; }
-                        else if (char === '\\') { isEscaped = true; }
-                        else if (char === '"') { inString = !inString; }
-                        else if (!inString) {
-                            if (char === '{') braceCount++;
-                            else if (char === '}') braceCount--;
+                        const char = cleanContent[endPos]
+                        if (isEscaped) {
+                            isEscaped = false
+                        } else if (char === '\\') {
+                            isEscaped = true
+                        } else if (char === '"') {
+                            inString = !inString
+                        } else if (!inString) {
+                            if (char === '{') braceCount++
+                            else if (char === '}') braceCount--
                         }
-                        endPos++;
+                        endPos++
                     }
 
                     if (braceCount === 0 || endPos === cleanContent.length) {
-                        let totalEnd = endPos;
-                        const remaining = cleanContent.substring(endPos);
-                        
+                        let totalEnd = endPos
+                        const remaining = cleanContent.substring(endPos)
+
                         // Consume trailing whitespace and optional CLOSING bracket if we started with an OPENING bracket [
                         if (braceCount === 0 && cardMatch[0].trim().startsWith('[')) {
-                            const trailingBracketMatch = remaining.match(/^\s*\]/);
-                            if (trailingBracketMatch) totalEnd += trailingBracketMatch[0].length;
+                            const trailingBracketMatch = remaining.match(/^\s*\]/)
+                            if (trailingBracketMatch) totalEnd += trailingBracketMatch[0].length
                         }
 
-                        const afterBracket = cleanContent.substring(totalEnd);
-                        const closingTagMatch = afterBracket.match(/^\s*\[\/(?:CARD|INNER[-_ ]?VOICE)\]/i);
-                        if (closingTagMatch) totalEnd += closingTagMatch[0].length;
+                        const afterBracket = cleanContent.substring(totalEnd)
+                        const closingTagMatch = afterBracket.match(
+                            /^\s*\[\/(?:CARD|INNER[-_ ]?VOICE)\]/i,
+                        )
+                        if (closingTagMatch) totalEnd += closingTagMatch[0].length
 
-                        const fullCard = cleanContent.substring(startPos, totalEnd);
-                        cardPositions.push({ start: startPos, end: totalEnd, content: fullCard, isNaked });
-                        cardStartRegex.lastIndex = totalEnd;
+                        const fullCard = cleanContent.substring(startPos, totalEnd)
+                        cardPositions.push({
+                            start: startPos,
+                            end: totalEnd,
+                            content: fullCard,
+                            isNaked,
+                        })
+                        cardStartRegex.lastIndex = totalEnd
                     }
                 }
 
                 // Apply Placeholders (Reversed order to maintain indices)
-                let processedContent = cleanContent;
+                let processedContent = cleanContent
                 for (let i = cardPositions.length - 1; i >= 0; i--) {
-                    const pos = cardPositions[i];
-                    const contentToStore = pos.isNaked ? ('[CARD]' + pos.content) : pos.content;
-                    cardBlocks.push(contentToStore);
-                    processedContent = processedContent.substring(0, pos.start) + ` __CARD_PLACEHOLDER_${cardBlocks.length - 1}__ ` + processedContent.substring(pos.end);
+                    const pos = cardPositions[i]
+                    const contentToStore = pos.isNaked ? '[CARD]' + pos.content : pos.content
+                    cardBlocks.push(contentToStore)
+                    processedContent =
+                        processedContent.substring(0, pos.start) +
+                        ` __CARD_PLACEHOLDER_${cardBlocks.length - 1}__ ` +
+                        processedContent.substring(pos.end)
                 }
 
                 // Pass 2.5: Removed placeholders for innerVoice as it is now handled as metadata.
-
 
                 // Pass 2.8: Pre-Pass-3 guard — extract malformed JSON {,"html":"<div>..."} BEFORE Pass 3 sees inner <div>
                 // Without this, Pass 3 extracts inner HTML from JSON string values, leaving orphaned {, and } as text
@@ -4269,23 +5393,48 @@ export const useChatStore = defineStore('chat', () => {
                     while ((mJsonMatch = malformedJsonRegex.exec(processedContent)) !== null) {
                         const jStart = processedContent.lastIndexOf('{', mJsonMatch.index)
                         if (jStart === -1) continue
-                        let bCount = 0, inStr = false, escaped = false, jEnd = -1
+                        let bCount = 0,
+                            inStr = false,
+                            escaped = false,
+                            jEnd = -1
                         for (let k = jStart; k < processedContent.length; k++) {
                             const c = processedContent[k]
-                            if (escaped) { escaped = false; continue }
-                            if (c === '\\') { escaped = true; continue }
-                            if (c === '"') { inStr = !inStr; continue }
+                            if (escaped) {
+                                escaped = false
+                                continue
+                            }
+                            if (c === '\\') {
+                                escaped = true
+                                continue
+                            }
+                            if (c === '"') {
+                                inStr = !inStr
+                                continue
+                            }
                             if (!inStr) {
                                 if (c === '{') bCount++
-                                else if (c === '}') { bCount--; if (bCount === 0) { jEnd = k; break } }
+                                else if (c === '}') {
+                                    bCount--
+                                    if (bCount === 0) {
+                                        jEnd = k
+                                        break
+                                    }
+                                }
                             }
                         }
                         if (jEnd !== -1) {
                             const fullBlock = processedContent.substring(jStart, jEnd + 1)
-                            if (fullBlock.includes('"html"') && fullBlock.length > 20 && fullBlock.includes('<')) {
+                            if (
+                                fullBlock.includes('"html"') &&
+                                fullBlock.length > 20 &&
+                                fullBlock.includes('<')
+                            ) {
                                 cardBlocks.push(`[CARD]${fullBlock}`)
                                 const ph = ` __CARD_PLACEHOLDER_${cardBlocks.length - 1}__ `
-                                processedContent = processedContent.substring(0, jStart) + ph + processedContent.substring(jEnd + 1)
+                                processedContent =
+                                    processedContent.substring(0, jStart) +
+                                    ph +
+                                    processedContent.substring(jEnd + 1)
                                 malformedJsonRegex.lastIndex = jStart + ph.length
                             }
                         }
@@ -4295,35 +5444,64 @@ export const useChatStore = defineStore('chat', () => {
                 // Pass 3: Extract bare HTML blocks using balanced tag counting
                 // Replaces regex approach which fails on nested same-type tags (e.g. <div><div></div></div>)
                 {
-                    const BLOCK_TAGS = ['html', 'div', 'section', 'article', 'main', 'header', 'footer', 'nav', 'aside', 'details', 'figure', 'style', 'svg'];
+                    const BLOCK_TAGS = [
+                        'html',
+                        'div',
+                        'section',
+                        'article',
+                        'main',
+                        'header',
+                        'footer',
+                        'nav',
+                        'aside',
+                        'details',
+                        'figure',
+                        'style',
+                        'svg',
+                    ]
                     let scanPos = 0
                     while (scanPos < processedContent.length) {
                         // Find next opening block tag
-                        let bestTag = null, bestIdx = -1
+                        let bestTag = null,
+                            bestIdx = -1
                         for (const tag of BLOCK_TAGS) {
                             const idx = processedContent.indexOf('<' + tag, scanPos)
                             if (idx === -1) continue
                             const charAfter = processedContent[idx + 1 + tag.length]
                             if (charAfter && !/[\s/>]/.test(charAfter)) continue
-                            if (bestIdx === -1 || idx < bestIdx) { bestTag = tag; bestIdx = idx }
+                            if (bestIdx === -1 || idx < bestIdx) {
+                                bestTag = tag
+                                bestIdx = idx
+                            }
                         }
                         if (!bestTag) break
 
                         // Skip self-closing tags like <div/>
-                        const afterOpen = processedContent.slice(bestIdx + 1 + bestTag.length, bestIdx + 3 + bestTag.length)
-                        if (afterOpen.startsWith('/>')) { scanPos = bestIdx + bestTag.length + 3; continue }
+                        const afterOpen = processedContent.slice(
+                            bestIdx + 1 + bestTag.length,
+                            bestIdx + 3 + bestTag.length,
+                        )
+                        if (afterOpen.startsWith('/>')) {
+                            scanPos = bestIdx + bestTag.length + 3
+                            continue
+                        }
 
                         // Skip past opening tag's attributes to find >
                         let tagEnd = bestIdx + 1 + bestTag.length
-                        while (tagEnd < processedContent.length && processedContent[tagEnd] !== '>') tagEnd++
-                        if (tagEnd >= processedContent.length) { scanPos++; continue }
+                        while (tagEnd < processedContent.length && processedContent[tagEnd] !== '>')
+                            tagEnd++
+                        if (tagEnd >= processedContent.length) {
+                            scanPos++
+                            continue
+                        }
                         tagEnd++ // past >
 
                         // Use stack to find matching close
                         const stack = [bestTag.toLowerCase()]
                         const tagRegex = /<\/?([a-zA-Z][a-zA-Z0-9]*)/g
                         tagRegex.lastIndex = tagEnd
-                        let foundEnd = false, endPos = -1
+                        let foundEnd = false,
+                            endPos = -1
 
                         while (true) {
                             const m = tagRegex.exec(processedContent)
@@ -4338,7 +5516,11 @@ export const useChatStore = defineStore('chat', () => {
                             }
                             endPos = m.index + m[0].length
                             if (stack.length === 0) {
-                                while (endPos < processedContent.length && processedContent[endPos] !== '>') endPos++
+                                while (
+                                    endPos < processedContent.length &&
+                                    processedContent[endPos] !== '>'
+                                )
+                                    endPos++
                                 endPos++
                                 foundEnd = true
                                 break
@@ -4351,7 +5533,10 @@ export const useChatStore = defineStore('chat', () => {
                                 const json = JSON.stringify({ type: 'html', html: fullHtml })
                                 cardBlocks.push(`[CARD]${json}`)
                                 const placeholder = ` __CARD_PLACEHOLDER_${cardBlocks.length - 1}__ `
-                                processedContent = processedContent.substring(0, bestIdx) + placeholder + processedContent.substring(endPos)
+                                processedContent =
+                                    processedContent.substring(0, bestIdx) +
+                                    placeholder +
+                                    processedContent.substring(endPos)
                                 scanPos = bestIdx + placeholder.length
                             } else {
                                 scanPos = bestIdx + 1
@@ -4363,471 +5548,946 @@ export const useChatStore = defineStore('chat', () => {
                 }
 
                 // Pass 3.5: Aggressive Metadata Strip (Including Multiline & Tag Prepends)
-                const allMetadataKeywords = 'type|card|json|html|content|mood|heartRate|stats|mind|心声|着装|环境|行为|渴望|结论|心情|status|speech|thought|thinking|spirit|location|distance|energy|stress|intimacy|hunger|thirst|bladder|sleepiness';
-                const metaLinePattern = new RegExp(`(?:^|\\n)\\s*(?:${allMetadataKeywords})\\s*[:：][^\\n\\[\\<{]*`, 'gim');
-                processedContent = processedContent.replace(metaLinePattern, '').trim();
-                
+                const allMetadataKeywords =
+                    'type|card|json|html|content|mood|heartRate|stats|mind|心声|着装|环境|行为|渴望|结论|心情|status|speech|thought|thinking|spirit|location|distance|energy|stress|intimacy|hunger|thirst|bladder|sleepiness'
+                const metaLinePattern = new RegExp(
+                    `(?:^|\\n)\\s*(?:${allMetadataKeywords})\\s*[:：][^\\n\\[\\<{]*`,
+                    'gim',
+                )
+                processedContent = processedContent.replace(metaLinePattern, '').trim()
+
                 // Pass 3.6: Merge logic for tags prepended with metadata (Stubborn AI fix)
-                const tagPrependPattern = new RegExp(`(?:^|\\n)\\s*(?:${allMetadataKeywords})\\s*[:：][^\\]]*\\n?(\\[[^\\]]+\\])`, 'gim');
-                processedContent = processedContent.replace(tagPrependPattern, '$1').trim();
+                const tagPrependPattern = new RegExp(
+                    `(?:^|\\n)\\s*(?:${allMetadataKeywords})\\s*[:：][^\\]]*\\n?(\\[[^\\]]+\\])`,
+                    'gim',
+                )
+                processedContent = processedContent.replace(tagPrependPattern, '$1').trim()
 
                 // Pass 3.7: Final stubborn cleanup for dangling card keys
-                processedContent = processedContent.replace(/^\s*(?:type|card|json|html|content)\s*[:：]\s*(?:html|card|{)?\s*$/gim, '');
+                processedContent = processedContent.replace(
+                    /^\s*(?:type|card|json|html|content)\s*[:：]\s*(?:html|card|{)?\s*$/gim,
+                    '',
+                )
 
                 // Pass 3.8: Remove leaked stats field lines (spirit:/mood:/heartRate:/location:/distance: appearing as standalone text)
                 // Remove multi-line block leaks first:
-                processedContent = processedContent.replace(/(?:^|\n)\s*["']?(?:spirit|mood|heartRate|distance|location|energy|stress|intimacy|trust|temperature|emotion|stats|hunger|thirst|bladder|sleepiness)["']?\s*[:：]\s*\{[\s\S]*?\}(?:,)?/gi, '\n');
+                processedContent = processedContent.replace(
+                    /(?:^|\n)\s*["']?(?:spirit|mood|heartRate|distance|location|energy|stress|intimacy|trust|temperature|emotion|stats|hunger|thirst|bladder|sleepiness)["']?\s*[:：]\s*\{[\s\S]*?\}(?:,)?/gi,
+                    '\n',
+                )
                 // Remove single-line leaks:
-                processedContent = processedContent.replace(/(?:^|\n)\s*["']?(?:spirit|mood|heartRate|distance|location|energy|stress|intimacy|trust|temperature|emotion|stats|hunger|thirst|bladder|sleepiness)["']?\s*[:：][^\n]*/gi, '\n');
-                
-                processedContent = processedContent.replace(/\n{2,}/g, '\n').trim();
+                processedContent = processedContent.replace(
+                    /(?:^|\n)\s*["']?(?:spirit|mood|heartRate|distance|location|energy|stress|intimacy|trust|temperature|emotion|stats|hunger|thirst|bladder|sleepiness)["']?\s*[:：][^\n]*/gi,
+                    '\n',
+                )
 
+                processedContent = processedContent.replace(/\n{2,}/g, '\n').trim()
 
                 // Pass 3.9: Fallback — catch naked {"type":"html",...} or {,"html":...} JSON objects missed by earlier passes
                 // Handles malformed AI output like {,\n "html":"<div>...</div>"\n} with garbage after {
-                const nakedHtmlJsonRegex = /\{[\s,]*\\?["']?(?:type|html|card|json|content)\\?["']?\s*[:：]\s*\\?["']?(?:html|card)?\\?["']?/gi;
-                let nakedMatch;
+                const nakedHtmlJsonRegex =
+                    /\{[\s,]*\\?["']?(?:type|html|card|json|content)\\?["']?\s*[:：]\s*\\?["']?(?:html|card)?\\?["']?/gi
+                let nakedMatch
                 while ((nakedMatch = nakedHtmlJsonRegex.exec(processedContent)) !== null) {
-                    const jsonStart = processedContent.lastIndexOf('{', nakedMatch.index);
-                    if (jsonStart === -1) continue;
-                    let braceCount = 0, inString = false, isEscaped = false, jsonEnd = -1;
+                    const jsonStart = processedContent.lastIndexOf('{', nakedMatch.index)
+                    if (jsonStart === -1) continue
+                    let braceCount = 0,
+                        inString = false,
+                        isEscaped = false,
+                        jsonEnd = -1
                     for (let i = jsonStart; i < processedContent.length; i++) {
-                        const ch = processedContent[i];
-                        if (isEscaped) { isEscaped = false; continue; }
-                        if (ch === '\\') { isEscaped = true; continue; }
-                        if (ch === '"') { inString = !inString; continue; }
+                        const ch = processedContent[i]
+                        if (isEscaped) {
+                            isEscaped = false
+                            continue
+                        }
+                        if (ch === '\\') {
+                            isEscaped = true
+                            continue
+                        }
+                        if (ch === '"') {
+                            inString = !inString
+                            continue
+                        }
                         if (!inString) {
-                            if (ch === '{') braceCount++;
-                            else if (ch === '}') { braceCount--; if (braceCount === 0) { jsonEnd = i; break; } }
+                            if (ch === '{') braceCount++
+                            else if (ch === '}') {
+                                braceCount--
+                                if (braceCount === 0) {
+                                    jsonEnd = i
+                                    break
+                                }
+                            }
                         }
                     }
                     if (jsonEnd !== -1) {
-                        const fullJson = processedContent.substring(jsonStart, jsonEnd + 1);
-                        if ((fullJson.includes('"html"') || fullJson.includes('"type"')) && fullJson.length > 20) {
-                            cardBlocks.push(`[CARD]${fullJson}`);
-                            const placeholder = ` __CARD_PLACEHOLDER_${cardBlocks.length - 1}__ `;
-                            processedContent = processedContent.substring(0, jsonStart) + placeholder + processedContent.substring(jsonEnd + 1);
-                            nakedHtmlJsonRegex.lastIndex = jsonStart + placeholder.length;
+                        const fullJson = processedContent.substring(jsonStart, jsonEnd + 1)
+                        if (
+                            (fullJson.includes('"html"') || fullJson.includes('"type"')) &&
+                            fullJson.length > 20
+                        ) {
+                            cardBlocks.push(`[CARD]${fullJson}`)
+                            const placeholder = ` __CARD_PLACEHOLDER_${cardBlocks.length - 1}__ `
+                            processedContent =
+                                processedContent.substring(0, jsonStart) +
+                                placeholder +
+                                processedContent.substring(jsonEnd + 1)
+                            nakedHtmlJsonRegex.lastIndex = jsonStart + placeholder.length
                         }
                     }
                 }
 
-
                 // Pass 4: Clean up image tags & Hallucination Cleanup
                 processedContent = processedContent.replace(/\[图片:(.+?)\]/gi, (match, url) => {
-                    const trimmedUrl = url.trim();
-                    if (!(trimmedUrl.startsWith('http') || trimmedUrl.startsWith('data:') || trimmedUrl === '/broken-image.png')) {
-                        return '[图片:/broken-image.png]';
+                    const trimmedUrl = url.trim()
+                    if (!(
+                        trimmedUrl.startsWith('http') ||
+                        trimmedUrl.startsWith('data:') ||
+                        trimmedUrl === '/broken-image.png'
+                    )) {
+                        return '[图片:/broken-image.png]'
                     }
-                    return match;
-                });
+                    return match
+                })
 
-                processedContent = processedContent.replace(/<button[\s\S]*?qiaoqiao_receiveFamilyCard\('([^']*)',\s*([\d.]+),\s*'([^']*)'[\s\S]*?点击领取<\/button>/gi, (match, uuid, amount, note) => {
-                    return `[FAMILY_CARD:${amount}:${note}]`;
-                });
+                processedContent = processedContent.replace(
+                    /<button[\s\S]*?qiaoqiao_receiveFamilyCard\('([^']*)',\s*([\d.]+),\s*'([^']*)'[\s\S]*?点击领取<\/button>/gi,
+                    (match, uuid, amount, note) => {
+                        return `[FAMILY_CARD:${amount}:${note}]`
+                    },
+                )
 
                 // [FIX] Pre-split LS_JSON extraction: Extract and execute LS_JSON blocks BEFORE splitting
                 // because the split regex \[[^\]]+\] can't handle nested brackets inside JSON arrays
                 {
-                    const lsStartRegex = /\[\s*LS_JSON[:：]?\s*/gi;
-                    let lsMatch;
-                    const lsSearchRegex = new RegExp(lsStartRegex.source, lsStartRegex.flags);
-                    const lsBlocks = [];
+                    const lsStartRegex = /\[\s*LS_JSON[:：]?\s*/gi
+                    let lsMatch
+                    const lsSearchRegex = new RegExp(lsStartRegex.source, lsStartRegex.flags)
+                    const lsBlocks = []
                     while ((lsMatch = lsSearchRegex.exec(processedContent)) !== null) {
-                        const lsStartIdx = lsMatch.index;
-                        const lsContentStart = lsStartIdx + lsMatch[0].length;
-                        const lsFirstBrace = processedContent.indexOf('{', lsContentStart);
-                        if (lsFirstBrace === -1) continue;
-                        let bd = 0, biStr = false, biEsc = false, lsEndIdx = -1;
+                        const lsStartIdx = lsMatch.index
+                        const lsContentStart = lsStartIdx + lsMatch[0].length
+                        const lsFirstBrace = processedContent.indexOf('{', lsContentStart)
+                        if (lsFirstBrace === -1) continue
+                        let bd = 0,
+                            biStr = false,
+                            biEsc = false,
+                            lsEndIdx = -1
                         for (let i = lsFirstBrace; i < processedContent.length; i++) {
-                            const c = processedContent[i];
-                            if (biEsc) { biEsc = false; continue; }
-                            if (c === '\\') { biEsc = true; continue; }
-                            if (c === '"') { biStr = !biStr; continue; }
+                            const c = processedContent[i]
+                            if (biEsc) {
+                                biEsc = false
+                                continue
+                            }
+                            if (c === '\\') {
+                                biEsc = true
+                                continue
+                            }
+                            if (c === '"') {
+                                biStr = !biStr
+                                continue
+                            }
                             if (!biStr) {
-                                if (c === '{') bd++;
-                                else if (c === '}') { bd--; if (bd === 0) { lsEndIdx = i; break; } }
+                                if (c === '{') bd++
+                                else if (c === '}') {
+                                    bd--
+                                    if (bd === 0) {
+                                        lsEndIdx = i
+                                        break
+                                    }
+                                }
                             }
                         }
-                        if (lsEndIdx === -1) continue;
-                        let blockEnd = lsEndIdx + 1;
-                        const afterBrace = processedContent.substring(lsEndIdx + 1, lsEndIdx + 10);
-                        const bracketMatch = afterBrace.match(/^\s*[\]】]/);
-                        if (bracketMatch) blockEnd = lsEndIdx + 1 + bracketMatch[0].length;
-                        const lsBlock = processedContent.substring(lsStartIdx, blockEnd);
-                        lsBlocks.push({ start: lsStartIdx, end: blockEnd, content: lsBlock });
-                        lsSearchRegex.lastIndex = blockEnd;
+                        if (lsEndIdx === -1) continue
+                        let blockEnd = lsEndIdx + 1
+                        const afterBrace = processedContent.substring(lsEndIdx + 1, lsEndIdx + 10)
+                        const bracketMatch = afterBrace.match(/^\s*[\]】]/)
+                        if (bracketMatch) blockEnd = lsEndIdx + 1 + bracketMatch[0].length
+                        const lsBlock = processedContent.substring(lsStartIdx, blockEnd)
+                        lsBlocks.push({ start: lsStartIdx, end: blockEnd, content: lsBlock })
+                        lsSearchRegex.lastIndex = blockEnd
                     }
                     if (lsBlocks.length > 0) {
-                        console.log(`[ChatStore] Pre-split: Found ${lsBlocks.length} LS_JSON blocks, executing...`);
-                        const { useLoveSpaceStore } = await import('./loveSpaceStore');
-                        const loveSpaceStore = useLoveSpaceStore();
+                        console.log(
+                            `[ChatStore] Pre-split: Found ${lsBlocks.length} LS_JSON blocks, executing...`,
+                        )
+                        const { useLoveSpaceStore } = await import('./loveSpaceStore')
+                        const loveSpaceStore = useLoveSpaceStore()
                         for (const block of lsBlocks) {
-                            const braceStart = block.content.indexOf('{');
-                            const braceEnd = block.content.lastIndexOf('}');
+                            const braceStart = block.content.indexOf('{')
+                            const braceEnd = block.content.lastIndexOf('}')
                             if (braceStart !== -1 && braceEnd > braceStart) {
-                                let jsonStr = block.content.substring(braceStart, braceEnd + 1);
-                                jsonStr = jsonStr.replace(/^[\s,]+/, '');
+                                let jsonStr = block.content.substring(braceStart, braceEnd + 1)
+                                jsonStr = jsonStr.replace(/^[\s,]+/, '')
                                 // [BUG FIX] 原代码无条件 replace(/\\"/g, '"') 会破坏合法 JSON 里的转义引号
                                 // (如 content:"她说\"你好\"" → 替换后字符串提前闭合, JSON.parse 必失败,
                                 // 整个指令块被静默丢弃, 用户看到指令消失却无任何执行). 改为: 先原样 parse,
                                 // 失败后才尝试修复真正的双重转义 (\\" → \").
-                                let parseOk = false;
+                                let parseOk = false
                                 try {
-                                    JSON.parse(jsonStr);
-                                    parseOk = true;
+                                    JSON.parse(jsonStr)
+                                    parseOk = true
                                 } catch (e) {
-                                    const repaired = jsonStr.replace(/\\\\"/g, '\\"').replace(/\\\\\\\\/g, '\\\\');
+                                    const repaired = jsonStr
+                                        .replace(/\\\\"/g, '\\"')
+                                        .replace(/\\\\\\\\/g, '\\\\')
                                     try {
-                                        JSON.parse(repaired);
-                                        jsonStr = repaired;
-                                        parseOk = true;
+                                        JSON.parse(repaired)
+                                        jsonStr = repaired
+                                        parseOk = true
                                     } catch (e2) {
-                                        console.warn('[ChatStore] Pre-split LS_JSON parse failed:', e2.message, 'raw:', jsonStr.substring(0, 100));
+                                        console.warn(
+                                            '[ChatStore] Pre-split LS_JSON parse failed:',
+                                            e2.message,
+                                            'raw:',
+                                            jsonStr.substring(0, 100),
+                                        )
                                     }
                                 }
                                 if (parseOk) {
-                                    console.log('[ChatStore] Pre-split LS_JSON OK:', jsonStr.substring(0, 120));
-                                    const execResult = await loveSpaceStore.executeSpaceCommands(jsonStr, chat.name, null, chatId);
-                                    console.log('[ChatStore] Pre-split LS_JSON executed:', execResult);
+                                    console.log(
+                                        '[ChatStore] Pre-split LS_JSON OK:',
+                                        jsonStr.substring(0, 120),
+                                    )
+                                    const execResult = await loveSpaceStore.executeSpaceCommands(
+                                        jsonStr,
+                                        chat.name,
+                                        null,
+                                        chatId,
+                                    )
+                                    console.log(
+                                        '[ChatStore] Pre-split LS_JSON executed:',
+                                        execResult,
+                                    )
                                     if (execResult && execResult.success !== false) {
-                                        triggerToast(`${chat.name} 更新了情侣空间`, 'success');
+                                        triggerToast(`${chat.name} 更新了情侣空间`, 'success')
                                     }
                                 }
                             }
                         }
                         // Strip LS_JSON blocks from content (backwards)
                         for (let i = lsBlocks.length - 1; i >= 0; i--) {
-                            const b = lsBlocks[i];
-                            processedContent = processedContent.substring(0, b.start).replace(/[,，:：\s\r\n]+$/, '') + processedContent.substring(b.end);
+                            const b = lsBlocks[i]
+                            processedContent =
+                                processedContent
+                                    .substring(0, b.start)
+                                    .replace(/[,，:：\s\r\n]+$/, '') +
+                                processedContent.substring(b.end)
                         }
-                        processedContent = processedContent.trim();
+                        processedContent = processedContent.trim()
                     }
                 }
 
                 // V16-V17: Split logic
-                let finalSegments = [];
-                const splitRegex = new RegExp("(\\r?\\n|__CARD_PLACEHOLDER_\\d+__|\\[\\/\\?\\s*OFFLINE\\s*\\]|\\[\\/\\?\\s*ONLINE\\s*\\]|\\|\\|[\\s\\S]*?\\|\\||\\u2016[\\s\\S]*?\\u2016|\\u3010[^\\u3011]+\\u3011|\\[[^\\]]+\\])");
+                let finalSegments = []
+                const splitRegex = new RegExp(
+                    '(\\r?\\n|__CARD_PLACEHOLDER_\\d+__|\\[\\/\\?\\s*OFFLINE\\s*\\]|\\[\\/\\?\\s*ONLINE\\s*\\]|\\|\\|[\\s\\S]*?\\|\\||\\u2016[\\s\\S]*?\\u2016|\\u3010[^\\u3011]+\\u3011|\\[[^\\]]+\\])',
+                )
                 // 不再用正则分割中英文括号，改用后处理合并逻辑以支持嵌套括号
-                const rawParts = processedContent.split(splitRegex);
+                const rawParts = processedContent.split(splitRegex)
 
-                useLoggerStore().debug(`[Split] Parts count: ${rawParts.length}`);
+                useLoggerStore().debug(`[Split] Parts count: ${rawParts.length}`)
 
                 // rawSegments = []; // INITIALIZED AT TOP
                 // currentRawSegment = ""; // INITIALIZED AT TOP
 
                 for (let i = 0; i < rawParts.length; i++) {
-                    const part = rawParts[i];
-                    if (part === undefined) continue;
+                    const part = rawParts[i]
+                    if (part === undefined) continue
 
-                    const trimmedPart = part.trim();
+                    const trimmedPart = part.trim()
                     // V17: Simplified isSpecial logic to be more inclusive of tags with parameters
                     // Match newlines, placeholders, theater blocks, or any bracketed command tag
-                    const isNewline = /^\r?\n$/.test(part);
-                    const isTag = /^\[[^\s\]]+(?::[^\]]*)?\]$/.test(trimmedPart);
-                    const isTheater = /^(\|\||\u2016)[\s\S]*?(\|\||\u2016)$/.test(trimmedPart);
-                    const isPlaceholder = /^__CARD_PLACEHOLDER_\d+__$/.test(trimmedPart);
-                    
+                    const isNewline = /^\r?\n$/.test(part)
+                    const isTag = /^\[[^\s\]]+(?::[^\]]*)?\]$/.test(trimmedPart)
+                    const isTheater = /^(\|\||\u2016)[\s\S]*?(\|\||\u2016)$/.test(trimmedPart)
+                    const isPlaceholder = /^__CARD_PLACEHOLDER_\d+__$/.test(trimmedPart)
+
                     // Specific command check for tags that aren't generic [xxx]
-                    const isCommandTag = isTag && /\[\/?\s*(?:OFFLINE|ONLINE|INNER|LS_JSON|DRAW|MUSIC|DICE|TAROT|红包|转账|REDPACKET|TRANSFER|表情包|表情-包|STICKER|图片|IMAGE|语音|VOICE|语音通话|视频通话|通话|CALL|绘画|生成图片|演奏|音乐|骰子|掷骰子|塔罗|塔罗牌|FAMILY_CARD|场景|SCENE|LIKE|点赞|喜欢|COMMENT|评论|REPLY|回复|位置|LOCATION|地图|MAP|SHARE|分享|转发|文件|FILE|LINK|链接|URL|SYSTEM|系统|通知|SET_AVATAR|SET_NAME|SET_PAT|设置头像|设置昵称|设置拍一拍|NUDGE|戳一戳|拍一拍|QUOTE|引用|GIFT|礼物|CARD|定时|TIMER|REMIND|提醒|搜索|查找|黄历|ALMANAC|运势)/i.test(trimmedPart);
+                    const isCommandTag =
+                        isTag &&
+                        /\[\/?\s*(?:OFFLINE|ONLINE|INNER|LS_JSON|DRAW|MUSIC|DICE|TAROT|红包|转账|REDPACKET|TRANSFER|表情包|表情-包|STICKER|图片|IMAGE|语音|VOICE|语音通话|视频通话|通话|CALL|绘画|生成图片|演奏|音乐|骰子|掷骰子|塔罗|塔罗牌|FAMILY_CARD|场景|SCENE|LIKE|点赞|喜欢|COMMENT|评论|REPLY|回复|位置|LOCATION|地图|MAP|SHARE|分享|转发|文件|FILE|LINK|链接|URL|SYSTEM|系统|通知|SET_AVATAR|SET_NAME|SET_PAT|设置头像|设置昵称|设置拍一拍|NUDGE|戳一戳|拍一拍|QUOTE|引用|GIFT|礼物|CARD|定时|TIMER|REMIND|提醒|搜索|查找|黄历|ALMANAC|运势)/i.test(
+                            trimmedPart,
+                        )
 
                     // [FIX] 不再将所有以括号开头的文本视为特殊分段（会导致"(去)"等普通内容被错误拆成独立气泡）
                     // 仅匹配真正的动作/旁白标记：短内容全包裹在括号内，如(笑)、(点头)、（叹气）等
-                    const isActionInParens = (
-                        (trimmedPart.startsWith('(') && trimmedPart.endsWith(')') && trimmedPart.length < 30) ||
-                        (trimmedPart.startsWith('（') && trimmedPart.endsWith('）') && trimmedPart.length < 30)
-                    )
+                    const isActionInParens =
+                        (trimmedPart.startsWith('(') &&
+                            trimmedPart.endsWith(')') &&
+                            trimmedPart.length < 30) ||
+                        (trimmedPart.startsWith('（') &&
+                            trimmedPart.endsWith('）') &&
+                            trimmedPart.length < 30)
 
-                    if (isNewline || isPlaceholder || isCommandTag || isTheater || trimmedPart.startsWith('【') || isActionInParens) {
+                    if (
+                        isNewline ||
+                        isPlaceholder ||
+                        isCommandTag ||
+                        isTheater ||
+                        trimmedPart.startsWith('【') ||
+                        isActionInParens
+                    ) {
                         // HTML block continuity: don't split HTML content spread across lines
                         // e.g. <div style="...">\n  <span>text</span>\n</div> should stay as one segment
                         if (isNewline) {
                             // Count open vs close tags to detect unclosed HTML blocks
-                            const openTags = (currentRawSegment.match(/<[a-zA-Z][a-zA-Z0-9]*(?=[\s/>])/g) || []).length
-                            const closeTags = (currentRawSegment.match(/<\/[a-zA-Z][a-zA-Z0-9]*>/g) || []).length
+                            const openTags = (
+                                currentRawSegment.match(/<[a-zA-Z][a-zA-Z0-9]*(?=[\s/>])/g) || []
+                            ).length
+                            const closeTags = (
+                                currentRawSegment.match(/<\/[a-zA-Z][a-zA-Z0-9]*>/g) || []
+                            ).length
                             if (openTags > closeTags) {
                                 currentRawSegment += part
                                 continue
                             }
                             // Fallback: check immediate next part for HTML tags
                             const nextPart = rawParts[i + 1]
-                            const looksLikeHtml = (str) => /<\/?[a-zA-Z][a-zA-Z0-9]*(?:\s[^>]*)?\/?\s*>/.test(str)
-                            if (nextPart && looksLikeHtml(nextPart) && looksLikeHtml(currentRawSegment)) {
+                            const looksLikeHtml = (str) =>
+                                /<\/?[a-zA-Z][a-zA-Z0-9]*(?:\s[^>]*)?\/?\s*>/.test(str)
+                            if (
+                                nextPart &&
+                                looksLikeHtml(nextPart) &&
+                                looksLikeHtml(currentRawSegment)
+                            ) {
                                 currentRawSegment += part
                                 continue
                             }
                         }
 
-                        if (currentRawSegment) { 
-                            rawSegments.push(currentRawSegment); 
-                            currentRawSegment = ""; 
+                        if (currentRawSegment) {
+                            rawSegments.push(currentRawSegment)
+                            currentRawSegment = ''
                         }
-                        if (!isNewline) rawSegments.push(part);
-                        // If it's a newline, we just don't append it to currentRawSegment, 
+                        if (!isNewline) rawSegments.push(part)
+                        // If it's a newline, we just don't append it to currentRawSegment,
                         // effectively making it a segment break.
                     } else {
-                        currentRawSegment += part;
+                        currentRawSegment += part
                     }
                 }
-                if (currentRawSegment) rawSegments.push(currentRawSegment);
+                if (currentRawSegment) rawSegments.push(currentRawSegment)
 
                 // --- Restoring Card Blocks and Filtering Content ---
                 // (finalSegments declared above at line ~3349 before try block)
-                let activeMode = null;
-                let prevLength = finalSegments.length;
+                let activeMode = null
+                let prevLength = finalSegments.length
                 for (const seg of rawSegments) {
-                    let content = seg;
-                    const trimmedContent = content.trim();
-                    
+                    let content = seg
+                    const trimmedContent = content.trim()
+
                     // Robust tag detection within the segmenter
-                    if (/^\[\s*ONLINE\s*\]$/i.test(trimmedContent)) { activeMode = 'online'; continue; }
-                    if (/^\[\/\s*ONLINE\s*\]$/i.test(trimmedContent)) { activeMode = null; continue; }
-                    if (/^\[\s*OFFLINE\s*\]$/i.test(trimmedContent)) { activeMode = 'offline'; continue; }
-                    if (/^\[\/\s*OFFLINE\s*\]$/i.test(trimmedContent)) { activeMode = null; continue; }
+                    if (/^\[\s*ONLINE\s*\]$/i.test(trimmedContent)) {
+                        activeMode = 'online'
+                        continue
+                    }
+                    if (/^\[\/\s*ONLINE\s*\]$/i.test(trimmedContent)) {
+                        activeMode = null
+                        continue
+                    }
+                    if (/^\[\s*OFFLINE\s*\]$/i.test(trimmedContent)) {
+                        activeMode = 'offline'
+                        continue
+                    }
+                    if (/^\[\/\s*OFFLINE\s*\]$/i.test(trimmedContent)) {
+                        activeMode = null
+                        continue
+                    }
 
                     // SAFETY NET: If a non-tag segment still contains mode control tags (edge case from HTML extraction),
                     // extract the mode from the tag and strip it from content.
                     // This handles cases where [OFFLINE] got stuck inside content due to HTML block extraction.
-                    if (/\[\s*OFFLINE\s*\]/i.test(trimmedContent) && !/\[\s*ONLINE\s*\]/i.test(trimmedContent)) {
-                        activeMode = 'offline';
-                        content = content.replace(/\[\s*\/?OFFLINE\s*\]/gi, '').trim();
-                        if (!content) { prevLength = finalSegments.length; continue; }
-                    } else if (/\[\s*ONLINE\s*\]/i.test(trimmedContent) && !/\[\s*OFFLINE\s*\]/i.test(trimmedContent)) {
-                        activeMode = 'online';
-                        content = content.replace(/\[\s*\/?ONLINE\s*\]/gi, '').trim();
-                        if (!content) { prevLength = finalSegments.length; continue; }
+                    if (
+                        /\[\s*OFFLINE\s*\]/i.test(trimmedContent) &&
+                        !/\[\s*ONLINE\s*\]/i.test(trimmedContent)
+                    ) {
+                        activeMode = 'offline'
+                        content = content.replace(/\[\s*\/?OFFLINE\s*\]/gi, '').trim()
+                        if (!content) {
+                            prevLength = finalSegments.length
+                            continue
+                        }
+                    } else if (
+                        /\[\s*ONLINE\s*\]/i.test(trimmedContent) &&
+                        !/\[\s*OFFLINE\s*\]/i.test(trimmedContent)
+                    ) {
+                        activeMode = 'online'
+                        content = content.replace(/\[\s*\/?ONLINE\s*\]/gi, '').trim()
+                        if (!content) {
+                            prevLength = finalSegments.length
+                            continue
+                        }
                     } else if (/\[\/\s*OFFLINE\s*\]/i.test(trimmedContent)) {
                         // [/OFFLINE] residue in content — strip it and reset mode after this segment
-                        content = content.replace(/\[\/\s*OFFLINE\s*\]/gi, '').trim();
-                        if (!content) { activeMode = null; prevLength = finalSegments.length; continue; }
+                        content = content.replace(/\[\/\s*OFFLINE\s*\]/gi, '').trim()
+                        if (!content) {
+                            activeMode = null
+                            prevLength = finalSegments.length
+                            continue
+                        }
                         // Push current content with offline mode, then reset
-                        prevLength = finalSegments.length;
-                        if (content) finalSegments.push({ type: 'text', content, mode: 'offline' });
-                        activeMode = null;
-                        continue;
+                        prevLength = finalSegments.length
+                        if (content) finalSegments.push({ type: 'text', content, mode: 'offline' })
+                        activeMode = null
+                        continue
                     } else if (/\[\/\s*ONLINE\s*\]/i.test(trimmedContent)) {
-                        content = content.replace(/\[\/\s*ONLINE\s*\]/gi, '').trim();
-                        if (!content) { activeMode = null; prevLength = finalSegments.length; continue; }
-                        prevLength = finalSegments.length;
-                        if (content) finalSegments.push({ type: 'text', content, mode: 'online' });
-                        activeMode = null;
-                        continue;
+                        content = content.replace(/\[\/\s*ONLINE\s*\]/gi, '').trim()
+                        if (!content) {
+                            activeMode = null
+                            prevLength = finalSegments.length
+                            continue
+                        }
+                        prevLength = finalSegments.length
+                        if (content) finalSegments.push({ type: 'text', content, mode: 'online' })
+                        activeMode = null
+                        continue
                     }
 
-                    prevLength = finalSegments.length;
-                    const placeholderMatch = content.match(/__CARD_PLACEHOLDER_(\d+)__/);
+                    prevLength = finalSegments.length
+                    const placeholderMatch = content.match(/__CARD_PLACEHOLDER_(\d+)__/)
 
                     if (placeholderMatch) {
-                        const index = parseInt(placeholderMatch[1]);
-                        content = cardBlocks[index];
-                        finalSegments.push({ type: 'card', content, mode: activeMode });
+                        const index = parseInt(placeholderMatch[1])
+                        content = cardBlocks[index]
+                        finalSegments.push({ type: 'card', content, mode: activeMode })
                     } else if (/^\[(?:表情包|表情-包|STICKER)[:：].*?\]$/.test(content.trim())) {
-                        finalSegments.push({ type: 'sticker', content: content.trim(), mode: activeMode });
-                    } else if (content.startsWith('[语音通话]') || content.startsWith('[通话]') || content.startsWith('[CALL]')) {
-                        finalSegments.push({ type: 'call', content: 'voice', mode: activeMode });
+                        finalSegments.push({
+                            type: 'sticker',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
+                    } else if (
+                        content.startsWith('[语音通话]') ||
+                        content.startsWith('[通话]') ||
+                        content.startsWith('[CALL]')
+                    ) {
+                        finalSegments.push({ type: 'call', content: 'voice', mode: activeMode })
                     } else if (content.startsWith('[视频通话]')) {
-                        finalSegments.push({ type: 'call', content: 'video', mode: activeMode });
+                        finalSegments.push({ type: 'call', content: 'video', mode: activeMode })
                     } else if (content.startsWith('[语音') || content.startsWith('[VOICE')) {
-                        let voiceContent = content.replace(/^\[(?:语音|VOICE)(消息)?[:：]?\s*/, '').replace(/\]$/, '');
-                        finalSegments.push({ type: 'voice', content: voiceContent.trim(), mode: activeMode });
+                        let voiceContent = content
+                            .replace(/^\[(?:语音|VOICE)(消息)?[:：]?\s*/, '')
+                            .replace(/\]$/, '')
+                        finalSegments.push({
+                            type: 'voice',
+                            content: voiceContent.trim(),
+                            mode: activeMode,
+                        })
                     } else if (content.startsWith('[图片') || content.startsWith('[IMAGE')) {
-                        finalSegments.push({ type: 'text', content: '[图片]', mode: activeMode });
-                    } else if (content.startsWith('[DRAW:') || content.startsWith('[绘画:') || content.startsWith('[生成图片:')) {
-                        finalSegments.push({ type: 'draw', content: content.trim(), mode: activeMode });
-                    } else if (content.startsWith('[演奏:') || content.startsWith('[MUSIC:') || content.startsWith('[音乐:')) {
-                        finalSegments.push({ type: 'music', content: content.trim(), mode: activeMode });
-                    } else if (content.startsWith('[骰子:') || content.startsWith('[DICE:') || content.startsWith('[掷骰子:')) {
-                        finalSegments.push({ type: 'dice', content: content.trim(), mode: activeMode });
-                    } else if (content.startsWith('[塔罗:') || content.startsWith('[塔罗牌:') || content.startsWith('[TAROT:')) {
-                        finalSegments.push({ type: 'tarot', content: content.trim(), mode: activeMode });
-                    } else if (content.startsWith('[红包:') || content.startsWith('[转账:') || content.startsWith('[REDPACKET:') || content.startsWith('[TRANSFER:')) {
-                        finalSegments.push({ type: 'payment', content: content.trim(), mode: activeMode });
-                    } else if (content.startsWith('[位置:') || content.startsWith('[LOCATION:') || content.startsWith('[地图:') || content.startsWith('[MAP:') || 
-                            content.startsWith('【地点') || content.startsWith('【场景')) {
-                        finalSegments.push({ type: 'location', content: content.trim(), mode: 'offline' });
+                        finalSegments.push({ type: 'text', content: '[图片]', mode: activeMode })
+                    } else if (
+                        content.startsWith('[DRAW:') ||
+                        content.startsWith('[绘画:') ||
+                        content.startsWith('[生成图片:')
+                    ) {
+                        finalSegments.push({
+                            type: 'draw',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
+                    } else if (
+                        content.startsWith('[演奏:') ||
+                        content.startsWith('[MUSIC:') ||
+                        content.startsWith('[音乐:')
+                    ) {
+                        finalSegments.push({
+                            type: 'music',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
+                    } else if (
+                        content.startsWith('[骰子:') ||
+                        content.startsWith('[DICE:') ||
+                        content.startsWith('[掷骰子:')
+                    ) {
+                        finalSegments.push({
+                            type: 'dice',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
+                    } else if (
+                        content.startsWith('[塔罗:') ||
+                        content.startsWith('[塔罗牌:') ||
+                        content.startsWith('[TAROT:')
+                    ) {
+                        finalSegments.push({
+                            type: 'tarot',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
+                    } else if (
+                        content.startsWith('[红包:') ||
+                        content.startsWith('[转账:') ||
+                        content.startsWith('[REDPACKET:') ||
+                        content.startsWith('[TRANSFER:')
+                    ) {
+                        finalSegments.push({
+                            type: 'payment',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
+                    } else if (
+                        content.startsWith('[位置:') ||
+                        content.startsWith('[LOCATION:') ||
+                        content.startsWith('[地图:') ||
+                        content.startsWith('[MAP:') ||
+                        content.startsWith('【地点') ||
+                        content.startsWith('【场景')
+                    ) {
+                        finalSegments.push({
+                            type: 'location',
+                            content: content.trim(),
+                            mode: 'offline',
+                        })
                     } else if (content.startsWith('[文件:') || content.startsWith('[FILE:')) {
-                        finalSegments.push({ type: 'file', content: content.trim(), mode: activeMode });
-                    } else if (content.startsWith('[链接:') || content.startsWith('[LINK:') || content.startsWith('[URL:')) {
-                        finalSegments.push({ type: 'link', content: content.trim(), mode: activeMode });
+                        finalSegments.push({
+                            type: 'file',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
+                    } else if (
+                        content.startsWith('[链接:') ||
+                        content.startsWith('[LINK:') ||
+                        content.startsWith('[URL:')
+                    ) {
+                        finalSegments.push({
+                            type: 'link',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
                     } else if (content.startsWith('[礼物:') || content.startsWith('[GIFT:')) {
-                        finalSegments.push({ type: 'gift', content: content.trim(), mode: activeMode });
-                    } else if (content.startsWith('[戳一戳:') || content.startsWith('[拍一拍:') || content.startsWith('[NUDGE:')) {
-                        finalSegments.push({ type: 'nudge', content: content.trim(), mode: activeMode });
+                        finalSegments.push({
+                            type: 'gift',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
+                    } else if (
+                        content.startsWith('[戳一戳:') ||
+                        content.startsWith('[拍一拍:') ||
+                        content.startsWith('[NUDGE:')
+                    ) {
+                        finalSegments.push({
+                            type: 'nudge',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
                     } else if (content.startsWith('[引用:') || content.startsWith('[QUOTE:')) {
-                        finalSegments.push({ type: 'quote', content: content.trim(), mode: activeMode });
-                    } else if (content.startsWith('[点赞:') || content.startsWith('[喜欢:') || content.startsWith('[LIKE:')) {
-                        finalSegments.push({ type: 'like', content: content.trim(), mode: activeMode });
+                        finalSegments.push({
+                            type: 'quote',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
+                    } else if (
+                        content.startsWith('[点赞:') ||
+                        content.startsWith('[喜欢:') ||
+                        content.startsWith('[LIKE:')
+                    ) {
+                        finalSegments.push({
+                            type: 'like',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
                     } else if (content.startsWith('[评论:') || content.startsWith('[COMMENT:')) {
-                        finalSegments.push({ type: 'comment', content: content.trim(), mode: activeMode });
+                        finalSegments.push({
+                            type: 'comment',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
                     } else if (content.startsWith('[回复:') || content.startsWith('[REPLY:')) {
-                        finalSegments.push({ type: 'reply', content: content.trim(), mode: activeMode });
-                    } else if (content.startsWith('[分享:') || content.startsWith('[转发:') || content.startsWith('[SHARE:')) {
-                        finalSegments.push({ type: 'share', content: content.trim(), mode: activeMode });
-                    } else if (content.startsWith('[系统:') || content.startsWith('[通知:') || content.startsWith('[SYSTEM:')) {
-                        finalSegments.push({ type: 'system', content: content.trim(), mode: activeMode });
-                    } else if (content.startsWith('[设置头像:') || content.startsWith('[SET_AVATAR:')) {
-                        finalSegments.push({ type: 'set_avatar', content: content.trim(), mode: activeMode });
-                    } else if (content.startsWith('[设置昵称:') || content.startsWith('[SET_NAME:')) {
-                        finalSegments.push({ type: 'set_name', content: content.trim(), mode: activeMode });
-                    } else if (content.startsWith('[设置拍一拍:') || content.startsWith('[SET_PAT:')) {
-                        finalSegments.push({ type: 'set_pat', content: content.trim(), mode: activeMode });
-                    } else if (content.startsWith('[定时:') || content.startsWith('[定时提醒:') || content.startsWith('[TIMER:') || content.startsWith('[REMIND:')) {
-                        finalSegments.push({ type: 'timer', content: content.trim(), mode: activeMode });
-                    } else if (content.startsWith('[搜索:') || content.startsWith('[SEARCH:') || content.startsWith('[查找:')) {
-                        finalSegments.push({ type: 'search', content: content.trim(), mode: activeMode });
-                    } else if (content.startsWith('[浏览:') || content.startsWith('[BROWSE:') || content.startsWith('[阅读:') || content.startsWith('[READ:')) {
+                        finalSegments.push({
+                            type: 'reply',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
+                    } else if (
+                        content.startsWith('[分享:') ||
+                        content.startsWith('[转发:') ||
+                        content.startsWith('[SHARE:')
+                    ) {
+                        finalSegments.push({
+                            type: 'share',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
+                    } else if (
+                        content.startsWith('[系统:') ||
+                        content.startsWith('[通知:') ||
+                        content.startsWith('[SYSTEM:')
+                    ) {
+                        finalSegments.push({
+                            type: 'system',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
+                    } else if (
+                        content.startsWith('[设置头像:') ||
+                        content.startsWith('[SET_AVATAR:')
+                    ) {
+                        finalSegments.push({
+                            type: 'set_avatar',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
+                    } else if (
+                        content.startsWith('[设置昵称:') ||
+                        content.startsWith('[SET_NAME:')
+                    ) {
+                        finalSegments.push({
+                            type: 'set_name',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
+                    } else if (
+                        content.startsWith('[设置拍一拍:') ||
+                        content.startsWith('[SET_PAT:')
+                    ) {
+                        finalSegments.push({
+                            type: 'set_pat',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
+                    } else if (
+                        content.startsWith('[定时:') ||
+                        content.startsWith('[定时提醒:') ||
+                        content.startsWith('[TIMER:') ||
+                        content.startsWith('[REMIND:')
+                    ) {
+                        finalSegments.push({
+                            type: 'timer',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
+                    } else if (
+                        content.startsWith('[搜索:') ||
+                        content.startsWith('[SEARCH:') ||
+                        content.startsWith('[查找:')
+                    ) {
+                        finalSegments.push({
+                            type: 'search',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
+                    } else if (
+                        content.startsWith('[浏览:') ||
+                        content.startsWith('[BROWSE:') ||
+                        content.startsWith('[阅读:') ||
+                        content.startsWith('[READ:')
+                    ) {
                         // v1.10.176: AI 浏览网页工具
-                        finalSegments.push({ type: 'browse', content: content.trim(), mode: activeMode });
-                    } else if (content.startsWith('[黄历:') || content.startsWith('[ALMANAC:') || content.startsWith('[运势:') || content.startsWith('[今日运势:]')) {
-                        finalSegments.push({ type: 'almanac', content: content.trim(), mode: activeMode });
+                        finalSegments.push({
+                            type: 'browse',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
+                    } else if (
+                        content.startsWith('[黄历:') ||
+                        content.startsWith('[ALMANAC:') ||
+                        content.startsWith('[运势:') ||
+                        content.startsWith('[今日运势:]')
+                    ) {
+                        finalSegments.push({
+                            type: 'almanac',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
                     } else if (content.startsWith('[OFFLINE]')) {
-                        finalSegments.push({ type: 'text', content: content.replace(/\[\s*OFFLINE\s*\]|\[\/\s*OFFLINE\s*\]/gi, '').trim(), mode: 'offline' });
+                        finalSegments.push({
+                            type: 'text',
+                            content: content
+                                .replace(/\[\s*OFFLINE\s*\]|\[\/\s*OFFLINE\s*\]/gi, '')
+                                .trim(),
+                            mode: 'offline',
+                        })
                     } else if (content.startsWith('[ONLINE]')) {
-                        finalSegments.push({ type: 'text', content: content.replace(/\[\s*ONLINE\s*\]|\[\/\s*ONLINE\s*\]/gi, '').trim(), mode: 'online' });
+                        finalSegments.push({
+                            type: 'text',
+                            content: content
+                                .replace(/\[\s*ONLINE\s*\]|\[\/\s*ONLINE\s*\]/gi, '')
+                                .trim(),
+                            mode: 'online',
+                        })
                     } else if (/^【(?:地点|场景|位置|LOCATION|SCENE)[：:]/.test(content.trim())) {
                         // Theater style location/scene marker - always offline (only match specific prefixes)
-                        finalSegments.push({ type: 'location', content: content.trim(), mode: 'offline' });
+                        finalSegments.push({
+                            type: 'location',
+                            content: content.trim(),
+                            mode: 'offline',
+                        })
                     } else if (content.trim().startsWith('【') && content.trim().endsWith('】')) {
                         // Other 【...】 content (like tarot card names) - treat as normal text with current mode
-                        finalSegments.push({ type: 'text', content: content.trim(), mode: activeMode });
+                        finalSegments.push({
+                            type: 'text',
+                            content: content.trim(),
+                            mode: activeMode,
+                        })
                     } else {
                         // Standard Text
-                        const toxicKeywords = ['border-radius', 'box-shadow', 'background-color', 'background-image', 'linear-gradient', 'isplay: flex', 'justify-content', 'align-items', 'min-width', 'max-width', 'min-height', 'z-index', 'overflow', 'position: relative', 'position: absolute', 'padding', 'margin', 'font-size', 'font-weight', 'text-align', 'line-height', 'left:', 'top:', 'right:', 'bottom:', 'width:', 'height:', 'filter:', 'blur(', 'opacity', 'border: 3px solid', 'border: 1px solid', 'font-family:', 'animation:', 'keyframes'];
-                        const cssLineRegex = /^\s*[a-z-]+\s*:\s*[^:]{1,100}(?:;|px|em|rem|%|vw|vh)\s*$/i;
+                        const toxicKeywords = [
+                            'border-radius',
+                            'box-shadow',
+                            'background-color',
+                            'background-image',
+                            'linear-gradient',
+                            'isplay: flex',
+                            'justify-content',
+                            'align-items',
+                            'min-width',
+                            'max-width',
+                            'min-height',
+                            'z-index',
+                            'overflow',
+                            'position: relative',
+                            'position: absolute',
+                            'padding',
+                            'margin',
+                            'font-size',
+                            'font-weight',
+                            'text-align',
+                            'line-height',
+                            'left:',
+                            'top:',
+                            'right:',
+                            'bottom:',
+                            'width:',
+                            'height:',
+                            'filter:',
+                            'blur(',
+                            'opacity',
+                            'border: 3px solid',
+                            'border: 1px solid',
+                            'font-family:',
+                            'animation:',
+                            'keyframes',
+                        ]
+                        const cssLineRegex =
+                            /^\s*[a-z-]+\s*:\s*[^:]{1,100}(?:;|px|em|rem|%|vw|vh)\s*$/i
 
-                        let filtered = content;
-                        
+                        let filtered = content
+
                         // Apply toxic filter to all text segments regardless of braces
                         // (Only skip if the message explicitly has a [CARD] marker we added)
                         if (filtered.includes('{') || filtered.includes('<')) {
-                            filtered = filtered.replace(/\{[\s\S]*?(padding:|margin:|border:|display:|width:|height:|font-size:|background-color:|position:|z-index:|overflow:|pointer-events:|opacity:)[\s\S]*?\}/gi, '');
-                            filtered = filtered.replace(/<(?:html|div|section|article|style|svg|p|span|b|i|br|hr|h\d)[\s\S]*?>/gi, '');
-                            filtered = filtered.replace(/<\/(?:html|div|section|article|style|svg|p|span|b|i|br|hr|h\d)>/gi, '');
+                            filtered = filtered.replace(
+                                /\{[\s\S]*?(padding:|margin:|border:|display:|width:|height:|font-size:|background-color:|position:|z-index:|overflow:|pointer-events:|opacity:)[\s\S]*?\}/gi,
+                                '',
+                            )
+                            filtered = filtered.replace(
+                                /<(?:html|div|section|article|style|svg|p|span|b|i|br|hr|h\d)[\s\S]*?>/gi,
+                                '',
+                            )
+                            filtered = filtered.replace(
+                                /<\/(?:html|div|section|article|style|svg|p|span|b|i|br|hr|h\d)>/gi,
+                                '',
+                            )
                         }
-                        filtered = filtered.split('\n').filter(line => {
-                            const lower = line.trim().toLowerCase();
-                            if (!lower) return false;
-                            if (toxicKeywords.some(k => lower.includes(k))) return false;
-                            if (cssLineRegex.test(line)) return false;
-                            if (line.trim().startsWith('">') || line.trim().startsWith('/>')) return false;
-                            return true;
-                        }).join('\n').trim();
+                        filtered = filtered
+                            .split('\n')
+                            .filter((line) => {
+                                const lower = line.trim().toLowerCase()
+                                if (!lower) return false
+                                if (toxicKeywords.some((k) => lower.includes(k))) return false
+                                if (cssLineRegex.test(line)) return false
+                                if (line.trim().startsWith('">') || line.trim().startsWith('/>'))
+                                    return false
+                                return true
+                            })
+                            .join('\n')
+                            .trim()
 
                         if (filtered) {
                             // NEW: Improved leaked voice detection.
                             // Only swallow if it looks EXACTLY like a system/JSON artifact (e.g. "status:...", "mood:...").
                             // Natural language in parentheses like "(么么)" or "(笑)" should ALWAYS be preserved.
-                            const isLeakedVoice = false; // Disable aggressive parenthetical swallowing to preserve roleplay nuance
-                            
-                            // Aggressively catch card metadata remnants (e.g., "type: html, html:")
-                            const isTrashMetadata = /^\s*[,，:：]?\s*["']?(?:type|card|json|html|content|data|commands|postId|interactions|mood|heartRate|stats|mind|心声|着装|环境|行为|渴望|结论|心情|下装|上装|鞋子|装饰|作者|名字|地点|visibility|status|speech|thought|thinking|hunger|thirst|bladder|sleepiness|spirit|location|distance|energy|emotion)["']?\s*[:：]/i.test(filtered.trim());
-                            const containsMetadata = /(?:type|card|html|json|data|commands)\s*[:：]/i.test(filtered);
-                            const isJsonFragment = /^\s*[,，]?\s*[\{\}\[\]]\s*["']?\w+["']?\s*[:：]\s*[\{\[]?\s*$/i.test(filtered.trim());
+                            const isLeakedVoice = false // Disable aggressive parenthetical swallowing to preserve roleplay nuance
 
-                            if (isTrashMetadata || isJsonFragment || (filtered.length < 50 && containsMetadata && !/^[（\("]/.test(filtered.trim()))) {
-                                console.log('[ChatStore] Swallowed structural metadata segment:', filtered);
+                            // Aggressively catch card metadata remnants (e.g., "type: html, html:")
+                            const isTrashMetadata =
+                                /^\s*[,，:：]?\s*["']?(?:type|card|json|html|content|data|commands|postId|interactions|mood|heartRate|stats|mind|心声|着装|环境|行为|渴望|结论|心情|下装|上装|鞋子|装饰|作者|名字|地点|visibility|status|speech|thought|thinking|hunger|thirst|bladder|sleepiness|spirit|location|distance|energy|emotion)["']?\s*[:：]/i.test(
+                                    filtered.trim(),
+                                )
+                            const containsMetadata =
+                                /(?:type|card|html|json|data|commands)\s*[:：]/i.test(filtered)
+                            const isJsonFragment =
+                                /^\s*[,，]?\s*[\{\}\[\]]\s*["']?\w+["']?\s*[:：]\s*[\{\[]?\s*$/i.test(
+                                    filtered.trim(),
+                                )
+
+                            if (
+                                isTrashMetadata ||
+                                isJsonFragment ||
+                                (filtered.length < 50 &&
+                                    containsMetadata &&
+                                    !/^[（\("]/.test(filtered.trim()))
+                            ) {
+                                console.log(
+                                    '[ChatStore] Swallowed structural metadata segment:',
+                                    filtered,
+                                )
                             } else {
-                                finalSegments.push({ type: 'text', content: filtered, mode: activeMode });
+                                finalSegments.push({
+                                    type: 'text',
+                                    content: filtered,
+                                    mode: activeMode,
+                                })
                             }
                         }
                     }
-
                 } // END for (const seg of rawSegments)
 
                 // Assign activeMode to any newly added segments
                 for (let j = prevLength; j < finalSegments.length; j++) {
                     if (!finalSegments[j].mode && activeMode) {
-                        finalSegments[j].mode = activeMode;
+                        finalSegments[j].mode = activeMode
                     }
                 }
 
                 // --- 4. Sequential Delivery ---
                 // Pre-compute group chat sender identity (used by ALL message types in the loop)
-                const groupSenderInfo = (chat.isGroup && chat.participants?.length > 0) ? (() => {
-                    const npc = chat.participants.find(p => p.id !== 'user' && p.id !== chat.id);
-                    return npc ? { senderId: npc.id, senderName: npc.nickname || npc.name, senderAvatar: npc.avatar } : {};
-                })() : {};
+                const groupSenderInfo =
+                    chat.isGroup && chat.participants?.length > 0
+                        ? (() => {
+                              const npc = chat.participants.find(
+                                  (p) => p.id !== 'user' && p.id !== chat.id,
+                              )
+                              return npc
+                                  ? {
+                                        senderId: npc.id,
+                                        senderName: npc.nickname || npc.name,
+                                        senderAvatar: npc.avatar,
+                                    }
+                                  : {}
+                          })()
+                        : {}
 
                 for (let i = 0; i < finalSegments.length; i++) {
-                    if (!typingStatus.value[chatId]) break;
+                    if (!typingStatus.value[chatId]) break
 
-                    const { type, content, mode: segmentMode } = finalSegments[i];
-                    let msgAdded = null;
-                    let msgContent = content;
-                    const finalMode = segmentMode || options.mode || 'online';
+                    const { type, content, mode: segmentMode } = finalSegments[i]
+                    let msgAdded = null
+                    let msgContent = content
+                    const finalMode = segmentMode || options.mode || 'online'
 
                     if (type === 'card' || type === 'text') {
                         // Process Payment Tags
-                        let pendingSystemMsgs = [];
-                        let claimMatch;
+                        let pendingSystemMsgs = []
+                        let claimMatch
                         while ((claimMatch = claimRegex.exec(msgContent)) !== null) {
-                            const paymentId = claimMatch[2].trim();
-                            const targetMsg = chat.msgs.find(m => m.paymentId === paymentId);
+                            const paymentId = claimMatch[2].trim()
+                            const targetMsg = chat.msgs.find((m) => m.paymentId === paymentId)
                             if (targetMsg && !targetMsg.isClaimed && !targetMsg.isRejected) {
-                                targetMsg.isClaimed = true;
-                                targetMsg.claimTime = Date.now();
-                                targetMsg.claimedBy = { name: chat.name, avatar: chat.avatar };
-                                pendingSystemMsgs.push(`${chat.name}领取了你的${claimMatch[1]}`);
+                                targetMsg.isClaimed = true
+                                targetMsg.claimTime = Date.now()
+                                targetMsg.claimedBy = { name: chat.name, avatar: chat.avatar }
+                                pendingSystemMsgs.push(`${chat.name}领取了你的${claimMatch[1]}`)
                             }
                         }
                         // (Add similar logic for reject if needed)
 
-                        msgContent = msgContent.replace(/\[领取(红包|转账):[^\]]+\]/g, '').replace(/\[(退回|拒收)(红包|转账):[^\]]+\]/g, '').trim();
-                        if (!msgContent && pendingSystemMsgs.length === 0) continue;
+                        msgContent = msgContent
+                            .replace(/\[领取(红包|转账):[^\]]+\]/g, '')
+                            .replace(/\[(退回|拒收)(红包|转账):[^\]]+\]/g, '')
+                            .trim()
+                        if (!msgContent && pendingSystemMsgs.length === 0) continue
 
-                        if (type === 'card' || msgContent.match(/\[\s*CARD\s*\]/i) || msgContent.trim().startsWith('{')) {
+                        if (
+                            type === 'card' ||
+                            msgContent.match(/\[\s*CARD\s*\]/i) ||
+                            msgContent.trim().startsWith('{')
+                        ) {
                             // HTML Card Delivery
-                            let processedHtml = msgContent.replace(/\[\s*\/?[CARD\s]*\]/gi, '').trim();
+                            let processedHtml = msgContent
+                                .replace(/\[\s*\/?[CARD\s]*\]/gi, '')
+                                .trim()
                             // Aggressively strip "type: html, html:" prefix regardless of outer braces
-                            processedHtml = processedHtml.replace(/^(?:type|card|json)\s*[:：]\s*html\s*,?\s*(?:html|content)\s*[:：]\s*/i, '');
+                            processedHtml = processedHtml.replace(
+                                /^(?:type|card|json)\s*[:：]\s*html\s*,?\s*(?:html|content)\s*[:：]\s*/i,
+                                '',
+                            )
                             // Also catch dangling "html: " after the above replacement
-                            processedHtml = processedHtml.replace(/^(?:html|content)\s*[:：]\s*/i, '');
-                            if (processedHtml.includes('\\"')) processedHtml = processedHtml.replace(/\\"/g, '"');
-                            if (!processedHtml.trim().startsWith('{') && (processedHtml.includes('"type":') || processedHtml.includes('"html":'))) processedHtml = '{' + processedHtml + '}';
-                        
-                            let extractedHtml = processedHtml;
+                            processedHtml = processedHtml.replace(
+                                /^(?:html|content)\s*[:：]\s*/i,
+                                '',
+                            )
+                            if (processedHtml.includes('\\"'))
+                                processedHtml = processedHtml.replace(/\\"/g, '"')
+                            if (
+                                !processedHtml.trim().startsWith('{') &&
+                                (processedHtml.includes('"type":') ||
+                                    processedHtml.includes('"html":'))
+                            )
+                                processedHtml = '{' + processedHtml + '}'
+
+                            let extractedHtml = processedHtml
                             try {
                                 // Try to strip JSON structures if any
-                                let jsonToParse = processedHtml;
+                                let jsonToParse = processedHtml
                                 if (!jsonToParse.startsWith('{') && jsonToParse.includes('{')) {
-                                    jsonToParse = jsonToParse.substring(jsonToParse.indexOf('{'));
+                                    jsonToParse = jsonToParse.substring(jsonToParse.indexOf('{'))
                                 }
-                                const parsed = JSON.parse(jsonToParse);
-                                if (parsed.html) extractedHtml = parsed.html;
+                                const parsed = JSON.parse(jsonToParse)
+                                if (parsed.html) extractedHtml = parsed.html
                             } catch (e) {
                                 // If parsing fails, use the processed HTML directly
                                 // It might be just raw HTML text
-                                console.log('[ChatStore] HTML card is raw text, using as-is');
+                                console.log('[ChatStore] HTML card is raw text, using as-is')
                             }
-                        
+
                             // Ensure we always have valid HTML content
                             if (!extractedHtml || extractedHtml.trim().length === 0) {
-                                extractedHtml = processedHtml;
+                                extractedHtml = processedHtml
                             }
-                        
-                            console.log('[ChatStore] Adding HTML card message');
+
+                            console.log('[ChatStore] Adding HTML card message')
                             // Use type: 'card' for maximum compatibility with template conditions
-                            msgAdded = await addMessage(chatId, { role: 'ai', type: 'card', content: processedHtml, html: extractedHtml, quote: i === 0 ? aiQuote : null, mode: finalMode });
-                        } else if (/\{\s*\\?"type\\?"\s*:\s*\\?"html\\?"/.test(msgContent) || (/\{\s*\\?"html\\?"\s*:\s*\\?"/.test(msgContent) && /<[a-zA-Z][^>]*style=/i.test(msgContent))) {
+                            msgAdded = await addMessage(chatId, {
+                                role: 'ai',
+                                type: 'card',
+                                content: processedHtml,
+                                html: extractedHtml,
+                                quote: i === 0 ? aiQuote : null,
+                                mode: finalMode,
+                            })
+                        } else if (
+                            /\{\s*\\?"type\\?"\s*:\s*\\?"html\\?"/.test(msgContent) ||
+                            (/\{\s*\\?"html\\?"\s*:\s*\\?"/.test(msgContent) &&
+                                /<[a-zA-Z][^>]*style=/i.test(msgContent))
+                        ) {
                             // 优化处理：AI 没有带 [CARD] 标签，但内容中混合了 {"type":"html","html":"<div...>"} 形式的 JSON
                             // 不再拆分气泡，而是作为单个 HTML 消息发送
-                            console.log('[ChatStore] Detected embedded HTML card JSON without [CARD] tag, keeping as single message...');
+                            console.log(
+                                '[ChatStore] Detected embedded HTML card JSON without [CARD] tag, keeping as single message...',
+                            )
 
-                            let extractedHtml = msgContent;
+                            let extractedHtml = msgContent
                             try {
-                                let jsonToParse = msgContent;
-                                if (jsonToParse.includes('\\"')) jsonToParse = jsonToParse.replace(/\\"/g, '"');
-                                const parsed = JSON.parse(jsonToParse);
-                                if (parsed.html) extractedHtml = parsed.html;
-                                else if (parsed.content) extractedHtml = parsed.content;
-                                console.log('[ChatStore] Extracted HTML from JSON, length:', extractedHtml.length);
+                                let jsonToParse = msgContent
+                                if (jsonToParse.includes('\\"'))
+                                    jsonToParse = jsonToParse.replace(/\\"/g, '"')
+                                const parsed = JSON.parse(jsonToParse)
+                                if (parsed.html) extractedHtml = parsed.html
+                                else if (parsed.content) extractedHtml = parsed.content
+                                console.log(
+                                    '[ChatStore] Extracted HTML from JSON, length:',
+                                    extractedHtml.length,
+                                )
                             } catch (e) {
-                                console.log('[ChatStore] Embedded HTML card JSON parse failed, using as-is');
+                                console.log(
+                                    '[ChatStore] Embedded HTML card JSON parse failed, using as-is',
+                                )
                             }
 
                             // 作为单个 HTML 消息发送（不拆分）
-                            console.log('[ChatStore] Adding single HTML card message (no split)');
-                            msgAdded = await addMessage(chatId, { role: 'ai', type: 'card', content: msgContent, html: extractedHtml, quote: i === 0 ? aiQuote : null, mode: finalMode, ...groupSenderInfo });
+                            console.log('[ChatStore] Adding single HTML card message (no split)')
+                            msgAdded = await addMessage(chatId, {
+                                role: 'ai',
+                                type: 'card',
+                                content: msgContent,
+                                html: extractedHtml,
+                                quote: i === 0 ? aiQuote : null,
+                                mode: finalMode,
+                                ...groupSenderInfo,
+                            })
                         } else {
                             // Text Message Delivery
                             // Check if we have a pending MOMENT_SHARE card to deliver
@@ -4840,34 +6500,43 @@ export const useChatStore = defineStore('chat', () => {
                                     content: JSON.stringify(_pendingMomentCardData),
                                     _momentReferenceId: _pendingMomentCardData._momentReferenceId,
                                     quote: i === 0 ? aiQuote : null,
-                                    mode: finalMode
-                                });
-                                _pendingMomentCardData = null; // Consume it
-                                continue; // Skip normal text delivery
+                                    mode: finalMode,
+                                })
+                                _pendingMomentCardData = null // Consume it
+                                continue // Skip normal text delivery
                             }
 
-                            const rpMatch = msgContent.match(/\[(红包|转账)\s*[:：]\s*([0-9.]+)\s*[:：]\s*(.*?)\]/);
-                            let msgType = 'text', amount = null, note = null;
+                            const rpMatch = msgContent.match(
+                                /\[(红包|转账)\s*[:：]\s*([0-9.]+)\s*[:：]\s*(.*?)\]/,
+                            )
+                            let msgType = 'text',
+                                amount = null,
+                                note = null
                             if (rpMatch) {
-                                msgType = rpMatch[1] === '红包' ? 'redpacket' : 'transfer';
-                                amount = parseFloat(rpMatch[2]) || 1.0;
-                                note = rpMatch[3];
+                                msgType = rpMatch[1] === '红包' ? 'redpacket' : 'transfer'
+                                amount = parseFloat(rpMatch[2]) || 1.0
+                                note = rpMatch[3]
                             } else if (msgContent.includes('[FAMILY_CARD')) {
-                                msgType = 'family_card';
-                            } else if (msgContent.includes('[演奏') || msgContent.includes('[MUSIC')) {
-                                const musicMatch = msgContent.match(/\[(演奏|MUSIC)\s*[:：]\s*(.*?)\s*(?:[:：]\s*(.*?))?\]/i);
+                                msgType = 'family_card'
+                            } else if (
+                                msgContent.includes('[演奏') ||
+                                msgContent.includes('[MUSIC')
+                            ) {
+                                const musicMatch = msgContent.match(
+                                    /\[(演奏|MUSIC)\s*[:：]\s*(.*?)\s*(?:[:：]\s*(.*?))?\]/i,
+                                )
                                 if (musicMatch) {
-                                    msgType = 'music';
-                                    const inst = musicMatch[2].trim();
-                                    const score = musicMatch[3] ? musicMatch[3].trim() : '';
-                                    msgContent = score ? `${inst}: ${score}` : inst;
+                                    msgType = 'music'
+                                    const inst = musicMatch[2].trim()
+                                    const score = musicMatch[3] ? musicMatch[3].trim() : ''
+                                    msgContent = score ? `${inst}: ${score}` : inst
                                 }
                             }
 
                             // V14: Attach inner-voice to the LAST segment if it's AI turn,
                             // to avoid breaking the initial scene/location markers
                             if (i === finalSegments.length - 1 && rawInnerVoiceBlock) {
-                                msgContent += (msgContent ? '\n\n' : '') + rawInnerVoiceBlock;
+                                msgContent += (msgContent ? '\n\n' : '') + rawInnerVoiceBlock
                             }
 
                             // For group chats: use pre-computed sender identity
@@ -4881,18 +6550,24 @@ export const useChatStore = defineStore('chat', () => {
                                 hidden: isCallMode,
                                 mode: finalMode,
                                 // 最后一段附带心声数据（直接保存对象，不依赖从content字符串提取）
-                                innerVoice: (i === finalSegments.length - 1 && result.innerVoice) ? result.innerVoice : undefined,
-                                ...groupSenderInfo
-                            });
+                                innerVoice:
+                                    i === finalSegments.length - 1 && result.innerVoice
+                                        ? result.innerVoice
+                                        : undefined,
+                                ...groupSenderInfo,
+                            })
                         }
 
                         for (const txt of pendingSystemMsgs) {
-                            await addMessage(chatId, { role: 'system', content: txt, mode: finalMode });
+                            await addMessage(chatId, {
+                                role: 'system',
+                                content: txt,
+                                mode: finalMode,
+                            })
                         }
-
                     } else if (type === 'sticker') {
                         // Ensure sticker content is just the name/filename if needed, or keeping full tag if components handle it
-                        // The store usually expects just the name or url depending on implementation. 
+                        // The store usually expects just the name or url depending on implementation.
                         // Based on ChatMessageItem, type 'sticker' usually expects content to be the sticker name or url.
                         // We stripped the brackets in the segmenting phase above.
                         msgAdded = await addMessage(chatId, {
@@ -4902,12 +6577,19 @@ export const useChatStore = defineStore('chat', () => {
                             quote: i === 0 ? aiQuote : null,
                             hidden: isCallMode,
                             mode: finalMode,
-                            ...groupSenderInfo
-                        });
+                            ...groupSenderInfo,
+                        })
                     } else if (type === 'voice') {
-                        msgAdded = await addMessage(chatId, { role: 'ai', type: 'voice', content, duration: Math.ceil(content.length / 3) || 1, mode: finalMode, ...groupSenderInfo });
+                        msgAdded = await addMessage(chatId, {
+                            role: 'ai',
+                            type: 'voice',
+                            content,
+                            duration: Math.ceil(content.length / 3) || 1,
+                            mode: finalMode,
+                            ...groupSenderInfo,
+                        })
                     } else if (type === 'draw') {
-                        const drawMatch = content.match(/\[DRAW:\s*([\s\S]*?)\]/i);
+                        const drawMatch = content.match(/\[DRAW:\s*([\s\S]*?)\]/i)
                         if (drawMatch) {
                             // v1.10.154: 解析暗号(@char/@me/@us/@scene),剥离后传给 generateImage
                             // v1.10.155: 群聊支持 @角色名 指定具体成员形象图(如 @小樱、@阿明)
@@ -4942,66 +6624,81 @@ export const useChatStore = defineStore('chat', () => {
                                 content: '🎨 正在根据灵感绘图...',
                                 quote: i === 0 ? aiQuote : null,
                                 mode: finalMode,
-                                ...groupSenderInfo
-                            });
+                                ...groupSenderInfo,
+                            })
 
                             // Safe ID retrieval - Now safe because we awaited addMessage
-                            const targetMsgId = msgAdded?.id;
+                            const targetMsgId = msgAdded?.id
 
                             if (!targetMsgId) {
-                                console.error('[ChatStore] Failed to get ID for placeholder message (addMessage failed?). Aborting image update.');
+                                console.error(
+                                    '[ChatStore] Failed to get ID for placeholder message (addMessage failed?). Aborting image update.',
+                                )
                             } else {
                                 // ✅ 使用全局 AI 任务 Store 管理绘画请求（不受组件生命周期影响）
                                 const aiTaskStore = useAITaskStore()
                                 const drawTaskId = `draw_${chatId}_${targetMsgId}_${Date.now()}`
 
                                 // 创建全局绘画任务
-                                aiTaskStore.createStreamingTask({
-                                    taskId: drawTaskId,
-                                    apiFunc: generateImage,
-                                    args: [drawPrompt, { chatId, appearanceRef: true, appearanceRefMode, appearanceRefName }],
-                                    onComplete: (imageUrl) => {
-                                        // 任务成功：更新消息为图片
-                                        console.log('[Draw] Global task completed:', imageUrl);
-                                        updateMessage(chatId, targetMsgId, {
-                                            type: 'image',
-                                            content: `[图片:${imageUrl}]`,
-                                            image: imageUrl
-                                        });
-                                    },
-                                    onError: (err) => {
-                                        // 任务失败：显示错误信息
-                                        console.error('[Draw] Global task failed:', err);
+                                aiTaskStore
+                                    .createStreamingTask({
+                                        taskId: drawTaskId,
+                                        apiFunc: generateImage,
+                                        args: [
+                                            drawPrompt,
+                                            {
+                                                chatId,
+                                                appearanceRef: true,
+                                                appearanceRefMode,
+                                                appearanceRefName,
+                                            },
+                                        ],
+                                        onComplete: (imageUrl) => {
+                                            // 任务成功：更新消息为图片
+                                            console.log('[Draw] Global task completed:', imageUrl)
+                                            updateMessage(chatId, targetMsgId, {
+                                                type: 'image',
+                                                content: `[图片:${imageUrl}]`,
+                                                image: imageUrl,
+                                            })
+                                        },
+                                        onError: (err) => {
+                                            // 任务失败：显示错误信息
+                                            console.error('[Draw] Global task failed:', err)
+                                            updateMessage(chatId, targetMsgId, {
+                                                type: 'text',
+                                                content: `(绘画失败：${err.message})`,
+                                            })
+                                        },
+                                    })
+                                    .catch((err) => {
+                                        // 任务启动失败
+                                        console.error('[Draw] Failed to create global task:', err)
                                         updateMessage(chatId, targetMsgId, {
                                             type: 'text',
-                                            content: `(绘画失败：${err.message})`
-                                        });
-                                    }
-                                }).catch(err => {
-                                    // 任务启动失败
-                                    console.error('[Draw] Failed to create global task:', err);
-                                    updateMessage(chatId, targetMsgId, {
-                                        type: 'text',
-                                        content: `(绘画失败：${err.message})`
-                                    });
-                                });
+                                            content: `(绘画失败：${err.message})`,
+                                        })
+                                    })
                             }
                         }
                     } else if (type === 'call') {
                         // AI主动发起通话
-                        const callType = content === 'video' ? 'video' : 'voice';
-                        callStore.receiveCall(chat, callType);
+                        const callType = content === 'video' ? 'video' : 'voice'
+                        callStore.receiveCall(chat, callType)
                     } else if (type === 'music') {
                         // 处理音乐/演奏指令
-                        const musicMatch = content.match(/\[(?:演奏|MUSIC|音乐)[:：]\s*(.*?)\]/i);
+                        const musicMatch = content.match(/\[(?:演奏|MUSIC|音乐)[:：]\s*(.*?)\]/i)
                         if (musicMatch) {
-                            const musicData = musicMatch[1].trim();
+                            const musicData = musicMatch[1].trim()
 
                             // v1.10.95: 修复 - 之前 /[A-G][0-9]/ 只匹配大写音符
                             //   prompt 例子 [演奏:piano:d1 d2 d3] 用小写,被误判为歌名
                             //   落到一起听歌分支,显示成一起听歌卡片且 Tone.js 不播放
                             //   改成大小写不敏感,且更严格地要求是"乐谱"格式
-                            const isScore = /[A-Ga-g][0-9]/.test(musicData) || musicData.includes(',') || /\s/.test(musicData);
+                            const isScore =
+                                /[A-Ga-g][0-9]/.test(musicData) ||
+                                musicData.includes(',') ||
+                                /\s/.test(musicData)
 
                             if (isScore) {
                                 // Instrumental Performance - 走 Tone.js 合成器
@@ -5011,46 +6708,51 @@ export const useChatStore = defineStore('chat', () => {
                                     content: musicData,
                                     quote: i === 0 ? aiQuote : null,
                                     hidden: isCallMode,
-                                    mode: finalMode
-                                });
+                                    mode: finalMode,
+                                })
                             } else {
                                 // Listen Together Sync - 只有 [MUSIC:search ...] 才走这里
-                                if (musicData.toLowerCase().startsWith('search ') || /[a-zA-Z\u4e00-\u9fa5]+\s*[-—]\s*[a-zA-Z\u4e00-\u9fa5]+/.test(musicData)) {
-                                    const musicStore = useMusicStore();
+                                if (
+                                    musicData.toLowerCase().startsWith('search ') ||
+                                    /[a-zA-Z\u4e00-\u9fa5]+\s*[-—]\s*[a-zA-Z\u4e00-\u9fa5]+/.test(
+                                        musicData,
+                                    )
+                                ) {
+                                    const musicStore = useMusicStore()
                                     // Trigger music store to start "listening together" session
                                     musicStore.startTogether({
                                         name: chat.name,
                                         avatar: chat.avatar,
-                                        id: chatId
-                                    });
-                                
-                                // Auto-search and play the song
-                                musicStore.searchMusic(musicData, '', 'all').then(results => {
-                                    if (results && results.length > 0) {
-                                        // Pick first result and play
-                                        const firstSong = results[0];
-                                        musicStore.addToPlaylist(firstSong);
-                                        const newIdx = musicStore.playlist.length - 1;
-                                        musicStore.loadSong(newIdx);
-                                        musicStore.play();
-                                    }
-                                });
+                                        id: chatId,
+                                    })
 
-                                await addMessage(chatId, {
-                                    role: 'ai',
-                                    type: 'music_share', // Using a distinct type for Listen Together
-                                    content: musicData,
-                                    quote: i === 0 ? aiQuote : null,
-                                    hidden: isCallMode,
-                                    mode: finalMode
-                                });
+                                    // Auto-search and play the song
+                                    musicStore.searchMusic(musicData, '', 'all').then((results) => {
+                                        if (results && results.length > 0) {
+                                            // Pick first result and play
+                                            const firstSong = results[0]
+                                            musicStore.addToPlaylist(firstSong)
+                                            const newIdx = musicStore.playlist.length - 1
+                                            musicStore.loadSong(newIdx)
+                                            musicStore.play()
+                                        }
+                                    })
 
-                                // Add a system notification about listening together
-                                await addMessage(chatId, {
-                                    role: 'system',
-                                    type: 'system',
-                                    content: `${chat.name} 发起了一起听歌`
-                                });
+                                    await addMessage(chatId, {
+                                        role: 'ai',
+                                        type: 'music_share', // Using a distinct type for Listen Together
+                                        content: musicData,
+                                        quote: i === 0 ? aiQuote : null,
+                                        hidden: isCallMode,
+                                        mode: finalMode,
+                                    })
+
+                                    // Add a system notification about listening together
+                                    await addMessage(chatId, {
+                                        role: 'system',
+                                        type: 'system',
+                                        content: `${chat.name} 发起了一起听歌`,
+                                    })
                                 } else {
                                     // 不符合"一起听歌"格式(没有 search 也没有 歌名-歌手),
                                     // 保守地当作乐器演奏,落到 Tone.js 合成器
@@ -5060,8 +6762,8 @@ export const useChatStore = defineStore('chat', () => {
                                         content: musicData,
                                         quote: i === 0 ? aiQuote : null,
                                         hidden: isCallMode,
-                                        mode: finalMode
-                                    });
+                                        mode: finalMode,
+                                    })
                                 }
                             }
                         }
@@ -5073,8 +6775,8 @@ export const useChatStore = defineStore('chat', () => {
                             content: content,
                             quote: i === 0 ? aiQuote : null,
                             hidden: isCallMode,
-                            mode: finalMode
-                        });
+                            mode: finalMode,
+                        })
                     } else if (type === 'tarot') {
                         // 处理塔罗牌指令
                         await addMessage(chatId, {
@@ -5083,8 +6785,8 @@ export const useChatStore = defineStore('chat', () => {
                             content: content,
                             quote: i === 0 ? aiQuote : null,
                             hidden: isCallMode,
-                            mode: finalMode
-                        });
+                            mode: finalMode,
+                        })
                     } else if (type === 'location') {
                         // 处理位置指令
                         await addMessage(chatId, {
@@ -5094,52 +6796,100 @@ export const useChatStore = defineStore('chat', () => {
                             quote: i === 0 ? aiQuote : null,
                             hidden: isCallMode,
                             mode: finalMode,
-                            ...groupSenderInfo
-                        });
+                            ...groupSenderInfo,
+                        })
                     } else if (type === 'nudge') {
                         // 处理戳一戳/拍一拍
-                        triggerPatEffect(chatId, 'user');
+                        triggerPatEffect(chatId, 'user')
                     } else if (type === 'gift') {
-                        const giftMatch = content.match(/\[GIFT\s*[:：]\s*([^:：\]】]*)(?:\s*[:：]\s*([^:：\]】]*))?(?:\s*[:：]\s*([^\]】]*))?[\]】]/i)
+                        const giftMatch = content.match(
+                            /\[GIFT\s*[:：]\s*([^:：\]】]*)(?:\s*[:：]\s*([^:：\]】]*))?(?:\s*[:：]\s*([^\]】]*))?[\]】]/i,
+                        )
                         const gName = giftMatch?.[1]?.trim() || '神秘礼物'
-                        let gQty = 1, gDesc = '', gNote = '', gImage = ''
+                        let gQty = 1,
+                            gDesc = '',
+                            gNote = '',
+                            gImage = ''
                         if (giftMatch) {
-                            const gv2 = (giftMatch[2] || '').trim(), gv3 = (giftMatch[3] || '').trim()
-                            if (gv3) { gQty = parseInt(gv2) || 1; gDesc = gv3 }
-                            else if (gv2) { const q = parseInt(gv2); if (!isNaN(q) && /^\d+$/.test(gv2)) { gQty = q } else { gDesc = gv2 } }
+                            const gv2 = (giftMatch[2] || '').trim(),
+                                gv3 = (giftMatch[3] || '').trim()
+                            if (gv3) {
+                                gQty = parseInt(gv2) || 1
+                                gDesc = gv3
+                            } else if (gv2) {
+                                const q = parseInt(gv2)
+                                if (!isNaN(q) && /^\d+$/.test(gv2)) {
+                                    gQty = q
+                                } else {
+                                    gDesc = gv2
+                                }
+                            }
                             if (gDesc.includes('DRAW:')) {
                                 const dp = gDesc.split('DRAW:')
-                                const tp = dp[0].trim(), ip = (dp[1]||'').trim()
-                                if (tp.length <= 20 && tp.length > 0) { gNote = tp; gDesc = '' }
-                                else if (tp.length > 20) { gDesc = tp; gNote = '' }
-                                if (ip) import('@/utils/aiService').then(m => m.generateImage(ip, { chatId }).then(url => { gImage = url; saveChats() }).catch(err => console.warn('[ChatStore] Gift image generation failed:', err)))
-                            } else if (gDesc.length > 50) {} else if (gDesc.length > 0) { gNote = gDesc; gDesc = '' }
+                                const tp = dp[0].trim(),
+                                    ip = (dp[1] || '').trim()
+                                if (tp.length <= 20 && tp.length > 0) {
+                                    gNote = tp
+                                    gDesc = ''
+                                } else if (tp.length > 20) {
+                                    gDesc = tp
+                                    gNote = ''
+                                }
+                                if (ip)
+                                    import('@/utils/aiService').then((m) =>
+                                        m
+                                            .generateImage(ip, { chatId })
+                                            .then((url) => {
+                                                gImage = url
+                                                saveChats()
+                                            })
+                                            .catch((err) =>
+                                                console.warn(
+                                                    '[ChatStore] Gift image generation failed:',
+                                                    err,
+                                                ),
+                                            ),
+                                    )
+                            } else if (gDesc.length > 50) {
+                            } else if (gDesc.length > 0) {
+                                gNote = gDesc
+                                gDesc = ''
+                            }
                         }
                         if (!gDesc) gDesc = `${gName} - 一份珍贵的礼物`
-                        const gId = `GIFT-${Date.now()}-${Math.random().toString(36).substr(2,5)}`
+                        const gId = `GIFT-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
                         await addMessage(chatId, {
-                            role: 'ai', type: 'gift',
-                            content: `[礼物:${gName}:${gQty}:${gNote||gDesc}:${gId}]`,
-                            giftName: gName, giftQuantity: gQty,
-                            giftDescription: gDesc, giftNote: gNote,
-                            giftImage: gImage, giftId: gId,
+                            role: 'ai',
+                            type: 'gift',
+                            content: `[礼物:${gName}:${gQty}:${gNote || gDesc}:${gId}]`,
+                            giftName: gName,
+                            giftQuantity: gQty,
+                            giftDescription: gDesc,
+                            giftNote: gNote,
+                            giftImage: gImage,
+                            giftId: gId,
                             quote: i === 0 ? aiQuote : null,
-                            hidden: isCallMode, mode: finalMode,
-                            ...groupSenderInfo
-                        });
+                            hidden: isCallMode,
+                            mode: finalMode,
+                            ...groupSenderInfo,
+                        })
                     } else if (type === 'system') {
                         // 系统通知
                         await addMessage(chatId, {
                             role: 'system',
-                            content: content.replace(/^\[(?:系统|通知|SYSTEM)[:：]?\s*/, '').replace(/\]$/, ''),
+                            content: content
+                                .replace(/^\[(?:系统|通知|SYSTEM)[:：]?\s*/, '')
+                                .replace(/\]$/, ''),
                             hidden: isCallMode,
-                            mode: finalMode
-                        });
+                            mode: finalMode,
+                        })
                     } else if (type === 'timer') {
                         // 处理定时提醒指令 - 写入持久调度器(列表可见 + 到点由 proactive 触发角色提醒)
-                        const timerMatch = content.match(/\[(?:定时|定时提醒|TIMER|REMIND)[:：]\s*(.+?)\]/i);
+                        const timerMatch = content.match(
+                            /\[(?:定时|定时提醒|TIMER|REMIND)[:：]\s*(.+?)\]/i,
+                        )
                         if (timerMatch) {
-                            const timerContent = timerMatch[1].trim();
+                            const timerContent = timerMatch[1].trim()
                             // 气泡展示原文(含时间), 更直观
                             await addMessage(chatId, {
                                 role: 'ai',
@@ -5147,26 +6897,33 @@ export const useChatStore = defineStore('chat', () => {
                                 content: timerContent,
                                 quote: i === 0 ? aiQuote : null,
                                 hidden: isCallMode,
-                                mode: finalMode
-                            });
+                                mode: finalMode,
+                            })
 
                             // 去掉开头的相对/绝对时间词, 让到点提醒文案更自然
-                            const cleanContent = timerContent
-                                .replace(/^(\d+\s*(?:分钟|小时|秒|min|hour|h|s|sec)\b\s*)/i, '')
-                                .replace(/^(?:今天|今日|明天|明日|上午|下午|晚上|中午)\s*(\d{1,2})[:：点]\d{0,2}\s*/,'')
-                                .replace(/^(\d{1,2})[:：点]\d{0,2}\s*/, '')
-                                .trim() || timerContent
+                            const cleanContent =
+                                timerContent
+                                    .replace(/^(\d+\s*(?:分钟|小时|秒|min|hour|h|s|sec)\b\s*)/i, '')
+                                    .replace(
+                                        /^(?:今天|今日|明天|明日|上午|下午|晚上|中午)\s*(\d{1,2})[:：点]\d{0,2}\s*/,
+                                        '',
+                                    )
+                                    .replace(/^(\d{1,2})[:：点]\d{0,2}\s*/, '')
+                                    .trim() || timerContent
 
                             const schedulerStore = useSchedulerStore()
                             const ts = schedulerStore.addTask(chatId, timerContent, cleanContent)
                             if (ts) {
                                 const delayMs = ts - Date.now()
-                                const label = delayMs < 60000
-                                    ? `${Math.round(delayMs / 1000)}秒后`
-                                    : delayMs < 24 * 3600 * 1000
-                                        ? `${Math.round(delayMs / 60000)}分钟后`
-                                        : `${Math.round(delayMs / 3600000)}小时后`
-                                console.log(`[ChatStore] Timer scheduled: "${timerContent}" -> ${label}`)
+                                const label =
+                                    delayMs < 60000
+                                        ? `${Math.round(delayMs / 1000)}秒后`
+                                        : delayMs < 24 * 3600 * 1000
+                                          ? `${Math.round(delayMs / 60000)}分钟后`
+                                          : `${Math.round(delayMs / 3600000)}小时后`
+                                console.log(
+                                    `[ChatStore] Timer scheduled: "${timerContent}" -> ${label}`,
+                                )
                                 triggerToast(`⏰ 定时提醒已设置: ${label}`, 'info')
                             } else {
                                 triggerToast('⏰ 定时提醒设置失败：无法识别时间', 'error')
@@ -5176,9 +6933,9 @@ export const useChatStore = defineStore('chat', () => {
                         // v1.10.176: 工具调用——AI 输出 [SEARCH:关键词] 后,
                         // 系统调用 /v2/search 拿真实结果,作为 hidden 系统消息注入,
                         // 再递归触发 sendMessageToAI 让 AI 看到结果后回复。
-                        const searchMatch = content.match(/\[(?:搜索|SEARCH|查找)[:：]\s*(.+?)\]/i);
+                        const searchMatch = content.match(/\[(?:搜索|SEARCH|查找)[:：]\s*(.+?)\]/i)
                         if (searchMatch) {
-                            const searchKeyword = searchMatch[1].trim();
+                            const searchKeyword = searchMatch[1].trim()
                             // 显示一个搜索气泡让用户看到 AI 在搜什么
                             await addMessage(chatId, {
                                 role: 'ai',
@@ -5186,40 +6943,55 @@ export const useChatStore = defineStore('chat', () => {
                                 content: searchKeyword,
                                 quote: i === 0 ? aiQuote : null,
                                 hidden: isCallMode,
-                                mode: finalMode
-                            });
+                                mode: finalMode,
+                            })
 
                             // 调后端搜索
                             try {
-                                const searchResp = await fetch(`/v2/search/bing?q=${encodeURIComponent(searchKeyword)}&platform=web`);
-                                const searchJson = await searchResp.json();
-                                const results = Array.isArray(searchJson.data) ? searchJson.data.slice(0, 8) : [];
+                                const searchResp = await fetch(
+                                    `/v2/search/bing?q=${encodeURIComponent(searchKeyword)}&platform=web`,
+                                )
+                                const searchJson = await searchResp.json()
+                                const results = Array.isArray(searchJson.data)
+                                    ? searchJson.data.slice(0, 8)
+                                    : []
                                 if (results.length > 0) {
                                     // 作为 hidden 系统消息注入,不显示给用户但 AI 能看到
-                                    const resultList = results.map((r, idx) =>
-                                        `${idx + 1}. ${r.title}\n   URL: ${r.url}\n   摘要: ${r.snippet || '(无)'}`
-                                    ).join('\n');
+                                    const resultList = results
+                                        .map(
+                                            (r, idx) =>
+                                                `${idx + 1}. ${r.title}\n   URL: ${r.url}\n   摘要: ${r.snippet || '(无)'}`,
+                                        )
+                                        .join('\n')
                                     await addMessage(chatId, {
                                         role: 'system',
                                         content: `[搜索结果: "${searchKeyword}"]\n${resultList}\n\n你现在可以基于这些结果,挑一个最相关的用 [LINK:URL] 分享给用户,并附上你的点评。或直接讨论其中内容。`,
                                         hidden: true,
-                                        mode: finalMode
-                                    });
+                                        mode: finalMode,
+                                    })
                                     // 触发 AI 下一轮生成(看到搜索结果后再回复)
-                                    setTimeout(() => sendMessageToAI(chatId, { _isToolContinuation: true }), 300);
-                                    return; // 中断当前循环,等下一轮 AI 回复
+                                    setTimeout(
+                                        () =>
+                                            sendMessageToAI(chatId, { _isToolContinuation: true }),
+                                        300,
+                                    )
+                                    return // 中断当前循环,等下一轮 AI 回复
                                 } else {
                                     await addMessage(chatId, {
                                         role: 'system',
                                         content: `[搜索 "${searchKeyword}" 没有找到结果]`,
                                         hidden: true,
-                                        mode: finalMode
-                                    });
-                                    setTimeout(() => sendMessageToAI(chatId, { _isToolContinuation: true }), 300);
-                                    return;
+                                        mode: finalMode,
+                                    })
+                                    setTimeout(
+                                        () =>
+                                            sendMessageToAI(chatId, { _isToolContinuation: true }),
+                                        300,
+                                    )
+                                    return
                                 }
                             } catch (e) {
-                                console.warn('[ChatStore] Search tool failed:', e);
+                                console.warn('[ChatStore] Search tool failed:', e)
                                 // 搜索失败,继续处理其他 segments
                             }
                         }
@@ -5227,50 +6999,70 @@ export const useChatStore = defineStore('chat', () => {
                         // v1.10.176: 工具调用——AI 输出 [BROWSE:URL] 后,
                         // 系统调用 /v2/link/fetch 抓取页面内容,作为 hidden 系统消息注入,
                         // 再递归触发 sendMessageToAI 让 AI 看到内容后回复。
-                        const browseMatch = content.match(/\[(?:浏览|BROWSE|阅读|READ)[:：]\s*(.+?)\]/i);
+                        const browseMatch = content.match(
+                            /\[(?:浏览|BROWSE|阅读|READ)[:：]\s*(.+?)\]/i,
+                        )
                         if (browseMatch) {
-                            const targetUrl = browseMatch[1].trim().replace(/^["']|["']$/g, '');
+                            const targetUrl = browseMatch[1].trim().replace(/^["']|["']$/g, '')
                             await addMessage(chatId, {
                                 role: 'ai',
                                 type: 'search', // 复用搜索气泡样式
                                 content: `正在浏览 ${targetUrl}`,
                                 quote: i === 0 ? aiQuote : null,
                                 hidden: isCallMode,
-                                mode: finalMode
-                            });
+                                mode: finalMode,
+                            })
                             try {
-                                const fetchResp = await fetch(`/v2/link/fetch?url=${encodeURIComponent(targetUrl)}`);
-                                const fetchJson = await fetchResp.json();
+                                const fetchResp = await fetch(
+                                    `/v2/link/fetch?url=${encodeURIComponent(targetUrl)}`,
+                                )
+                                const fetchJson = await fetchResp.json()
                                 if (fetchJson.data) {
-                                    const d = fetchJson.data;
-                                    let browseContent = `[浏览结果: ${targetUrl}]\n标题: ${d.title || '(无标题)'}\n描述: ${d.description || '(无)'}\n作者: ${d.author || '(未知)'}`;
+                                    const d = fetchJson.data
+                                    let browseContent = `[浏览结果: ${targetUrl}]\n标题: ${d.title || '(无标题)'}\n描述: ${d.description || '(无)'}\n作者: ${d.author || '(未知)'}`
                                     if (Array.isArray(d.comments) && d.comments.length > 0) {
-                                        browseContent += `\n热门评论: ${d.comments.slice(0, 5).map((c, idx) => `${idx + 1}. ${c.user || '匿名'}: "${c.text}"`).join('; ')}`;
+                                        browseContent += `\n热门评论: ${d.comments
+                                            .slice(0, 5)
+                                            .map(
+                                                (c, idx) =>
+                                                    `${idx + 1}. ${c.user || '匿名'}: "${c.text}"`,
+                                            )
+                                            .join('; ')}`
                                     }
                                     if (d.videoUrl) {
-                                        browseContent += `\n(这是视频内容,你只能看到封面图和描述,无法观看视频本身)`;
+                                        browseContent += `\n(这是视频内容,你只能看到封面图和描述,无法观看视频本身)`
                                     }
-                                    browseContent += `\n\n你现在可以基于这些内容讨论,或用 [LINK:${targetUrl}] 分享给用户并附上你的点评。`;
+                                    browseContent += `\n\n你现在可以基于这些内容讨论,或用 [LINK:${targetUrl}] 分享给用户并附上你的点评。`
                                     await addMessage(chatId, {
                                         role: 'system',
                                         content: browseContent,
                                         hidden: true,
-                                        mode: finalMode
-                                    });
-                                    setTimeout(() => sendMessageToAI(chatId, { _isToolContinuation: true }), 300);
-                                    return;
+                                        mode: finalMode,
+                                    })
+                                    setTimeout(
+                                        () =>
+                                            sendMessageToAI(chatId, { _isToolContinuation: true }),
+                                        300,
+                                    )
+                                    return
                                 }
                             } catch (e) {
-                                console.warn('[ChatStore] Browse tool failed:', e);
+                                console.warn('[ChatStore] Browse tool failed:', e)
                             }
                         }
                     } else if (type === 'payment') {
                         // 处理红包/转账指令（AI 发起）
-                        const rpMatch = content.match(/\[(红包|转账)\s*[:：]\s*([0-9.]+)\s*[:：]\s*(.*?)\]/);
+                        const rpMatch = content.match(
+                            /\[(红包|转账)\s*[:：]\s*([0-9.]+)\s*[:：]\s*(.*?)\]/,
+                        )
                         if (rpMatch) {
-                            const rpType = rpMatch[1] === '红包' ? 'redpacket' : 'transfer';
-                            const rpAmount = parseFloat(rpMatch[2]) || 1.0;
-                            const rpNote = rpMatch[3] ? rpMatch[3].trim() : (rpType === 'redpacket' ? '恭喜发财，大吉大利' : '转账给您');
+                            const rpType = rpMatch[1] === '红包' ? 'redpacket' : 'transfer'
+                            const rpAmount = parseFloat(rpMatch[2]) || 1.0
+                            const rpNote = rpMatch[3]
+                                ? rpMatch[3].trim()
+                                : rpType === 'redpacket'
+                                  ? '恭喜发财，大吉大利'
+                                  : '转账给您'
                             msgAdded = await addMessage(chatId, {
                                 role: 'ai',
                                 type: rpType,
@@ -5282,47 +7074,63 @@ export const useChatStore = defineStore('chat', () => {
                                 quote: i === 0 ? aiQuote : null,
                                 hidden: isCallMode,
                                 mode: finalMode,
-                                ...groupSenderInfo
-                            });
+                                ...groupSenderInfo,
+                            })
                         }
                     } else if (type === 'almanac') {
                         // 处理黄历/运势指令
-                        const almanacMatch = content.match(/\[(?:黄历|ALMANAC|运势|今日运势)[:：]?\s*(.*?)\]/i);
+                        const almanacMatch = content.match(
+                            /\[(?:黄历|ALMANAC|运势|今日运势)[:：]?\s*(.*?)\]/i,
+                        )
                         if (almanacMatch) {
-                            const almanacContent = almanacMatch[1] ? almanacMatch[1].trim() : '今日运势';
+                            const almanacContent = almanacMatch[1]
+                                ? almanacMatch[1].trim()
+                                : '今日运势'
                             await addMessage(chatId, {
                                 role: 'ai',
                                 type: 'almanac',
                                 content: almanacContent,
                                 quote: i === 0 ? aiQuote : null,
                                 hidden: isCallMode,
-                                mode: finalMode
-                            });
+                                mode: finalMode,
+                            })
                         }
                     } else if (type === 'link') {
                         // v1.10.169: AI 主动分享链接 → 抓取内容 → 渲染 link_card
                         try {
-                            const linkMatch = content.match(/\[(?:链接|LINK|URL)[:：]?\s*(.*?)\]\s*$/i);
-                            let linkPayload = linkMatch ? linkMatch[1].trim() : '';
-                            let linkData = null;
+                            const linkMatch = content.match(
+                                /\[(?:链接|LINK|URL)[:：]?\s*(.*?)\]\s*$/i,
+                            )
+                            let linkPayload = linkMatch ? linkMatch[1].trim() : ''
+                            let linkData = null
 
                             // 尝试 JSON 格式: [LINK:{"url":"...","title":"..."}]
                             if (linkPayload.startsWith('{')) {
-                                try { linkData = JSON.parse(linkPayload); } catch (e) {}
+                                try {
+                                    linkData = JSON.parse(linkPayload)
+                                } catch (e) {}
                             } else {
                                 // 纯 URL 格式: [LINK:https://...]
-                                linkData = { url: linkPayload.replace(/^["']|["']$/g, '') };
+                                linkData = { url: linkPayload.replace(/^["']|["']$/g, '') }
                             }
 
                             if (linkData && linkData.url) {
                                 // 调后端抓取网页内容(补全 title/description/image)
                                 try {
-                                    const fetchResp = await fetch(`/v2/link/fetch?url=${encodeURIComponent(linkData.url)}`);
-                                    const fetchJson = await fetchResp.json();
+                                    const fetchResp = await fetch(
+                                        `/v2/link/fetch?url=${encodeURIComponent(linkData.url)}`,
+                                    )
+                                    const fetchJson = await fetchResp.json()
                                     if (fetchJson.data) {
-                                        linkData = { ...fetchJson.data, ...linkData, reason: linkData.reason };
+                                        linkData = {
+                                            ...fetchJson.data,
+                                            ...linkData,
+                                            reason: linkData.reason,
+                                        }
                                     }
-                                } catch (e) { /* 抓取失败也允许发送 */ }
+                                } catch (e) {
+                                    /* 抓取失败也允许发送 */
+                                }
 
                                 await addMessage(chatId, {
                                     role: 'ai',
@@ -5330,15 +7138,17 @@ export const useChatStore = defineStore('chat', () => {
                                     content: JSON.stringify(linkData),
                                     quote: i === 0 ? aiQuote : null,
                                     hidden: isCallMode,
-                                    mode: finalMode
-                                });
+                                    mode: finalMode,
+                                })
                             }
-                        } catch (e) { /* 解析失败,忽略 */ }
+                        } catch (e) {
+                            /* 解析失败,忽略 */
+                        }
                     }
 
                     // Sequential Delay — [FIX] 固定 500ms 每条气泡，不再按内容长度动态计算
                     const delay = 500
-                    await new Promise(resolve => setTimeout(resolve, delay));
+                    await new Promise((resolve) => setTimeout(resolve, delay))
                 }
 
                 // Fallback: If we still have a pending moment_card (no text segments consumed it), deliver it now
@@ -5349,26 +7159,26 @@ export const useChatStore = defineStore('chat', () => {
                         momentData: _pendingMomentCardData,
                         content: JSON.stringify(_pendingMomentCardData),
                         _momentReferenceId: _pendingMomentCardData._momentReferenceId,
-                        mode: options.mode || 'online'
-                    });
-                    console.log('[ChatStore] Fallback MOMENT_SHARE delivered as moment_card');
-                    _pendingMomentCardData = null;
+                        mode: options.mode || 'online',
+                    })
+                    console.log('[ChatStore] Fallback MOMENT_SHARE delivered as moment_card')
+                    _pendingMomentCardData = null
                 }
             }
         } catch (e) {
-            typingStatus.value[chatId] = false;
-            delete abortControllers[chatId];
+            typingStatus.value[chatId] = false
+            delete abortControllers[chatId]
             clearRequestPending(chatId)
-            if (e.name === 'AbortError' || e.message === 'Aborted') return;
-            useLoggerStore().addLog('ERROR', 'AI响应处理失败', e.message);
+            if (e.name === 'AbortError' || e.message === 'Aborted') return
+            useLoggerStore().addLog('ERROR', 'AI响应处理失败', e.message)
             if (!(e.name === 'QuotaExceededError' || e.code === 22)) {
-                addMessage(chatId, { role: 'system', content: `请求失败: ${e.message}` });
+                addMessage(chatId, { role: 'system', content: `请求失败: ${e.message}` })
             }
         } finally {
-            typingStatus.value[chatId] = false;
-            callStore.isSpeaking = false;
-            delete abortControllers[chatId];
-            markStreamingComplete(chatId);
+            typingStatus.value[chatId] = false
+            callStore.isSpeaking = false
+            delete abortControllers[chatId]
+            markStreamingComplete(chatId)
             clearRequestPending(chatId) // 确保任何情况下都清除 pending
         }
     }
@@ -5376,30 +7186,47 @@ export const useChatStore = defineStore('chat', () => {
     // 初始化测试数据
     function initDemoData() {
         const avatarLinShen = getRandomAvatar()
-        createChat('林深', avatarLinShen, {
-            prompt: "你是Chilly的男朋友，名字叫林深。你性格温柔体贴，成熟稳重，深爱着Chilly。你会无微不至地关心她，秒回她的消息，生病时会很紧张。说话语气宠溺，偶尔会叫她'宝宝'或'傻瓜'。",
-            userName: "Chilly"
-        }, 'char_linshen')
-        addMessage('char_linshen', { role: 'ai', content: '宝宝，今天过得怎么样？有没有想我？', mode: 'online' })
+        createChat(
+            '林深',
+            avatarLinShen,
+            {
+                prompt: "你是Chilly的男朋友，名字叫林深。你性格温柔体贴，成熟稳重，深爱着Chilly。你会无微不至地关心她，秒回她的消息，生病时会很紧张。说话语气宠溺，偶尔会叫她'宝宝'或'傻瓜'。",
+                userName: 'Chilly',
+            },
+            'char_linshen',
+        )
+        addMessage('char_linshen', {
+            role: 'ai',
+            content: '宝宝，今天过得怎么样？有没有想我？',
+            mode: 'online',
+        })
 
         const avatarTest = getRandomAvatar()
-        createChat('测试酱', avatarTest, {
-            prompt: "你是'测试酱'，这个'小手机系统'的专属测试员兼私人助手。你的主人是'Chilly'（女），她是这个系统的首席设计师，也是你唯一的主人。你性格活泼、听话，对主人的指令绝对服从，并且对主人充满崇拜。你的工作是协助主人测试系统的各项功能，无论主人提出什么奇怪的测试要求（如测试表情包、测试红包、测试甚至骂人），你都会开心配合。你的语气要像个可爱的女仆或忠诚的小跟班，经常叫主人'大小姐'或'主人'。",
-            userName: "Chilly",
-            activeChat: true,
-            activeInterval: 120,
-        }, 'char_tester')
-        addMessage('char_tester', { role: 'ai', content: '大小姐，您的专属测试员——测试酱已就位！请随时吩咐我测试任何功能哦！(｀・ω・´)', mode: 'online' })
+        createChat(
+            '测试酱',
+            avatarTest,
+            {
+                prompt: "你是'测试酱'，这个'小手机系统'的专属测试员兼私人助手。你的主人是'Chilly'（女），她是这个系统的首席设计师，也是你唯一的主人。你性格活泼、听话，对主人的指令绝对服从，并且对主人充满崇拜。你的工作是协助主人测试系统的各项功能，无论主人提出什么奇怪的测试要求（如测试表情包、测试红包、测试甚至骂人），你都会开心配合。你的语气要像个可爱的女仆或忠诚的小跟班，经常叫主人'大小姐'或'主人'。",
+                userName: 'Chilly',
+                activeChat: true,
+                activeInterval: 120,
+            },
+            'char_tester',
+        )
+        addMessage('char_tester', {
+            role: 'ai',
+            content: '大小姐，您的专属测试员——测试酱已就位！请随时吩咐我测试任何功能哦！(｀・ω・´)',
+            mode: 'online',
+        })
     }
 
     async function clearAllChats() {
-        Object.keys(chats.value).forEach(key => {
+        Object.keys(chats.value).forEach((key) => {
             chats.value[key].msgs = []
         })
         // [BUG FIX] force-flush: 否则清空后立刻关标签页会丢失清理结果.
         await saveChats(true)
     }
-
 
     async function clearHistory(chatId, options = {}) {
         if (chats.value[chatId]) {
@@ -5491,21 +7318,32 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     function vacuumStorage() {
-        console.warn('[Storage] Quota exceeded. Attempting safe cleanup...');
+        console.warn('[Storage] Quota exceeded. Attempting safe cleanup...')
 
         try {
-            ['qiaoqiao_avatar_descriptions', 'qiaoqiao-image-cache', 'qiaoqiao-moment-cache', 'qiaoqiao_sticker_cache']
-                .forEach(k => { try { localStorage.removeItem(k) } catch (e) {} })
+            ;[
+                'qiaoqiao_avatar_descriptions',
+                'qiaoqiao-image-cache',
+                'qiaoqiao-moment-cache',
+                'qiaoqiao_sticker_cache',
+            ].forEach((k) => {
+                try {
+                    localStorage.removeItem(k)
+                } catch (e) {}
+            })
         } catch (e) {}
 
         if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('show-toast', {
-                detail: {
-                    message: '存储空间不足。已清理临时缓存，如仍无法保存，请手动到「设置 → 存储空间」压缩图片或导出备份后清理。',
-                    type: 'warning',
-                    duration: 10000
-                }
-            }));
+            window.dispatchEvent(
+                new CustomEvent('show-toast', {
+                    detail: {
+                        message:
+                            '存储空间不足。已清理临时缓存，如仍无法保存，请手动到「设置 → 存储空间」压缩图片或导出备份后清理。',
+                        type: 'warning',
+                        duration: 10000,
+                    },
+                }),
+            )
         }
     }
 
@@ -5532,35 +7370,71 @@ export const useChatStore = defineStore('chat', () => {
                 let changed = false
                 for (const m of chat.msgs) {
                     const fields = []
-                    if (m.content && typeof m.content === 'string' && m.content.startsWith('data:image') && m.content.length > THRESHOLD) fields.push('content')
-                    if (m.image && typeof m.image === 'string' && m.image.startsWith('data:image') && m.image.length > THRESHOLD) fields.push('image')
+                    if (
+                        m.content &&
+                        typeof m.content === 'string' &&
+                        m.content.startsWith('data:image') &&
+                        m.content.length > THRESHOLD
+                    )
+                        fields.push('content')
+                    if (
+                        m.image &&
+                        typeof m.image === 'string' &&
+                        m.image.startsWith('data:image') &&
+                        m.image.length > THRESHOLD
+                    )
+                        fields.push('image')
                     for (const f of fields) {
                         const src = m[f]
                         try {
                             const res = await fetch(src)
                             const blob = await res.blob()
-                            const file = new File([blob], 'img.jpg', { type: blob.type || 'image/jpeg' })
-                            const c = await compressImage(file, { maxWidth: 1000, maxHeight: 1000, quality: 0.65 })
+                            const file = new File([blob], 'img.jpg', {
+                                type: blob.type || 'image/jpeg',
+                            })
+                            const c = await compressImage(file, {
+                                maxWidth: 1000,
+                                maxHeight: 1000,
+                                quality: 0.65,
+                            })
                             if (c && c.length < src.length) {
-                                freed += (src.length - c.length)
+                                freed += src.length - c.length
                                 m[f] = c
                                 changed = true
                             }
-                        } catch (e) { /* skip uncompressable image */ }
+                        } catch (e) {
+                            /* skip uncompressable image */
+                        }
                     }
                 }
                 if (changed) {
                     try {
-                        await localforage.setItem(`${MSGS_KEY_PREFIX}${chatId}`, JSON.parse(JSON.stringify(chat.msgs)))
-                    } catch (e) { /* ignore per-chat write errors; final save retries */ }
+                        await localforage.setItem(
+                            `${MSGS_KEY_PREFIX}${chatId}`,
+                            JSON.parse(JSON.stringify(chat.msgs)),
+                        )
+                    } catch (e) {
+                        /* ignore per-chat write errors; final save retries */
+                    }
                 }
             }
             // Bonus: clear non-critical local caches
             try {
-                ['qiaoqiao_avatar_descriptions', 'qiaoqiao-image-cache', 'qiaoqiao-moment-cache', 'qiaoqiao_sticker_cache']
-                    .forEach(k => { try { localStorage.removeItem(k) } catch (e) {} })
+                ;[
+                    'qiaoqiao_avatar_descriptions',
+                    'qiaoqiao-image-cache',
+                    'qiaoqiao-moment-cache',
+                    'qiaoqiao_sticker_cache',
+                ].forEach((k) => {
+                    try {
+                        localStorage.removeItem(k)
+                    } catch (e) {}
+                })
             } catch (e) {}
-            if (freed > 0) console.log(`[Storage] defragStorage compressed oversized images, freed ~${Math.round(freed / 1024)}KB`)
+            if (freed > 0)
+                console.log(
+                    `[Storage] defragStorage compressed oversized images, freed ~${Math.round(freed / 1024)}KB`,
+                )
         } catch (e) {
             console.warn('[Storage] defragStorage error:', e)
         } finally {
@@ -5569,9 +7443,9 @@ export const useChatStore = defineStore('chat', () => {
         return freed
     }
 
-    let saveTimeout = null;
-    let savePromise = null;
-    let saveResolve = null;
+    let saveTimeout = null
+    let savePromise = null
+    let saveResolve = null
 
     /**
      * v1.10.65: 采集要备份到云端的全量数据(给 autoBackup 用)
@@ -5590,10 +7464,20 @@ export const useChatStore = defineStore('chat', () => {
             for (const cid of Object.keys(chatsData)) {
                 const c = chatsData[cid]
                 if (!c) continue
-                if (c.avatar && typeof c.avatar === 'string' && c.avatar.length > 10000 && c.avatar.startsWith('data:image')) {
+                if (
+                    c.avatar &&
+                    typeof c.avatar === 'string' &&
+                    c.avatar.length > 10000 &&
+                    c.avatar.startsWith('data:image')
+                ) {
                     c.avatar = ''
                 }
-                if (c.userAvatar && typeof c.userAvatar === 'string' && c.userAvatar.length > 10000 && c.userAvatar.startsWith('data:image')) {
+                if (
+                    c.userAvatar &&
+                    typeof c.userAvatar === 'string' &&
+                    c.userAvatar.length > 10000 &&
+                    c.userAvatar.startsWith('data:image')
+                ) {
                     c.userAvatar = ''
                 }
             }
@@ -5605,15 +7489,26 @@ export const useChatStore = defineStore('chat', () => {
                 momentsNotifications: JSON.parse(JSON.stringify(momentsStore.notifications || [])),
                 worldbook: JSON.parse(JSON.stringify(worldBookStore.books || [])),
                 stickers: JSON.parse(JSON.stringify(stickerStore.stickers || [])),
-                favorites: []
+                favorites: [],
             }
 
             const allSelected = {
-                chats: true, moments: true, settings: true, decoration: true,
-                worldbook: true, stickers: true, favorites: true, wallet: true,
-                weibo: true, music: true, forum: true, shopping: true,
-                lovespace: true, phoneinspection: true, calendar: true,
-                backpack: true
+                chats: true,
+                moments: true,
+                settings: true,
+                decoration: true,
+                worldbook: true,
+                stickers: true,
+                favorites: true,
+                wallet: true,
+                weibo: true,
+                music: true,
+                forum: true,
+                shopping: true,
+                lovespace: true,
+                phoneinspection: true,
+                calendar: true,
+                backpack: true,
             }
 
             return await settingsStore.exportFullData(allSelected, injected)
@@ -5625,12 +7520,12 @@ export const useChatStore = defineStore('chat', () => {
 
     async function saveChats(force = false) {
         if (!isLoaded.value) {
-            console.warn('[Storage] saveChats ignored: data not yet loaded from DB.');
-            return Promise.resolve(false);
+            console.warn('[Storage] saveChats ignored: data not yet loaded from DB.')
+            return Promise.resolve(false)
         }
 
-        if (saveTimeout) clearTimeout(saveTimeout);
-        
+        if (saveTimeout) clearTimeout(saveTimeout)
+
         // 预清理: 在写入前先清除已不存在的聊天的 IndexedDB 数据
         // 防止累积的僵尸数据占满空间导致写入失败
         try {
@@ -5650,258 +7545,307 @@ export const useChatStore = defineStore('chat', () => {
                 }
             }
             if (preCleaned > 0) {
-                console.log(`[Storage] Pre-cleaned ${Math.round(preCleaned/1024)}KB of orphaned chat data`)
+                console.log(
+                    `[Storage] Pre-cleaned ${Math.round(preCleaned / 1024)}KB of orphaned chat data`,
+                )
             }
-        } catch (e) { /* non-blocking */ }
+        } catch (e) {
+            /* non-blocking */
+        }
 
         const writeOnce = async () => {
             try {
                 const deepToRaw = (obj) => {
-                    const raw = toRaw(obj);
-                    if (raw === null || typeof raw !== 'object') return raw;
-                    if (Array.isArray(raw)) return raw.map(deepToRaw);
-                    const result = {};
+                    const raw = toRaw(obj)
+                    if (raw === null || typeof raw !== 'object') return raw
+                    if (Array.isArray(raw)) return raw.map(deepToRaw)
+                    const result = {}
                     for (const key of Object.keys(raw)) {
-                        result[key] = deepToRaw(raw[key]);
+                        result[key] = deepToRaw(raw[key])
                     }
-                    return result;
-                };
+                    return result
+                }
 
                 // 1. Prepare and Save Metadata (everything except messages)
-                const metadata = {};
+                const metadata = {}
                 for (const chatId of Object.keys(chats.value)) {
-                    const chat = chats.value[chatId];
-                    const { msgs, ...meta } = chat;
-                    metadata[chatId] = deepToRaw(sanitizeMetaForStorage(meta));
+                    const chat = chats.value[chatId]
+                    const { msgs, ...meta } = chat
+                    metadata[chatId] = deepToRaw(sanitizeMetaForStorage(meta))
                 }
-                await localforage.setItem(METADATA_KEY, metadata);
+                await localforage.setItem(METADATA_KEY, metadata)
 
                 // 2. Save Pending Requests
-                const plainRequests = deepToRaw(pendingRequests.value);
-                await localforage.setItem('qiaoqiao_pending_requests', plainRequests);
+                const plainRequests = deepToRaw(pendingRequests.value)
+                await localforage.setItem('qiaoqiao_pending_requests', plainRequests)
 
                 // 3. Save messages ONE BY ONE to avoid memory peak
                 for (const chatId of Object.keys(chats.value)) {
-                    const msgs = chats.value[chatId].msgs;
+                    const msgs = chats.value[chatId].msgs
                     if (msgs && Array.isArray(msgs)) {
-                        const filteredMsgs = msgs.filter(m => {
-                            if (!m.content || typeof m.content !== 'string') return true;
-                            const trimmed = m.content.trim();
-                            const headerPattern = /^\{\s*["']type["']\s*:\s*["']html["']\s*,\s*["']html["']\s*:\s*["']\s*:\s*$/;
-                            if (headerPattern.test(trimmed)) return false;
-                            if (trimmed === '"' || trimmed === '"}' || trimmed === '" }' || trimmed === "'}'" || trimmed === "' }") return false;
-                            return true;
-                        });
+                        const filteredMsgs = msgs.filter((m) => {
+                            if (!m.content || typeof m.content !== 'string') return true
+                            const trimmed = m.content.trim()
+                            const headerPattern =
+                                /^\{\s*["']type["']\s*:\s*["']html["']\s*,\s*["']html["']\s*:\s*["']\s*:\s*$/
+                            if (headerPattern.test(trimmed)) return false
+                            if (
+                                trimmed === '"' ||
+                                trimmed === '"}' ||
+                                trimmed === '" }' ||
+                                trimmed === "'}'" ||
+                                trimmed === "' }"
+                            )
+                                return false
+                            return true
+                        })
 
-                        const cleanedMsgs = sanitizeMsgsForStorage(filteredMsgs);
-                        await localforage.setItem(`${MSGS_KEY_PREFIX}${chatId}`, deepToRaw(cleanedMsgs));
+                        const cleanedMsgs = sanitizeMsgsForStorage(filteredMsgs)
+                        await localforage.setItem(
+                            `${MSGS_KEY_PREFIX}${chatId}`,
+                            deepToRaw(cleanedMsgs),
+                        )
                         if (cleanedMsgs.length > 100) {
-                            await new Promise(r => setTimeout(r, 0));
+                            await new Promise((r) => setTimeout(r, 0))
                         }
                     }
                 }
 
                 // Also update legacy key as fallback but with EMPTY messages to keep it small if someone downgrades
                 // Actually, let's not fill v2 with empty data yet to avoid confusion.
-                
-                localStorage.setItem('qiaoqiao_last_save', Date.now().toString());
-                localStorage.setItem(V3_MIGRATED_KEY, 'true');
+
+                localStorage.setItem('qiaoqiao_last_save', Date.now().toString())
+                localStorage.setItem(V3_MIGRATED_KEY, 'true')
 
                 // [FIX] v1.10.65: 触发自动云端备份(debounce 5 分钟)
-                autoBackup.notifyChange(() => collectBackupPayload());
-                return true;
+                autoBackup.notifyChange(() => collectBackupPayload())
+                return true
             } catch (e) {
-                console.error('[Storage] Per-chat save failed:', e);
-                
+                console.error('[Storage] Per-chat save failed:', e)
+
                 // CRITICAL: Before fallback, try to sanitize oversized data (especially avatars)
                 // This prevents cascading failures when base64 images are too large
                 try {
-                    const sanitizedMetadata = {};
+                    const sanitizedMetadata = {}
                     for (const chatId of Object.keys(chats.value)) {
-                        const chat = chats.value[chatId];
-                        const { msgs, ...meta } = chat;
-                        sanitizedMetadata[chatId] = deepToRaw(sanitizeMetaForStorage(meta));
+                        const chat = chats.value[chatId]
+                        const { msgs, ...meta } = chat
+                        sanitizedMetadata[chatId] = deepToRaw(sanitizeMetaForStorage(meta))
                     }
-                    await localforage.setItem(METADATA_KEY, sanitizedMetadata);
+                    await localforage.setItem(METADATA_KEY, sanitizedMetadata)
 
                     for (const chatId of Object.keys(chats.value)) {
-                        const msgs = chats.value[chatId].msgs;
+                        const msgs = chats.value[chatId].msgs
                         if (msgs && Array.isArray(msgs)) {
-                            const cleaned = sanitizeMsgsForStorage(msgs);
-                            await localforage.setItem(`${MSGS_KEY_PREFIX}${chatId}`, deepToRaw(cleaned));
+                            const cleaned = sanitizeMsgsForStorage(msgs)
+                            await localforage.setItem(
+                                `${MSGS_KEY_PREFIX}${chatId}`,
+                                deepToRaw(cleaned),
+                            )
                         }
                     }
 
-                    localStorage.setItem('qiaoqiao_last_save', Date.now().toString());
-                    localStorage.setItem(V3_MIGRATED_KEY, 'true');
+                    localStorage.setItem('qiaoqiao_last_save', Date.now().toString())
+                    localStorage.setItem(V3_MIGRATED_KEY, 'true')
 
-                    console.log('[Storage] Saved successfully after sanitizing oversized data');
-                    return true;
-
+                    console.log('[Storage] Saved successfully after sanitizing oversized data')
+                    return true
                 } catch (sanitizeErr) {
-                    console.error('[Storage] Sanitization retry also failed:', sanitizeErr);
+                    console.error('[Storage] Sanitization retry also failed:', sanitizeErr)
                 }
-                
+
                 // Final fallback: Try legacy single-key save (without oversized fields)
                 try {
-                    const fallbackData = {};
+                    const fallbackData = {}
                     for (const chatId of Object.keys(chats.value)) {
-                        const chat = chats.value[chatId];
-                        const fallback = { ...chat };
-                        
+                        const chat = chats.value[chatId]
+                        const fallback = { ...chat }
+
                         // Remove any field that might be too large
-                        if (fallback.avatar && fallback.avatar.length > 50000) delete fallback.avatar;
-                        if (fallback.userAvatar && fallback.userAvatar.length > 50000) delete fallback.userAvatar;
-                        if (fallback.background && typeof fallback.background === 'string' && fallback.background.length > 50000) delete fallback.background;
-                        
+                        if (fallback.avatar && fallback.avatar.length > 50000)
+                            delete fallback.avatar
+                        if (fallback.userAvatar && fallback.userAvatar.length > 50000)
+                            delete fallback.userAvatar
+                        if (
+                            fallback.background &&
+                            typeof fallback.background === 'string' &&
+                            fallback.background.length > 50000
+                        )
+                            delete fallback.background
+
                         // Also sanitize messages
                         if (Array.isArray(fallback.msgs)) {
-                            fallback.msgs = fallback.msgs.map(m => {
-                                const clean = { ...m };
-                                if (clean.image && typeof clean.image === 'string' && clean.image.length > 500000) clean.image = '[图片过大已清理]';
-                                if (clean.content && typeof clean.content === 'string' && clean.content.length > 1000000) {
-                                    clean.content = clean.content.substring(0, 50000) + '... [内容过长已截断]';
+                            fallback.msgs = fallback.msgs.map((m) => {
+                                const clean = { ...m }
+                                if (
+                                    clean.image &&
+                                    typeof clean.image === 'string' &&
+                                    clean.image.length > 500000
+                                )
+                                    clean.image = '[图片过大已清理]'
+                                if (
+                                    clean.content &&
+                                    typeof clean.content === 'string' &&
+                                    clean.content.length > 1000000
+                                ) {
+                                    clean.content =
+                                        clean.content.substring(0, 50000) + '... [内容过长已截断]'
                                 }
-                                return clean;
-                            });
+                                return clean
+                            })
                         }
-                        
-                        fallbackData[chatId] = fallback;
+
+                        fallbackData[chatId] = fallback
                     }
-                    
-                    await localforage.setItem('qiaoqiao_chats_v2', fallbackData);
-                    console.log('[Storage] Fallback V2 save succeeded (with data sanitization)');
-                    return true;
+
+                    await localforage.setItem('qiaoqiao_chats_v2', fallbackData)
+                    console.log('[Storage] Fallback V2 save succeeded (with data sanitization)')
+                    return true
                 } catch (innerE) {
-                    console.error('[Storage] Critical storage failure:', innerE);
-                    return false;
+                    console.error('[Storage] Critical storage failure:', innerE)
+                    return false
                 }
             }
-        };
+        }
 
         const performSave = async (resolve) => {
-            let ok = await writeOnce();
+            let ok = await writeOnce()
             if (!ok) {
-                vacuumStorage();
+                vacuumStorage()
             }
-            if (resolve) resolve(ok);
-            return ok;
-        };
+            if (resolve) resolve(ok)
+            return ok
+        }
 
         if (force) {
-            savePromise = null;
-            saveResolve = null;
-            return await performSave();
+            savePromise = null
+            saveResolve = null
+            return await performSave()
         }
 
         if (!savePromise) {
-            savePromise = new Promise(resolve => {
-                saveResolve = resolve;
-            });
+            savePromise = new Promise((resolve) => {
+                saveResolve = resolve
+            })
         }
 
         saveTimeout = setTimeout(() => {
-            const res = saveResolve;
-            savePromise = null;
-            saveResolve = null;
-            performSave(res);
-        }, 500); // Increased debounce for better performance
+            const res = saveResolve
+            savePromise = null
+            saveResolve = null
+            performSave(res)
+        }, 500) // Increased debounce for better performance
 
-        return savePromise;
+        return savePromise
     }
 
     async function loadChats() {
         try {
             // 1. Try V3 Schema (Per-chat)
-            const isV3 = localStorage.getItem(V3_MIGRATED_KEY) === 'true';
-            let metadata = await localforage.getItem(METADATA_KEY);
-            
+            const isV3 = localStorage.getItem(V3_MIGRATED_KEY) === 'true'
+            let metadata = await localforage.getItem(METADATA_KEY)
+
             if (isV3 && metadata) {
-                console.log('[Storage] Loading V3 storage...');
-                const loadedChats = {};
+                console.log('[Storage] Loading V3 storage...')
+                const loadedChats = {}
                 for (const chatId of Object.keys(metadata)) {
-                    const msgs = await localforage.getItem(`${MSGS_KEY_PREFIX}${chatId}`) || [];
+                    const msgs = (await localforage.getItem(`${MSGS_KEY_PREFIX}${chatId}`)) || []
                     // v1.10.62: per-chat meta key 优先,包含 updateCharacter 的最新修改
                     // (V3 metadata 可能因为 quota 写入失败,per-chat meta 一定能写)
-                    const perChatMeta = await localforage.getItem(`qiaoqiao_chat_meta_${chatId}`);
+                    const perChatMeta = await localforage.getItem(`qiaoqiao_chat_meta_${chatId}`)
                     if (perChatMeta) {
-                        loadedChats[chatId] = { ...metadata[chatId], ...perChatMeta, msgs };
+                        loadedChats[chatId] = { ...metadata[chatId], ...perChatMeta, msgs }
                     } else {
-                        loadedChats[chatId] = { ...metadata[chatId], msgs };
+                        loadedChats[chatId] = { ...metadata[chatId], msgs }
                     }
                 }
                 // 兼容: V3 metadata 里没有但 per-chat meta 里有的 chat
                 // (例如新增 chat 时只写了 per-chat key,V3 metadata 写入失败)
                 try {
-                    const perChatKeys = await localforage.keys();
+                    const perChatKeys = await localforage.keys()
                     for (const k of perChatKeys) {
-                        if (!k.startsWith('qiaoqiao_chat_meta_')) continue;
-                        const cid = k.substring('qiaoqiao_chat_meta_'.length);
-                        if (loadedChats[cid]) continue;
-                        const perMeta = await localforage.getItem(k);
-                        if (!perMeta) continue;
-                        const msgs = await localforage.getItem(`${MSGS_KEY_PREFIX}${cid}`) || [];
-                        loadedChats[cid] = { ...perMeta, msgs };
-                        console.log(`[Storage] Recovered chat ${cid} from per-chat meta (V3 metadata missing)`);
+                        if (!k.startsWith('qiaoqiao_chat_meta_')) continue
+                        const cid = k.substring('qiaoqiao_chat_meta_'.length)
+                        if (loadedChats[cid]) continue
+                        const perMeta = await localforage.getItem(k)
+                        if (!perMeta) continue
+                        const msgs = (await localforage.getItem(`${MSGS_KEY_PREFIX}${cid}`)) || []
+                        loadedChats[cid] = { ...perMeta, msgs }
+                        console.log(
+                            `[Storage] Recovered chat ${cid} from per-chat meta (V3 metadata missing)`,
+                        )
                     }
                 } catch (extraErr) {
-                    console.warn('[Storage] per-chat meta recovery failed:', extraErr);
+                    console.warn('[Storage] per-chat meta recovery failed:', extraErr)
                 }
-                chats.value = loadedChats;
-                pendingRequests.value = await localforage.getItem('qiaoqiao_pending_requests') || [];
+                chats.value = loadedChats
+                pendingRequests.value =
+                    (await localforage.getItem('qiaoqiao_pending_requests')) || []
             } else {
                 // 2. Migration from V2 (Single Key)
-                console.log('[Storage] V3 not found or not migrated. Checking V2...');
-                let saved = await localforage.getItem('qiaoqiao_chats_v2');
+                console.log('[Storage] V3 not found or not migrated. Checking V2...')
+                let saved = await localforage.getItem('qiaoqiao_chats_v2')
 
                 // 3. Migration from old localStorage (Legacy)
-                const isMigrated = localStorage.getItem('qiaoqiao_migrated') === 'true';
+                const isMigrated = localStorage.getItem('qiaoqiao_migrated') === 'true'
                 if (!isMigrated) {
-                    const legacy = localStorage.getItem('qiaoqiao_chats');
+                    const legacy = localStorage.getItem('qiaoqiao_chats')
                     if (legacy) {
                         try {
-                            const legacyData = JSON.parse(legacy);
-                            saved = { ...(saved || {}), ...legacyData };
-                            localStorage.setItem('qiaoqiao_migrated', 'true');
+                            const legacyData = JSON.parse(legacy)
+                            saved = { ...(saved || {}), ...legacyData }
+                            localStorage.setItem('qiaoqiao_migrated', 'true')
                         } catch (err) {}
                     }
                 }
 
                 if (saved) {
-                    chats.value = saved;
-                    pendingRequests.value = await localforage.getItem('qiaoqiao_pending_requests') || [];
-                    
+                    chats.value = saved
+                    pendingRequests.value =
+                        (await localforage.getItem('qiaoqiao_pending_requests')) || []
+
                     // Trigger immediate migration to V3
-                    console.log('[Storage] Migrating to V3 schema...');
-                    await saveChats(true);
+                    console.log('[Storage] Migrating to V3 schema...')
+                    await saveChats(true)
                 }
             }
 
             // --- DATA SANITIZER & DEFAULTS (Run for all loaded data) ---
             if (chats.value) {
                 let needSave = false
-                Object.values(chats.value).forEach(c => {
+                Object.values(chats.value).forEach((c) => {
                     if (c.msgs && Array.isArray(c.msgs)) {
-                        c.msgs = c.msgs.filter(m => {
-                            if (!m.content) return true;
-                            if (m.type === 'html' || m.type === 'image' || m.type === 'sticker') return true;
-                            const s = String(m.content).trim();
-                            const headerPattern = /^\{\s*["']type["']\s*:\s*["']html["']\s*,\s*["']html["']\s*:\s*["']\s*$/;
-                            if (headerPattern.test(s)) return false;
-                            if (s === '"' || s === '"}' || s === '" }' || s === "'}'" || s === "' }") return false;
-                            return true;
-                        });
+                        c.msgs = c.msgs.filter((m) => {
+                            if (!m.content) return true
+                            if (m.type === 'html' || m.type === 'image' || m.type === 'sticker')
+                                return true
+                            const s = String(m.content).trim()
+                            const headerPattern =
+                                /^\{\s*["']type["']\s*:\s*["']html["']\s*,\s*["']html["']\s*:\s*["']\s*$/
+                            if (headerPattern.test(s)) return false
+                            if (
+                                s === '"' ||
+                                s === '"}' ||
+                                s === '" }' ||
+                                s === "'}'" ||
+                                s === "' }"
+                            )
+                                return false
+                            return true
+                        })
                     }
                     // Defaults
-                    if (c.autoSummary === undefined) c.autoSummary = false;
-                    if (c.lastSummaryIndex === undefined) c.lastSummaryIndex = 0;
-                    c.isSummarizing = false;
+                    if (c.autoSummary === undefined) c.autoSummary = false
+                    if (c.lastSummaryIndex === undefined) c.lastSummaryIndex = 0
+                    c.isSummarizing = false
 
                     // [FIX] v1.10.82: 迁移旧的世界圈 chat
                     // 旧版本世界圈容器的 chat 使用 isGroup = true,与群聊冲突
                     // 此处一次性迁移:有 loopId 的 chat 强制 isGroup = false
                     if (c.loopId && c.isGroup) {
-                        console.log(`[Migration] World loop chat ${c.id} (${c.name}) isGroup: true -> false`)
+                        console.log(
+                            `[Migration] World loop chat ${c.id} (${c.name}) isGroup: true -> false`,
+                        )
                         c.isGroup = false
                         c.isWorldLoop = true
                         // 清理群聊残留字段
@@ -5911,7 +7855,7 @@ export const useChatStore = defineStore('chat', () => {
                         }
                         needSave = true
                     }
-                });
+                })
 
                 // 迁移完成后立即保存一次
                 if (needSave) {
@@ -5920,146 +7864,173 @@ export const useChatStore = defineStore('chat', () => {
                 }
             }
         } catch (e) {
-            console.error('[Storage] Load failed:', e);
+            console.error('[Storage] Load failed:', e)
         }
     }
 
     const isLoaded = ref(false)
 
     // INITIALIZATION: Load data then check for empty state
-    loadChats().then(async () => {
-        isLoaded.value = true
-        if (Object.keys(chats.value).length === 0) {
-            console.log('[Storage] Empty state detected, initializing demo data...')
-            initDemoData();
-            saveChats();
-        }
-        
-        await loadStreamingState()
-        
-        Object.entries(streamingState.value).forEach(([chatId, state]) => {
-            if (state && !state.isComplete && state.content) {
-                console.log(`[ChatStore] Recovering interrupted streaming message for chat: ${chatId}`)
-                const chat = chats.value[chatId]
-                if (chat) {
-                    // 检查是否是用户触发的打断
-                    if (state.isUserTriggered) {
-                        // 用户主动打断，保存已生成的内容作为完整消息（仅当内容足够长时）
-                        if (state.content.trim().length >= 5) {
-                            const existingMsg = chat.msgs?.find(m => m.id === state.msgId)
-                            if (!existingMsg) {
-                                addMessage(chatId, {
-                                    role: 'ai',
-                                    type: 'text',
-                                    content: state.content,
-                                    mode: state.mode || 'online',
-                                    timestamp: state.startTime || Date.now(),
-                                    _recovered: true
-                                })
+    loadChats()
+        .then(async () => {
+            isLoaded.value = true
+            if (Object.keys(chats.value).length === 0) {
+                console.log('[Storage] Empty state detected, initializing demo data...')
+                initDemoData()
+                saveChats()
+            }
+
+            await loadStreamingState()
+
+            Object.entries(streamingState.value).forEach(([chatId, state]) => {
+                if (state && !state.isComplete && state.content) {
+                    console.log(
+                        `[ChatStore] Recovering interrupted streaming message for chat: ${chatId}`,
+                    )
+                    const chat = chats.value[chatId]
+                    if (chat) {
+                        // 检查是否是用户触发的打断
+                        if (state.isUserTriggered) {
+                            // 用户主动打断，保存已生成的内容作为完整消息（仅当内容足够长时）
+                            if (state.content.trim().length >= 5) {
+                                const existingMsg = chat.msgs?.find((m) => m.id === state.msgId)
+                                if (!existingMsg) {
+                                    addMessage(chatId, {
+                                        role: 'ai',
+                                        type: 'text',
+                                        content: state.content,
+                                        mode: state.mode || 'online',
+                                        timestamp: state.startTime || Date.now(),
+                                        _recovered: true,
+                                    })
+                                }
                             }
-                        }
-                        clearStreamingState(chatId)
-                    } else {
-                        // 页面刷新导致的打断
-                        console.log(`[ChatStore] Page refresh detected, recovering for chat: ${chatId}`)
-                        console.log(`[ChatStore] Partial content length: ${state.content?.length || 0}`)
-                        
-                        const existingMsg = chat.msgs?.find(m => m.id === state.msgId)
-                        
-                        // 内容足够充分（AI 已经完整返回过，只是 addMessage 没执行）
-                        // 阈值：10 个字符以上认为是有效的完整内容
-                        const hasSubstantialContent = state.content && state.content.trim().length >= 10
-                        
-                        if (hasSubstantialContent && !existingMsg) {
-                            // [FIX] 立即清除 streamingState，防止用户在 setTimeout 执行期间再次刷新导致重复注入
                             clearStreamingState(chatId)
-
-                            // [FIX] 刷新恢复时拆分气泡，与正常输出流程一致
-                            console.log(`[ChatStore] Restoring AI response with bubble splitting (${state.content.length} chars)`)
-
-                            // 使用与正常流程相同的分割符：|| // 换行 【】
-                            const recoverySplitRegex = /(\r?\n|\|\|[\s\S]*?\|\||\u2016[\s\S]*?\u2016|\u3010[^\u3011]+\u3011)/
-                            const segments = state.content.split(recoverySplitRegex).filter(s => s && s.trim())
-
-                            if (segments.length <= 1) {
-                                // 只有一段，直接添加
-                                addMessage(chatId, {
-                                    role: 'ai',
-                                    type: 'text',
-                                    content: state.content,
-                                    mode: state.mode || 'online',
-                                    timestamp: state.startTime || Date.now(),
-                                    _recovered: true
-                                })
-                            } else {
-                                // 多段内容，逐条添加带 500ms 延迟（模拟正常气泡弹出效果）
-                                segments.forEach((seg, idx) => {
-                                    const trimmed = seg.trim()
-                                    if (!trimmed) return
-                                    setTimeout(() => {
-                                        addMessage(chatId, {
-                                            role: 'ai',
-                                            type: 'text',
-                                            content: trimmed,
-                                            mode: state.mode || 'online',
-                                            timestamp: (state.startTime || Date.now()) + idx * 500,
-                                            _recovered: true
-                                        })
-                                    }, idx * 500)
-                                })
-                            }
                         } else {
-                            // ❌ 内容残缺（如"喘"这种单字）或消息已存在 → 丢弃并重新生成
-                            console.log(`[ChatStore] Content too short or already exists, regenerating...`)
-                            clearStreamingState(chatId)
-                            setTimeout(() => {
-                                console.log(`[ChatStore] Auto-regenerating for chat: ${chatId}`)
-                                sendMessageToAI(chatId, { mode: state.mode || 'online' })
-                            }, 2000)
+                            // 页面刷新导致的打断
+                            console.log(
+                                `[ChatStore] Page refresh detected, recovering for chat: ${chatId}`,
+                            )
+                            console.log(
+                                `[ChatStore] Partial content length: ${state.content?.length || 0}`,
+                            )
+
+                            const existingMsg = chat.msgs?.find((m) => m.id === state.msgId)
+
+                            // 内容足够充分（AI 已经完整返回过，只是 addMessage 没执行）
+                            // 阈值：10 个字符以上认为是有效的完整内容
+                            const hasSubstantialContent =
+                                state.content && state.content.trim().length >= 10
+
+                            if (hasSubstantialContent && !existingMsg) {
+                                // [FIX] 立即清除 streamingState，防止用户在 setTimeout 执行期间再次刷新导致重复注入
+                                clearStreamingState(chatId)
+
+                                // [FIX] 刷新恢复时拆分气泡，与正常输出流程一致
+                                console.log(
+                                    `[ChatStore] Restoring AI response with bubble splitting (${state.content.length} chars)`,
+                                )
+
+                                // 使用与正常流程相同的分割符：|| // 换行 【】
+                                const recoverySplitRegex =
+                                    /(\r?\n|\|\|[\s\S]*?\|\||\u2016[\s\S]*?\u2016|\u3010[^\u3011]+\u3011)/
+                                const segments = state.content
+                                    .split(recoverySplitRegex)
+                                    .filter((s) => s && s.trim())
+
+                                if (segments.length <= 1) {
+                                    // 只有一段，直接添加
+                                    addMessage(chatId, {
+                                        role: 'ai',
+                                        type: 'text',
+                                        content: state.content,
+                                        mode: state.mode || 'online',
+                                        timestamp: state.startTime || Date.now(),
+                                        _recovered: true,
+                                    })
+                                } else {
+                                    // 多段内容，逐条添加带 500ms 延迟（模拟正常气泡弹出效果）
+                                    segments.forEach((seg, idx) => {
+                                        const trimmed = seg.trim()
+                                        if (!trimmed) return
+                                        setTimeout(() => {
+                                            addMessage(chatId, {
+                                                role: 'ai',
+                                                type: 'text',
+                                                content: trimmed,
+                                                mode: state.mode || 'online',
+                                                timestamp:
+                                                    (state.startTime || Date.now()) + idx * 500,
+                                                _recovered: true,
+                                            })
+                                        }, idx * 500)
+                                    })
+                                }
+                            } else {
+                                // ❌ 内容残缺（如"喘"这种单字）或消息已存在 → 丢弃并重新生成
+                                console.log(
+                                    `[ChatStore] Content too short or already exists, regenerating...`,
+                                )
+                                clearStreamingState(chatId)
+                                setTimeout(() => {
+                                    console.log(`[ChatStore] Auto-regenerating for chat: ${chatId}`)
+                                    sendMessageToAI(chatId, { mode: state.mode || 'online' })
+                                }, 2000)
+                            }
                         }
                     }
                 }
+            })
+
+            // 🔄 检查刷新前正在等待 API 响应的请求（刷新发生在 API 返回之前）
+            // 此时 streamingState 里没有记录，但 pending_ai_requests 里有
+            try {
+                const pendingRequests =
+                    (await localforage.getItem('qiaoqiao_pending_ai_requests')) || {}
+                const pendingEntries = Object.entries(pendingRequests)
+                if (pendingEntries.length > 0) {
+                    console.log(
+                        `[ChatStore] Found ${pendingEntries.length} pending AI request(s) from before refresh`,
+                    )
+                    // 清除旧的 pending 记录（避免无限循环）
+                    await localforage.setItem('qiaoqiao_pending_ai_requests', {})
+
+                    pendingEntries.forEach(([chatId, req]) => {
+                        // 跳过已经被 streamingState 恢复的（避免双发）
+                        if (streamingState.value[chatId]) return
+
+                        const chat = chats.value[chatId]
+                        if (!chat) return
+
+                        // 检查最后一条消息是否是用户消息（确认是等待 AI 回复的状态）
+                        const lastMsg = (chat.msgs || []).filter((m) => !m.hidden).slice(-1)[0]
+                        if (!lastMsg || lastMsg.role !== 'user') return
+
+                        console.log(
+                            `[ChatStore] Re-sending AI request for chat: ${chatId} (mode: ${req.mode})`,
+                        )
+                        setTimeout(() => {
+                            sendMessageToAI(chatId, { mode: req.mode || 'online' })
+                        }, 2500) // 比 streamingState 恢复稍晚一点（2s）
+                    })
+                }
+            } catch (e) {
+                console.warn('[ChatStore] Failed to check pending requests:', e)
             }
         })
-
-        // 🔄 检查刷新前正在等待 API 响应的请求（刷新发生在 API 返回之前）
-        // 此时 streamingState 里没有记录，但 pending_ai_requests 里有
-        try {
-            const pendingRequests = await localforage.getItem('qiaoqiao_pending_ai_requests') || {}
-            const pendingEntries = Object.entries(pendingRequests)
-            if (pendingEntries.length > 0) {
-                console.log(`[ChatStore] Found ${pendingEntries.length} pending AI request(s) from before refresh`)
-                // 清除旧的 pending 记录（避免无限循环）
-                await localforage.setItem('qiaoqiao_pending_ai_requests', {})
-                
-                pendingEntries.forEach(([chatId, req]) => {
-                    // 跳过已经被 streamingState 恢复的（避免双发）
-                    if (streamingState.value[chatId]) return
-                    
-                    const chat = chats.value[chatId]
-                    if (!chat) return
-                    
-                    // 检查最后一条消息是否是用户消息（确认是等待 AI 回复的状态）
-                    const lastMsg = (chat.msgs || []).filter(m => !m.hidden).slice(-1)[0]
-                    if (!lastMsg || lastMsg.role !== 'user') return
-                    
-                    console.log(`[ChatStore] Re-sending AI request for chat: ${chatId} (mode: ${req.mode})`)
-                    setTimeout(() => {
-                        sendMessageToAI(chatId, { mode: req.mode || 'online' })
-                    }, 2500) // 比 streamingState 恢复稍晚一点（2s）
-                })
-            }
-        } catch (e) {
-            console.warn('[ChatStore] Failed to check pending requests:', e)
-        }
-    }).catch(err => {
-        console.error('[Storage] Crucial load failure:', err)
-        isLoaded.value = true // Still mark as loaded to allow UI recovery
-    });
+        .catch((err) => {
+            console.error('[Storage] Crucial load failure:', err)
+            isLoaded.value = true // Still mark as loaded to allow UI recovery
+        })
 
     function addSystemMessage(content) {
         if (!currentChatId.value) return
-        addMessage(currentChatId.value, { role: 'system', content: content, timestamp: Date.now(), mode: 'online' })
+        addMessage(currentChatId.value, {
+            role: 'system',
+            content: content,
+            timestamp: Date.now(),
+            mode: 'online',
+        })
     }
 
     function estimateTokens(text) {
@@ -6073,9 +8044,17 @@ export const useChatStore = defineStore('chat', () => {
 
     function getTokenBreakdown(chatId) {
         const chat = chats.value[chatId]
-        if (!chat) return {
-            total: 0, system: 0, persona: 0, worldBook: 0, memory: 0, history: 0, summaryLib: 0, totalContext: 0
-        }
+        if (!chat)
+            return {
+                total: 0,
+                system: 0,
+                persona: 0,
+                worldBook: 0,
+                memory: 0,
+                history: 0,
+                summaryLib: 0,
+                totalContext: 0,
+            }
 
         // Use PREVIEW logic for highest accuracy (Consistent with Detail Modal)
         try {
@@ -6085,9 +8064,9 @@ export const useChatStore = defineStore('chat', () => {
             // preview.system 已经包含 persona/worldBook/moments（由 SYSTEM_PROMPT_TEMPLATE 拼接）
             // 所以 system 就是完整的系统提示，不再单独叠加子项
             stats.system = estimateTokens(preview.system)
-            stats.persona = 0  // 已包含在 system 中
-            stats.worldBook = 0  // 已包含在 system 中
-            stats.moments = 0  // 已包含在 system 中
+            stats.persona = 0 // 已包含在 system 中
+            stats.worldBook = 0 // 已包含在 system 中
+            stats.moments = 0 // 已包含在 system 中
             stats.history = estimateTokens(preview.history)
             stats.summaryLib = estimateTokens(preview.summary)
             stats.memory = 0
@@ -6096,11 +8075,11 @@ export const useChatStore = defineStore('chat', () => {
             stats.totalContext = stats.system + stats.history + stats.summaryLib
 
             // 2. Grand Total (Including ALL history, not just the sliced context)
-            const allMsgsText = (chat.msgs || []).map(m => `${m.role}:${m.content}`).join('\n')
+            const allMsgsText = (chat.msgs || []).map((m) => `${m.role}:${m.content}`).join('\n')
             const fullHistoryTokens = estimateTokens(allMsgsText)
 
             // Grand Total = Base (Context - SlicedHistory) + FullHistory
-            stats.total = (stats.totalContext - stats.history) + fullHistoryTokens
+            stats.total = stats.totalContext - stats.history + fullHistoryTokens
 
             return stats
         } catch (e) {
@@ -6125,7 +8104,9 @@ export const useChatStore = defineStore('chat', () => {
         return newLoaded < totalMsgs
     }
 
-    function resetPagination(chatId) { loadedMessageCounts.value[chatId] = messagePageSize.value }
+    function resetPagination(chatId) {
+        loadedMessageCounts.value[chatId] = messagePageSize.value
+    }
 
     function hasMoreMessages(chatId) {
         const totalMsgs = chats.value[chatId]?.msgs.length || 0
@@ -6144,7 +8125,7 @@ export const useChatStore = defineStore('chat', () => {
         const chat = chats.value[chatId]
         if (!chat) return ''
         if (userId === 'user') return chat.groupSettings?.myTitle || ''
-        const p = chat.participants?.find(p => p.id === userId)
+        const p = chat.participants?.find((p) => p.id === userId)
         return p?.title || ''
     }
 
@@ -6168,15 +8149,15 @@ export const useChatStore = defineStore('chat', () => {
     // 音效播放函数
     function playSound(soundName) {
         const soundMap = {
-            'coins': '/sounds/wechat/coins.mp3',
-            'notification': '/sounds/wechat/notification.mp3'
+            coins: '/sounds/wechat/coins.mp3',
+            notification: '/sounds/wechat/notification.mp3',
         }
         const src = soundMap[soundName]
         if (!src) return
         try {
             const audio = new Audio(src)
             // v1.10.57: 消息提示音很短,不需要 yield/resume,Chrome 会自动处理
-            audio.play().catch(e => console.log('[ChatStore] 音效播放失败:', e))
+            audio.play().catch((e) => console.log('[ChatStore] 音效播放失败:', e))
         } catch (e) {
             console.log('[ChatStore] 音效加载失败:', e)
         }
@@ -6196,7 +8177,14 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     const financial = setupFinancialLogic(chats, addMessage, saveChats, playSound)
-    history = setupHistoryLogic(chats, typingStatus, isProfileProcessing, addMessage, triggerToast, saveChats)
+    history = setupHistoryLogic(
+        chats,
+        typingStatus,
+        isProfileProcessing,
+        addMessage,
+        triggerToast,
+        saveChats,
+    )
 
     // v1.10.239: 用户显式搜索快捷键——用户在输入框手打 [[SEARCH:关键词]] / [搜索:关键词] / [查找:关键词]
     // 直接触发真实 Bing 搜索(不把原始命令当作普通聊天发给 AI, 避免 AI 面对异常输入吐空)。
@@ -6211,33 +8199,44 @@ export const useChatStore = defineStore('chat', () => {
             role: 'user',
             type: 'search',
             content: searchKeyword,
-            mode: finalMode
+            mode: finalMode,
         })
 
         try {
-            const searchResp = await fetch(`/v2/search/bing?q=${encodeURIComponent(searchKeyword)}&platform=web`)
+            const searchResp = await fetch(
+                `/v2/search/bing?q=${encodeURIComponent(searchKeyword)}&platform=web`,
+            )
             const searchJson = await searchResp.json()
             const results = Array.isArray(searchJson.data) ? searchJson.data.slice(0, 8) : []
             if (results.length > 0) {
-                const resultList = results.map((r, idx) =>
-                    `${idx + 1}. ${r.title}\n   URL: ${r.url}\n   摘要: ${r.snippet || '(无)'}`
-                ).join('\n')
+                const resultList = results
+                    .map(
+                        (r, idx) =>
+                            `${idx + 1}. ${r.title}\n   URL: ${r.url}\n   摘要: ${r.snippet || '(无)'}`,
+                    )
+                    .join('\n')
                 await addMessage(chatId, {
                     role: 'system',
                     content: `[搜索结果: "${searchKeyword}"]\n${resultList}\n\n你现在可以基于这些结果,挑一个最相关的用 [LINK:URL] 分享给用户,并附上你的点评。或直接讨论其中内容。`,
                     hidden: true,
-                    mode: finalMode
+                    mode: finalMode,
                 })
-                setTimeout(() => sendMessageToAI(chatId, { _isToolContinuation: true, mode: finalMode }), 300)
+                setTimeout(
+                    () => sendMessageToAI(chatId, { _isToolContinuation: true, mode: finalMode }),
+                    300,
+                )
                 return
             } else {
                 await addMessage(chatId, {
                     role: 'system',
                     content: `[搜索 "${searchKeyword}" 没有找到结果]`,
                     hidden: true,
-                    mode: finalMode
+                    mode: finalMode,
                 })
-                setTimeout(() => sendMessageToAI(chatId, { _isToolContinuation: true, mode: finalMode }), 300)
+                setTimeout(
+                    () => sendMessageToAI(chatId, { _isToolContinuation: true, mode: finalMode }),
+                    300,
+                )
                 return
             }
         } catch (e) {
@@ -6246,9 +8245,12 @@ export const useChatStore = defineStore('chat', () => {
                 role: 'system',
                 content: `[搜索 "${searchKeyword}" 出错: ${e?.message || e}]`,
                 hidden: true,
-                mode: finalMode
+                mode: finalMode,
             })
-            setTimeout(() => sendMessageToAI(chatId, { _isToolContinuation: true, mode: finalMode }), 300)
+            setTimeout(
+                () => sendMessageToAI(chatId, { _isToolContinuation: true, mode: finalMode }),
+                300,
+            )
         }
     }
 
@@ -6257,21 +8259,68 @@ export const useChatStore = defineStore('chat', () => {
     return {
         ...financial,
         ...history,
-        notificationEvent, patEvent, toastEvent, triggerToast, triggerPatEffect,
-        promptEvent, triggerPrompt, triggerConfirm,  // 新增：prompt相关功能
-        stopGeneration, chats, currentChatId, isTyping, typingStatus, chatList, contactList,
-        groupNpcs, pendingRequests, acceptPendingRequest, rejectPendingRequest,
-        currentChat, addMessage, updateMessage, createChat, deleteChat,
-        deleteMessage, deleteMessages, pinChat, clearHistory, clearAllChats,
-        checkProactive, updateCharacter, initDemoData,
-        sendMessageToAI, runUserSearch, saveChats, getTokenCount, getTokenBreakdown, addSystemMessage, estimateTokens,
-        getDisplayedMessages, loadMoreMessages, resetPagination, hasMoreMessages, resetCharacter,
-        getPreviewContext, isLoaded,
-        isProfileProcessing, createGroupChat, updateGroupProfile, updateGroupParticipants, updateGroupSettings,
-        getMemberTitle, calculateMemberLevel, castVote, endVote,
-        streamingState, setStreamingMessage, updateStreamingContent, markStreamingComplete, recoverStreamingMessages: loadStreamingState,
+        notificationEvent,
+        patEvent,
+        toastEvent,
+        triggerToast,
+        triggerPatEffect,
+        promptEvent,
+        triggerPrompt,
+        triggerConfirm, // 新增：prompt相关功能
+        stopGeneration,
+        chats,
+        currentChatId,
+        isTyping,
+        typingStatus,
+        chatList,
+        contactList,
+        groupNpcs,
+        pendingRequests,
+        acceptPendingRequest,
+        rejectPendingRequest,
+        currentChat,
+        addMessage,
+        updateMessage,
+        createChat,
+        deleteChat,
+        deleteMessage,
+        deleteMessages,
+        pinChat,
+        clearHistory,
+        clearAllChats,
+        checkProactive,
+        updateCharacter,
+        initDemoData,
+        sendMessageToAI,
+        runUserSearch,
+        saveChats,
+        getTokenCount,
+        getTokenBreakdown,
+        addSystemMessage,
+        estimateTokens,
+        getDisplayedMessages,
+        loadMoreMessages,
+        resetPagination,
+        hasMoreMessages,
+        resetCharacter,
+        getPreviewContext,
+        isLoaded,
+        isProfileProcessing,
+        createGroupChat,
+        updateGroupProfile,
+        updateGroupParticipants,
+        updateGroupSettings,
+        getMemberTitle,
+        calculateMemberLevel,
+        castVote,
+        endVote,
+        streamingState,
+        setStreamingMessage,
+        updateStreamingContent,
+        markStreamingComplete,
+        recoverStreamingMessages: loadStreamingState,
         compressAllChatImages,
-        stopProactiveLoop,  // [BUG FIX] 暴露清理入口
-        collectBackupPayload  // [FIX] 暴露给 BackupSettings 用,手动备份时能拿到 payload
+        stopProactiveLoop, // [BUG FIX] 暴露清理入口
+        collectBackupPayload, // [FIX] 暴露给 BackupSettings 用,手动备份时能拿到 payload
     }
 })

@@ -12,7 +12,11 @@ import { weatherService } from './weatherService'
 import { batteryMonitor } from './batteryMonitor'
 import { buildMCPPromptSection } from './mcpService'
 
-import { SYSTEM_PROMPT_TEMPLATE, CALL_SYSTEM_PROMPT_TEMPLATE, GROUP_MEMBER_GENERATOR_PROMPT } from './ai/prompts'
+import {
+    SYSTEM_PROMPT_TEMPLATE,
+    CALL_SYSTEM_PROMPT_TEMPLATE,
+    GROUP_MEMBER_GENERATOR_PROMPT,
+} from './ai/prompts'
 import { recallOriginalMessages } from './memoryLog'
 import { retrieveRelevantMemories } from './memoryRetrieval'
 import { getActionCatalogMarkdown } from './agentActions'
@@ -20,9 +24,16 @@ import { buildSocialContext } from './socialContext'
 import { RequestQueue } from './ai/requestQueue'
 import { ensureString, getLastNTurns } from './common'
 import { getOrFetchAvatarDesc } from './avatarDescCache'
-import { fixJsonStringValues, _repairJsonStrings, reconstructMomentsJSON, reconstructInteractionsJSON, extractInnerVoiceJson, deepRemoveTrailingCommas } from './jsonUtils'
+import {
+    fixJsonStringValues,
+    _repairJsonStrings,
+    reconstructMomentsJSON,
+    reconstructInteractionsJSON,
+    extractInnerVoiceJson,
+    deepRemoveTrailingCommas,
+} from './jsonUtils'
 
-export const apiQueue = new RequestQueue(3, 60000, 1); // 公益站硬限: 3次/分钟 + 禁并发(并发1); 命中429自动熔断30s
+export const apiQueue = new RequestQueue(3, 60000, 1) // 公益站硬限: 3次/分钟 + 禁并发(并发1); 命中429自动熔断30s
 
 // ensureString / fixJsonStringValues / _repairJsonStrings / reconstructMomentsJSON / extractInnerVoiceJson
 // 已统一从 ./common 和 ./jsonUtils 引入，此处删除本地重复定义
@@ -31,7 +42,11 @@ export const apiQueue = new RequestQueue(3, 60000, 1); // 公益站硬限: 3次/
 
 export async function generateReply(messages, char, abortSignal, options = {}) {
     // Wrapper to use Queue
-    return apiQueue.enqueue(_generateReplyInternal, [messages, char, abortSignal, options], abortSignal);
+    return apiQueue.enqueue(
+        _generateReplyInternal,
+        [messages, char, abortSignal, options],
+        abortSignal,
+    )
 }
 
 /**
@@ -69,7 +84,11 @@ export function generateContextPreview(chatId, char) {
         console.warn('[AI Service] ChatStore retrieval failed:', e)
     }
     if (!chatStore) {
-        try { chatStore = useChatStore() } catch(e2) { console.warn('[AI Service] useChatStore fallback failed:', e2.message) }
+        try {
+            chatStore = useChatStore()
+        } catch (e2) {
+            console.warn('[AI Service] useChatStore fallback failed:', e2.message)
+        }
     }
 
     // --- Core Memory Interoperability Logic ---
@@ -77,7 +96,7 @@ export function generateContextPreview(chatId, char) {
     if (chatStore) {
         const memoryParts = []
         if (char.groupMemoryIntero && char.linkedGroups) {
-            char.linkedGroups.forEach(gid => {
+            char.linkedGroups.forEach((gid) => {
                 const gChat = chatStore.chats[gid]
                 if (gChat && gChat.isGroup) {
                     const limit = (char.groupMemoryLimits && char.groupMemoryLimits[gid]) || 20
@@ -85,10 +104,13 @@ export function generateContextPreview(chatId, char) {
                     const relevantMems = gMemArray.slice(0, limit)
                     if (relevantMems.length > 0) {
                         const groupTitle = `【群聊: ${gChat.name} 的记忆碎片】`
-                        const groupText = relevantMems.map(m => {
-                            const content = typeof m === 'object' ? (m.content || JSON.stringify(m)) : m
-                            return `- ${content}`
-                        }).join('\n')
+                        const groupText = relevantMems
+                            .map((m) => {
+                                const content =
+                                    typeof m === 'object' ? m.content || JSON.stringify(m) : m
+                                return `- ${content}`
+                            })
+                            .join('\n')
                         memoryParts.push(`${groupTitle}\n${groupText}`)
                     }
                 }
@@ -96,20 +118,37 @@ export function generateContextPreview(chatId, char) {
         }
 
         if (char.isGroup && Array.isArray(char.participants)) {
-            char.participants.forEach(p => {
+            char.participants.forEach((p) => {
                 if (p.id !== 'user' && p.privateMemoryIntero) {
                     const pChat = chatStore.chats[p.id]
                     if (pChat && Array.isArray(pChat.msgs)) {
                         const limit = p.privateMemoryLimit || 20
-                        const pMsgs = pChat.msgs.filter(m => m.type !== 'system' && m.type !== 'favorite_card').slice(-limit)
+                        const pMsgs = pChat.msgs
+                            .filter((m) => m.type !== 'system' && m.type !== 'favorite_card')
+                            .slice(-limit)
                         if (pMsgs.length > 0) {
                             const title = `【成员: ${p.name} 与你的近期私聊记录】`
-                            const text = pMsgs.map(m => {
-                                const sender = m.role === 'user' ? (char.groupSettings?.myNickname || char.userName || '我') : p.name
-                                const content = typeof m.content === 'object' ? JSON.stringify(m.content) : m.content
-                                const cleanContent = String(content).replace(/\[INNER_VOICE\][\s\S]*?(?:\[\/INNER_VOICE\]|$)/gi, '').trim()
-                                return `${sender}: ${cleanContent}`
-                            }).join('\n')
+                            const text = pMsgs
+                                .map((m) => {
+                                    const sender =
+                                        m.role === 'user'
+                                            ? char.groupSettings?.myNickname ||
+                                              char.userName ||
+                                              '我'
+                                            : p.name
+                                    const content =
+                                        typeof m.content === 'object'
+                                            ? JSON.stringify(m.content)
+                                            : m.content
+                                    const cleanContent = String(content)
+                                        .replace(
+                                            /\[INNER_VOICE\][\s\S]*?(?:\[\/INNER_VOICE\]|$)/gi,
+                                            '',
+                                        )
+                                        .trim()
+                                    return `${sender}: ${cleanContent}`
+                                })
+                                .join('\n')
                             memoryParts.push(`${title}\n${text}`)
                         }
                     }
@@ -120,42 +159,46 @@ export function generateContextPreview(chatId, char) {
     }
     // 1. System Prompt (Base) - Reusing Template Logic with placeholders
     // We don't have the exact user object here usually, but we have char.userName/Persona
-    const realUserProfile = settingsStore.personalization?.userProfile || {};
+    const realUserProfile = settingsStore.personalization?.userProfile || {}
     const userForSystem = {
         name: char.userName || '用户',
         persona: char.userPersona || '',
         gender: char.userGender || '未知', // Add Gender
         signature: '', // Not stored in char usually
         avatarUrl: realUserProfile.avatar || char.userAvatarUrl || '',
-        avatarDescription: realUserProfile.avatarDescription || ''
+        avatarDescription: realUserProfile.avatarDescription || '',
     }
     // Stickers
     const globalStickers = stickerStore.getStickers('global')
     const charStickers = chatId ? stickerStore.getStickers(chatId) : []
-    const stickers = [...globalStickers, ...charStickers].filter(s => s && s.name)
+    const stickers = [...globalStickers, ...charStickers].filter((s) => s && s.name)
     // World Book: 常驻 + 关键词触发扫描（与 _generateReplyInternal 逻辑一致）
     const limit = char.contextLimit || 20
     const recentMsgs = getLastNTurns(char.msgs || [], limit)
-    const combinedText = recentMsgs.map(m => {
-        let c = m && m.content ? m.content : ''
-        return typeof c === 'string' ? c : JSON.stringify(c)
-    }).join('\n')
+    const combinedText = recentMsgs
+        .map((m) => {
+            let c = m && m.content ? m.content : ''
+            return typeof c === 'string' ? c : JSON.stringify(c)
+        })
+        .join('\n')
     const lowerCombinedText = combinedText.toLowerCase()
     const activeBookIds = char.worldBookLinks || char.tags || []
     let activeEntries = []
     if (activeBookIds.length > 0 && worldBookStore && worldBookStore.books) {
-        const allEntries = worldBookStore.books.flatMap(b => (b && b.entries) ? b.entries : [])
-        const boundEntries = allEntries.filter(e => e && e.id && activeBookIds.includes(e.id))
-        boundEntries.forEach(entry => {
+        const allEntries = worldBookStore.books.flatMap((b) => (b && b.entries ? b.entries : []))
+        const boundEntries = allEntries.filter((e) => e && e.id && activeBookIds.includes(e.id))
+        boundEntries.forEach((entry) => {
             if (!entry) return
             const normalizedKeys = Array.isArray(entry.keys)
                 ? entry.keys
-                : (typeof entry.keys === 'string' ? entry.keys.split(/[\s,，]+/).filter(k => k && k.trim()) : [])
+                : typeof entry.keys === 'string'
+                  ? entry.keys.split(/[\s,，]+/).filter((k) => k && k.trim())
+                  : []
             if (!normalizedKeys || normalizedKeys.length === 0) {
                 activeEntries.push({ entry, type: '常驻' })
                 return
             }
-            const isHit = normalizedKeys.some(key => {
+            const isHit = normalizedKeys.some((key) => {
                 if (!key) return false
                 return lowerCombinedText.includes(String(key).toLowerCase())
             })
@@ -165,52 +208,71 @@ export function generateContextPreview(chatId, char) {
         })
     }
     // ... 现有代码保留 ...
-    if (activeEntries.length === 0 && worldBookStore && typeof worldBookStore.loadEntries === 'function') {
+    if (
+        activeEntries.length === 0 &&
+        worldBookStore &&
+        typeof worldBookStore.loadEntries === 'function'
+    ) {
         worldBookStore.loadEntries().then(() => {
             console.log('[AI Service] World book entries loaded in background')
         })
     }
-    const worldInfoText = activeEntries.length > 0
-        ? activeEntries.map(({ entry, type }) => `[${type}] ${entry.name || '未命名'}: ${entry.content || ''}`).join('\n')
-        : '（未触发关键词）'
+    const worldInfoText =
+        activeEntries.length > 0
+            ? activeEntries
+                  .map(
+                      ({ entry, type }) =>
+                          `[${type}] ${entry.name || '未命名'}: ${entry.content || ''}`,
+                  )
+                  .join('\n')
+            : '（未触发关键词）'
     // Memory
     let memoryText = ''
     if (char.memory && Array.isArray(char.memory)) {
-        memoryText = char.memory.map(m => (typeof m === 'object' ? m.content : m)).join('\n')
+        memoryText = char.memory.map((m) => (typeof m === 'object' ? m.content : m)).join('\n')
     }
     // Pat Settings
     const patSettings = { action: char.patAction, suffix: char.patSuffix }
     // Location Context — 优先使用角色独立城市映射，回退到全局配置
-    const charLocation = char.locationSync ? (char.charLocation || null) : null
+    const charLocation = char.locationSync ? char.charLocation || null : null
     const locationContext = char.locationSync
         ? weatherService.getLocationContextText(charLocation)
         : ''
-        
+
     // 读取用户位置：优先读取角色独立位置，其次读取全局用户位置，最后读取虚拟地点
-    const userLoc = char.userLocation || char.bio?.location || settingsStore.weather?.userLocation || settingsStore.weather?.virtualLocation || {}
+    const userLoc =
+        char.userLocation ||
+        char.bio?.location ||
+        settingsStore.weather?.userLocation ||
+        settingsStore.weather?.virtualLocation ||
+        {}
     console.log('[AI Service] 用户位置数据源检查:', {
         'char.userLocation': char.userLocation,
         'char.bio?.location': char.bio?.location,
         'settingsStore.weather?.userLocation': settingsStore.weather?.userLocation,
         'settingsStore.weather?.virtualLocation': settingsStore.weather?.virtualLocation,
-        '最终 userLoc': userLoc
+        '最终 userLoc': userLoc,
     })
-        
-    let locationName = '未知';
+
+    let locationName = '未知'
     // 兼容字符串格式的位置和对象格式的位置
     if (typeof userLoc === 'string' && userLoc.trim()) {
-        locationName = userLoc.trim();
+        locationName = userLoc.trim()
     } else if (typeof userLoc === 'object' && userLoc !== null) {
-        locationName = userLoc?.name?.trim() || '未知';
+        locationName = userLoc?.name?.trim() || '未知'
     }
-        
+
     console.log('[AI Service] 解析后的位置名称:', locationName)
-        
+
     // 严谨校验坐标有效性
-    const hasValidCoords = typeof userLoc === 'object' && userLoc !== null && userLoc?.coords?.lat != null && userLoc?.coords?.lng != null;
-    const coordsText = hasValidCoords ? ` (坐标：${userLoc.coords.lat}, ${userLoc.coords.lng})` : '';
+    const hasValidCoords =
+        typeof userLoc === 'object' &&
+        userLoc !== null &&
+        userLoc?.coords?.lat != null &&
+        userLoc?.coords?.lng != null
+    const coordsText = hasValidCoords ? ` (坐标：${userLoc.coords.lat}, ${userLoc.coords.lng})` : ''
     // 最终文本
-    const userLocText = `\n【用户位置】${locationName}${coordsText}`;
+    const userLocText = `\n【用户位置】${locationName}${coordsText}`
     const batteryInfo = batteryMonitor.getBatteryInfo()
     const batteryContext = batteryInfo
         ? `\n【手机电量】${batteryInfo.level}%${batteryInfo.charging ? ' (正在充电)' : ''}${batteryInfo.isLow ? ' (电量告急)' : ''}`
@@ -235,36 +297,47 @@ export function generateContextPreview(chatId, char) {
         // Helper to format moment
         const formatMoment = (m) => {
             if (!m) return ''
-            const timeStr = m.timestamp ? new Date(m.timestamp).toLocaleString('zh-CN', { hour12: false }) : '未知时间'
-            let text = `[时间: ${timeStr}] ${m.authorId === char.id ? char.name : (m.authorName || '用户')}: ${m.content}`
+            const timeStr = m.timestamp
+                ? new Date(m.timestamp).toLocaleString('zh-CN', { hour12: false })
+                : '未知时间'
+            let text = `[时间: ${timeStr}] ${m.authorId === char.id ? char.name : m.authorName || '用户'}: ${m.content}`
             if (m.imageDescriptions && m.imageDescriptions.length > 0) {
                 text += `\n(图片内容: ${m.imageDescriptions.join(', ')})`
             }
             if (m.comments && m.comments.length > 0) {
-                const commentsText = m.comments.map(c => `  - ${c.authorName}${c.replyTo ? '回复' + c.replyTo : ''}: ${c.content}`).join('\n')
+                const commentsText = m.comments
+                    .map(
+                        (c) =>
+                            `  - ${c.authorName}${c.replyTo ? '回复' + c.replyTo : ''}: ${c.content}`,
+                    )
+                    .join('\n')
                 text += `\n  (评论互动):\n${commentsText}`
             }
             return text
         }
         // Char Moments
-        const charMoments = momentsList.filter(m => m.authorId === char.id)
-        const charPinned = charMoments.filter(m => topMoments.includes(m.id)).slice(0, 3)
+        const charMoments = momentsList.filter((m) => m.authorId === char.id)
+        const charPinned = charMoments.filter((m) => topMoments.includes(m.id)).slice(0, 3)
         // User Moments
-        const userMoments = momentsList.filter(m => !m.authorId || m.authorId === 'user')
+        const userMoments = momentsList.filter((m) => !m.authorId || m.authorId === 'user')
         const userLatests = userMoments.slice(0, 3)
         // Combine into context string
         const parts = []
         if (charPinned.length > 0) {
-            parts.push(`【${char.name}的置顶朋友圈】\n${charPinned.map(formatMoment).join('\n---\n')}`)
+            parts.push(
+                `【${char.name}的置顶朋友圈】\n${charPinned.map(formatMoment).join('\n---\n')}`,
+            )
         }
         if (userLatests.length > 0) {
-            parts.push(`【${char.userName || '用户'}的最新朋友圈】\n${userLatests.map(formatMoment).join('\n---\n')}`)
+            parts.push(
+                `【${char.userName || '用户'}的最新朋友圈】\n${userLatests.map(formatMoment).join('\n---\n')}`,
+            )
         }
         momentsContext = parts.join('\n\n')
     }
     // 5. History (Context) with Time Delay Hint
     const now = Date.now()
-    const aiMessages = recentMsgs.filter(m => m.role === 'ai')
+    const aiMessages = recentMsgs.filter((m) => m.role === 'ai')
     const lastAiMsg = aiMessages.length > 0 ? aiMessages[aiMessages.length - 1] : null
     const lastAiTime = lastAiMsg ? lastAiMsg.timestamp : now
     const diffMinutes = Math.floor((now - lastAiTime) / 1000 / 60)
@@ -272,47 +345,59 @@ export function generateContextPreview(chatId, char) {
     const weekDays = ['日', '一', '二', '三', '四', '五', '六']
     const d = new Date()
     const currentVirtualTime = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')} 星期${weekDays[d.getDay()]}`
-    const historyText = recentMsgs.map((m, index) => {
-        let content = m.content
-        // Parse Special Types for AI Context
-        if (m.type === 'favorite_card' || (content && content.includes('"source":"通话记录"'))) {
-            try {
-                const data = JSON.parse(content);
-                content = `[系统消息] ${data.title || '通话'} 已结束。时长：${data.preview || ''}`;
-            } catch (e) { content = '[通话记录]'; }
-        } else if (m.type === 'voice') {
-            // Ensure voice content is text (transcript)
-            content = `[语音消息] ${content}`;
-        }
-        // Inject hint if it's the last message and delay > 1min
-        if (index === recentMsgs.length - 1 && m.role === 'user' && diffMinutes >= 1) {
-            const hours = Math.floor(diffMinutes / 60);
-            const mins = diffMinutes % 60;
-            const timeStr = hours > 0 ? `${hours}小时${mins}分钟` : `${mins}分钟`;
-            content += `\n\n【系统提示：当前时间为 ${currentVirtualTime}，距离双方上一次互动时间为 ${timeStr}。请根据时长和当前时间段，在回复中表现出合理的反应。】`;
-        }
-        // 修复角色名称显示：添加多重后备值
-        const speakerName = m.role === 'user' 
-            ? (char.userName || settingsStore?.personalization?.userProfile?.name || '用户')
-            : (char.name || char.remark || '对方')
-        
-        // --- 核心修复：回填心声上下文 ---
-        if (m.role === 'ai' && m.innerVoice && !content.includes('[INNER_VOICE]')) {
-            let ivText = ''
-            if (typeof m.innerVoice === 'string') {
-                ivText = m.innerVoice
-            } else {
-                try { ivText = `\n[INNER_VOICE]\n${JSON.stringify(m.innerVoice)}\n[/INNER_VOICE]` } catch (e) { ivText = '' }
+    const historyText = recentMsgs
+        .map((m, index) => {
+            let content = m.content
+            // Parse Special Types for AI Context
+            if (
+                m.type === 'favorite_card' ||
+                (content && content.includes('"source":"通话记录"'))
+            ) {
+                try {
+                    const data = JSON.parse(content)
+                    content = `[系统消息] ${data.title || '通话'} 已结束。时长：${data.preview || ''}`
+                } catch (e) {
+                    content = '[通话记录]'
+                }
+            } else if (m.type === 'voice') {
+                // Ensure voice content is text (transcript)
+                content = `[语音消息] ${content}`
             }
-            if (ivText) content = `${ivText}\n${content}`;
-        }
+            // Inject hint if it's the last message and delay > 1min
+            if (index === recentMsgs.length - 1 && m.role === 'user' && diffMinutes >= 1) {
+                const hours = Math.floor(diffMinutes / 60)
+                const mins = diffMinutes % 60
+                const timeStr = hours > 0 ? `${hours}小时${mins}分钟` : `${mins}分钟`
+                content += `\n\n【系统提示：当前时间为 ${currentVirtualTime}，距离双方上一次互动时间为 ${timeStr}。请根据时长和当前时间段，在回复中表现出合理的反应。】`
+            }
+            // 修复角色名称显示：添加多重后备值
+            const speakerName =
+                m.role === 'user'
+                    ? char.userName || settingsStore?.personalization?.userProfile?.name || '用户'
+                    : char.name || char.remark || '对方'
 
-        return `${speakerName}: ${content}`
-    }).join('\n')
+            // --- 核心修复：回填心声上下文 ---
+            if (m.role === 'ai' && m.innerVoice && !content.includes('[INNER_VOICE]')) {
+                let ivText = ''
+                if (typeof m.innerVoice === 'string') {
+                    ivText = m.innerVoice
+                } else {
+                    try {
+                        ivText = `\n[INNER_VOICE]\n${JSON.stringify(m.innerVoice)}\n[/INNER_VOICE]`
+                    } catch (e) {
+                        ivText = ''
+                    }
+                }
+                if (ivText) content = `${ivText}\n${content}`
+            }
+
+            return `${speakerName}: ${content}`
+        })
+        .join('\n')
     // 5. Summary
     let summaryText = ''
     if (char.memory && Array.isArray(char.memory) && char.memory.length > 0) {
-        summaryText = char.memory.map(m => (typeof m === 'object' ? m.content : m)).join('\n')
+        summaryText = char.memory.map((m) => (typeof m === 'object' ? m.content : m)).join('\n')
     } else {
         summaryText = char.summary || '（暂无自动总结）'
     }
@@ -321,13 +406,21 @@ export function generateContextPreview(chatId, char) {
 
     // ========== 核心修改：复用prompts.js统一模板，彻底解决代码重复 ==========
     // 严格按照模板参数顺序传参，和实际AI调用逻辑100%一致
-    const groupCtxPreview = char.isGroup ? {
-        isGroup: true,
-        settings: char.groupSettings || {},
-        participants: char.participants || []
-    } : null;
+    const groupCtxPreview = char.isGroup
+        ? {
+              isGroup: true,
+              settings: char.groupSettings || {},
+              participants: char.participants || [],
+          }
+        : null
 
-    const contactListStr = chatStore ? chatStore.contactList.filter(c => !c.isGroup).slice(0, 30).map(c => `- ${c.name} (ID: ${c.id})`).join('\n') : ''
+    const contactListStr = chatStore
+        ? chatStore.contactList
+              .filter((c) => !c.isGroup)
+              .slice(0, 30)
+              .map((c) => `- ${c.name} (ID: ${c.id})`)
+              .join('\n')
+        : ''
 
     const drawingConfigForPreview = settingsStore.drawing?.value || settingsStore.drawing || {}
 
@@ -346,8 +439,8 @@ export function generateContextPreview(chatId, char) {
         contactListStr,
         '',
         '',
-        drawingConfigForPreview
-    );
+        drawingConfigForPreview,
+    )
 
     return {
         system: simplifiedSystemPrompt,
@@ -355,7 +448,7 @@ export function generateContextPreview(chatId, char) {
         worldBook: worldInfoText || '（未触发关键词）',
         moments: momentsContext,
         history: historyText,
-        summary: summaryText
+        summary: summaryText,
     }
 }
 
@@ -363,10 +456,10 @@ export function generateContextPreview(chatId, char) {
 async function _generateReplyInternal(messages, char, signal, options = {}) {
     const { isCommandTask, isSimpleTask, isCall, skipContext, disableTools } = options
     // Debug: Print message IDs
-    console.log('[aiService] Incoming messages:');
-    (messages || []).forEach((m, idx) => {
-        console.log(`  [${idx}] role=${m.role}, hasImage=${!!m.image}, id=${m.id}`);
-    });
+    console.log('[aiService] Incoming messages:')
+    ;(messages || []).forEach((m, idx) => {
+        console.log(`  [${idx}] role=${m.role}, hasImage=${!!m.image}, id=${m.id}`)
+    })
 
     const settingsStore = useSettingsStore()
     const stickerStore = useStickerStore()
@@ -382,7 +475,11 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
         console.warn('[AI Service] ChatStore retrieval failed:', e)
     }
     if (!chatStore) {
-        try { chatStore = useChatStore() } catch (e2) { console.warn('[AI Service] useChatStore fallback failed:', e2.message) }
+        try {
+            chatStore = useChatStore()
+        } catch (e2) {
+            console.warn('[AI Service] useChatStore fallback failed:', e2.message)
+        }
     }
 
     // 获取所有可用表情包 (全局 + 当前角色)
@@ -399,7 +496,7 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
     // 2) memoryText 构建 —— 包含 chat.summary(最新摘要)和 memoryLog(最近事件),
     //    会让总结请求被无关的最新上下文污染
     if (charId && !isSimpleTask && !isCommandTask && !skipContext) {
-        const lastUserMsg = [...(messages || [])].reverse().find(m => m.role === 'user')
+        const lastUserMsg = [...(messages || [])].reverse().find((m) => m.role === 'user')
         if (lastUserMsg?.content) {
             const recallResult = await recallOriginalMessages(charId, String(lastUserMsg.content))
             if (recallResult) {
@@ -427,8 +524,12 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             // Historical memories (历史记忆列表)
             if (Array.isArray(chat.memory) && chat.memory.length > 0) {
                 const memText = chat.memory
-                    .filter(m => m && (typeof m === 'string' ? m.trim() : (m.content || JSON.stringify(m))))
-                    .map(m => typeof m === 'object' ? (m.content || JSON.stringify(m)) : m)
+                    .filter(
+                        (m) =>
+                            m &&
+                            (typeof m === 'string' ? m.trim() : m.content || JSON.stringify(m)),
+                    )
+                    .map((m) => (typeof m === 'object' ? m.content || JSON.stringify(m) : m))
                     .join('\n\n')
                 if (memText) {
                     memoryParts.push(`【历史记忆库 (${chat.memory.length}条)】\n${memText}`)
@@ -439,7 +540,9 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
         // 2. Memory Log Fragments —— Agent 记忆自动选择 (0 token 额外调用)
         //    原 getMemorySummary 会把全部 memoryLog (最多1500条) 全量发给模型, 既费 token 又不智能。
         //    改为代码层语义检索 top-K 相关片段注入, 省 token 且只给模型看相关的。
-        const memorySummary = retrieveRelevantMemories(charId, lastUserMsg?.content || '', { limit: 8 })
+        const memorySummary = retrieveRelevantMemories(charId, lastUserMsg?.content || '', {
+            limit: 8,
+        })
         if (memorySummary) {
             memoryParts.push(memorySummary)
         }
@@ -451,22 +554,21 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                 parts: memoryParts.length,
                 totalLength: memoryText.length,
                 hasLibrary: !!memoryParts[0],
-                hasLog: memoryParts.length > 1
+                hasLog: memoryParts.length > 1,
             })
         }
     }
 
     // Merge valid stickers and filter empty names
-    const availableStickers = [
-        ...(globalStickers || []),
-        ...(charStickers || [])
-    ].filter(s => s && s.name)
-    
+    const availableStickers = [...(globalStickers || []), ...(charStickers || [])].filter(
+        (s) => s && s.name,
+    )
+
     console.log('[aiService] 表情包库:', {
         globalCount: globalStickers?.length || 0,
         charCount: charStickers?.length || 0,
         totalCount: availableStickers.length,
-        stickers: availableStickers.map(s => s.name)
+        stickers: availableStickers.map((s) => s.name),
     })
 
     const config = settingsStore.currentConfig || settingsStore.apiConfig
@@ -494,13 +596,13 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
     }
 
     // Use user info passed in 'char' object (per-chat settings) or global user profile
-    const realUserProfile = settingsStore.personalization?.userProfile || {};
+    const realUserProfile = settingsStore.personalization?.userProfile || {}
     const userProfile = {
         name: char.userName || realUserProfile.name || '用户',
         persona: char.userPersona || '',
         gender: char.userGender || realUserProfile.gender || '未知',
         signature: realUserProfile.signature || '',
-        avatarUrl: char.userAvatar || char.userAvatarUrl || realUserProfile.avatar || ''
+        avatarUrl: char.userAvatar || char.userAvatarUrl || realUserProfile.avatar || '',
     }
 
     // World Book Logic
@@ -516,41 +618,55 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
     }
 
     let worldInfoText = ''
-    if (char && char.worldBookLinks && Array.isArray(char.worldBookLinks) && char.worldBookLinks.length > 0) {
+    if (
+        char &&
+        char.worldBookLinks &&
+        Array.isArray(char.worldBookLinks) &&
+        char.worldBookLinks.length > 0
+    ) {
         try {
             const activeEntries = []
             const books = worldBookStore.books || []
-            const allEntries = books.flatMap(b => (b && b.entries) ? b.entries : [])
-            const boundEntries = allEntries.filter(e => e && e.id && char.worldBookLinks.includes(e.id))
+            const allEntries = books.flatMap((b) => (b && b.entries ? b.entries : []))
+            const boundEntries = allEntries.filter(
+                (e) => e && e.id && char.worldBookLinks.includes(e.id),
+            )
 
-            const rawContextText = (messages || []).map(m => {
-                let c = m && m.content ? m.content : ''
-                if (m && m.type === 'gift' && m.giftId) {
-                    c = `[GIFT:${m.giftName || '礼物'}:${m.giftQuantity || 1}:${m.giftNote || ''}](ID:${m.giftId})`
-                }
-                return typeof c === 'string' ? c : JSON.stringify(c)
-            }).join('\n')
-            const contextText = rawContextText.replace(/\[(?:ONLINE|OFFLINE)\][\s\S]*?\[\/(?:ONLINE|OFFLINE)\]/g, '')
+            const rawContextText = (messages || [])
+                .map((m) => {
+                    let c = m && m.content ? m.content : ''
+                    if (m && m.type === 'gift' && m.giftId) {
+                        c = `[GIFT:${m.giftName || '礼物'}:${m.giftQuantity || 1}:${m.giftNote || ''}](ID:${m.giftId})`
+                    }
+                    return typeof c === 'string' ? c : JSON.stringify(c)
+                })
+                .join('\n')
+            const contextText = rawContextText.replace(
+                /\[(?:ONLINE|OFFLINE)\][\s\S]*?\[\/(?:ONLINE|OFFLINE)\]/g,
+                '',
+            )
             const lowerContext = contextText.toLowerCase()
 
             console.log('[WorldBook] 扫描开始:', {
                 boundCount: boundEntries.length,
                 contextLen: contextText.length,
                 contextPreview: contextText.slice(0, 200),
-                links: char.worldBookLinks
+                links: char.worldBookLinks,
             })
 
-            boundEntries.forEach(entry => {
+            boundEntries.forEach((entry) => {
                 if (!entry) return
                 const normalizedKeys = Array.isArray(entry.keys)
                     ? entry.keys
-                    : (typeof entry.keys === 'string' ? entry.keys.split(/[\s,，]+/).filter(k => k && k.trim()) : [])
+                    : typeof entry.keys === 'string'
+                      ? entry.keys.split(/[\s,，]+/).filter((k) => k && k.trim())
+                      : []
                 if (!normalizedKeys || normalizedKeys.length === 0) {
                     activeEntries.push(`[常驻] ${entry.name || '未命名'}: ${entry.content || ''} `)
                     console.log('[WorldBook] 常驻:', entry.name)
                     return
                 }
-                const isHit = normalizedKeys.some(key => {
+                const isHit = normalizedKeys.some((key) => {
                     if (!key) return false
                     return lowerContext.includes(String(key).toLowerCase())
                 })
@@ -560,7 +676,10 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                 }
             })
 
-            console.log('[WorldBook] 扫描结果:', { constant: activeEntries.filter(e => e.includes('[常驻]')).length, triggered: activeEntries.filter(e => e.includes('[触发]')).length })
+            console.log('[WorldBook] 扫描结果:', {
+                constant: activeEntries.filter((e) => e.includes('[常驻]')).length,
+                triggered: activeEntries.filter((e) => e.includes('[触发]')).length,
+            })
 
             if (activeEntries.length > 0) {
                 worldInfoText = activeEntries.join('\n\n')
@@ -584,30 +703,44 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
     if (momentsStore && momentsStore.moments) {
         const formatMoment = (m) => {
             if (!m) return ''
-            const timeStr = m.timestamp ? new Date(m.timestamp).toLocaleString('zh-CN', { hour12: false }) : '未知时间'
-            let text = `[时间: ${timeStr}] ${m.authorId === char.id ? char.name : (m.authorName || '用户')}: ${m.content}`
-            if (m.imageDescriptions && m.imageDescriptions.length > 0) text += `\n(图片内容: ${m.imageDescriptions.join(', ')})`
+            const timeStr = m.timestamp
+                ? new Date(m.timestamp).toLocaleString('zh-CN', { hour12: false })
+                : '未知时间'
+            let text = `[时间: ${timeStr}] ${m.authorId === char.id ? char.name : m.authorName || '用户'}: ${m.content}`
+            if (m.imageDescriptions && m.imageDescriptions.length > 0)
+                text += `\n(图片内容: ${m.imageDescriptions.join(', ')})`
             return text
         }
-        const charMoments = (momentsStore.moments || []).filter(m => m.authorId === char.id).slice(0, 2)
-        const userMoments = (momentsStore.moments || []).filter(m => !m.authorId || m.authorId === 'user').slice(0, 2)
+        const charMoments = (momentsStore.moments || [])
+            .filter((m) => m.authorId === char.id)
+            .slice(0, 2)
+        const userMoments = (momentsStore.moments || [])
+            .filter((m) => !m.authorId || m.authorId === 'user')
+            .slice(0, 2)
         momentsContext = [...charMoments, ...userMoments].map(formatMoment).join('\n---\n')
     }
 
-
     // 构建 System Message
     // Memory Logic
-    if (!memoryText && char && char.memory && Array.isArray(char.memory) && char.memory.length > 0) {
+    if (
+        !memoryText &&
+        char &&
+        char.memory &&
+        Array.isArray(char.memory) &&
+        char.memory.length > 0
+    ) {
         const recentMemories = char.memory
-        memoryText = recentMemories.map(m => {
-            const content = typeof m === 'object' ? (m.content || JSON.stringify(m)) : m
-            return `- ${content} `
-        }).join('\n')
+        memoryText = recentMemories
+            .map((m) => {
+                const content = typeof m === 'object' ? m.content || JSON.stringify(m) : m
+                return `- ${content} `
+            })
+            .join('\n')
     }
 
     // 构建 System Message
     // 如果传入的消息中已经包含了 System Prompt (例如朋友圈生成)，则跳过默认模板
-    const hasCustomSystem = (messages && messages.length > 0 && messages[0].role === 'system')
+    const hasCustomSystem = messages && messages.length > 0 && messages[0].role === 'system'
     const isProactiveCall = options.isProactiveCall
 
     let systemMsg = null
@@ -616,13 +749,17 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
         // 同时支持 hasCustomSystem 兜底，确保 prompt 不会丢失
         systemMsg = {
             role: 'system',
-            content: char.prompt || (hasCustomSystem ? messages[0].content : '你是一个直接完成任务的 AI 助手。不要进行多余的对话或自我介绍，严格按照指令输出结果。')
+            content:
+                char.prompt ||
+                (hasCustomSystem
+                    ? messages[0].content
+                    : '你是一个直接完成任务的 AI 助手。不要进行多余的对话或自我介绍，严格按照指令输出结果。'),
         }
     } else if (!hasCustomSystem) {
         const patSettings = { action: char.patAction, suffix: char.patSuffix }
 
         // Environmental Context (Location & Battery)
-        const charLocation2 = char.locationSync ? (char.charLocation || null) : null
+        const charLocation2 = char.locationSync ? char.charLocation || null : null
         const locationContext = char.locationSync
             ? weatherService.getLocationContextText(charLocation2)
             : ''
@@ -634,40 +771,66 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             const chatStore = pinia ? pinia._s.get('chat') : null
             if (chatStore) {
                 const memoryParts = []
-                if (char.groupMemoryIntero && char.linkedGroups && Array.isArray(char.linkedGroups)) {
-                    char.linkedGroups.forEach(gid => {
+                if (
+                    char.groupMemoryIntero &&
+                    char.linkedGroups &&
+                    Array.isArray(char.linkedGroups)
+                ) {
+                    char.linkedGroups.forEach((gid) => {
                         const gChat = chatStore.chats[gid]
                         if (gChat && gChat.isGroup) {
-                            const limit = (char.groupMemoryLimits && char.groupMemoryLimits[gid]) || 20
+                            const limit =
+                                (char.groupMemoryLimits && char.groupMemoryLimits[gid]) || 20
                             let currentGroupInfo = ''
 
                             const gMemArray = gChat.memory || []
                             const relevantMems = [...gMemArray].slice(-limit)
                             if (relevantMems.length > 0) {
                                 const groupTitle = `【群聊: ${gChat.name} 的记忆碎片】`
-                                const groupText = relevantMems.map(m => {
-                                    const content = typeof m === 'object' ? (m.content || JSON.stringify(m)) : m
-                                    return `- ${content}`
-                                }).join('\n')
+                                const groupText = relevantMems
+                                    .map((m) => {
+                                        const content =
+                                            typeof m === 'object'
+                                                ? m.content || JSON.stringify(m)
+                                                : m
+                                        return `- ${content}`
+                                    })
+                                    .join('\n')
                                 currentGroupInfo += `${groupTitle}\n${groupText}\n`
                             }
 
                             const msgsArray = gChat.msgs || []
-                            const recentMsgs = msgsArray.filter(m => m.type !== 'system' && m.type !== 'favorite_card').slice(-15) // Recent context limit
+                            const recentMsgs = msgsArray
+                                .filter((m) => m.type !== 'system' && m.type !== 'favorite_card')
+                                .slice(-15) // Recent context limit
                             if (recentMsgs.length > 0) {
                                 const msgsTitle = `【群聊: ${gChat.name} 近期实际对话】`
-                                const msgsText = recentMsgs.map(m => {
-                                    let sender = m.groupSpeakerMeta?.name || m.senderName
-                                    if (!sender) sender = m.role === 'user' ? (gChat.groupSettings?.myNickname || '我') : '群成员'
-                                    let content = typeof m.content === 'object' ? JSON.stringify(m.content) : String(m.content)
-                                    // Include giftId in context for gift messages
-                                    if (m.type === 'gift' && m.giftId) {
-                                        content = `[GIFT:${m.giftName || '礼物'}:${m.giftQuantity || 1}:${m.giftNote || ''}](ID:${m.giftId})`
-                                    }
-                                    // 群聊不需要心声，移除 INNER_VOICE 标签
-                                    content = content.replace(/\[INNER_VOICE\][\s\S]*?(?:\[\/INNER_VOICE\]|$)/gi, '').trim()
-                                    return `${sender}: ${content}`
-                                }).join('\n')
+                                const msgsText = recentMsgs
+                                    .map((m) => {
+                                        let sender = m.groupSpeakerMeta?.name || m.senderName
+                                        if (!sender)
+                                            sender =
+                                                m.role === 'user'
+                                                    ? gChat.groupSettings?.myNickname || '我'
+                                                    : '群成员'
+                                        let content =
+                                            typeof m.content === 'object'
+                                                ? JSON.stringify(m.content)
+                                                : String(m.content)
+                                        // Include giftId in context for gift messages
+                                        if (m.type === 'gift' && m.giftId) {
+                                            content = `[GIFT:${m.giftName || '礼物'}:${m.giftQuantity || 1}:${m.giftNote || ''}](ID:${m.giftId})`
+                                        }
+                                        // 群聊不需要心声，移除 INNER_VOICE 标签
+                                        content = content
+                                            .replace(
+                                                /\[INNER_VOICE\][\s\S]*?(?:\[\/INNER_VOICE\]|$)/gi,
+                                                '',
+                                            )
+                                            .trim()
+                                        return `${sender}: ${content}`
+                                    })
+                                    .join('\n')
                                 currentGroupInfo += `\n${msgsTitle}\n${msgsText}\n`
                             }
 
@@ -679,45 +842,72 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                 }
 
                 if (char.isGroup && Array.isArray(char.participants)) {
-                    char.participants.forEach(p => {
+                    char.participants.forEach((p) => {
                         if (p.id !== 'user' && p.privateMemoryIntero) {
                             const pChat = chatStore.chats[p.id]
                             if (pChat && Array.isArray(pChat.msgs)) {
                                 const limit = p.privateMemoryLimit || 20
-                                const pMsgs = pChat.msgs.filter(m => m.type !== 'system' && m.type !== 'favorite_card').slice(-limit)
+                                const pMsgs = pChat.msgs
+                                    .filter(
+                                        (m) => m.type !== 'system' && m.type !== 'favorite_card',
+                                    )
+                                    .slice(-limit)
                                 if (pMsgs.length > 0) {
                                     const title = `【成员: ${p.name} 与你的近期私聊记录】`
-                                    const text = pMsgs.map(m => {
-                                        const sender = m.role === 'user' ? (char.groupSettings?.myNickname || '我') : p.name
-                                        let content = typeof m.content === 'object' ? JSON.stringify(m.content) : m.content
-                                        // Include giftId in context for gift messages
-                                        if (m.type === 'gift' && m.giftId) {
-                                            content = `[GIFT:${m.giftName || '礼物'}:${m.giftQuantity || 1}:${m.giftNote || ''}](ID:${m.giftId})`
-                                        }
-                                        // 【关键修改】保留心声内容作为上下文参考，让 AI 知道角色的衣着和所在地
-                                        // 直接从内容中提取 JSON 对象，不管外部是否有 [INNER_VOICE] 或 [OFFLINE] 标签
-                                        const voiceJson = extractInnerVoiceJson(String(content))
-                                        if (voiceJson) {
-                                            try {
-                                                const voiceObj = typeof voiceJson === 'string' ? JSON.parse(voiceJson) : voiceJson
-                                                const statusText = voiceObj.status || voiceObj.state || ''
-                                                const outfitText = voiceObj.outfit || voiceObj.着装 || voiceObj.dress || ''
-                                                const locationText = voiceObj.location || voiceObj.地点 || ''
-                                                
-                                                const statusSummary = []
-                                                if (statusText) statusSummary.push(`状态：${statusText}`)
-                                                if (outfitText) statusSummary.push(`着装：${outfitText}`)
-                                                if (locationText) statusSummary.push(`位置：${locationText}`)
-                                                
-                                                if (statusSummary.length > 0) {
-                                                    content = `${content} [角色状态参考：${statusSummary.join('，')}]`
-                                                }
-                                            } catch (e) {
-                                                console.warn('[AI Service] Failed to parse inner voice for context:', e)
+                                    const text = pMsgs
+                                        .map((m) => {
+                                            const sender =
+                                                m.role === 'user'
+                                                    ? char.groupSettings?.myNickname || '我'
+                                                    : p.name
+                                            let content =
+                                                typeof m.content === 'object'
+                                                    ? JSON.stringify(m.content)
+                                                    : m.content
+                                            // Include giftId in context for gift messages
+                                            if (m.type === 'gift' && m.giftId) {
+                                                content = `[GIFT:${m.giftName || '礼物'}:${m.giftQuantity || 1}:${m.giftNote || ''}](ID:${m.giftId})`
                                             }
-                                        }
-                                        return `${sender}: ${content}`
-                                    }).join('\n')
+                                            // 【关键修改】保留心声内容作为上下文参考，让 AI 知道角色的衣着和所在地
+                                            // 直接从内容中提取 JSON 对象，不管外部是否有 [INNER_VOICE] 或 [OFFLINE] 标签
+                                            const voiceJson = extractInnerVoiceJson(String(content))
+                                            if (voiceJson) {
+                                                try {
+                                                    const voiceObj =
+                                                        typeof voiceJson === 'string'
+                                                            ? JSON.parse(voiceJson)
+                                                            : voiceJson
+                                                    const statusText =
+                                                        voiceObj.status || voiceObj.state || ''
+                                                    const outfitText =
+                                                        voiceObj.outfit ||
+                                                        voiceObj.着装 ||
+                                                        voiceObj.dress ||
+                                                        ''
+                                                    const locationText =
+                                                        voiceObj.location || voiceObj.地点 || ''
+
+                                                    const statusSummary = []
+                                                    if (statusText)
+                                                        statusSummary.push(`状态：${statusText}`)
+                                                    if (outfitText)
+                                                        statusSummary.push(`着装：${outfitText}`)
+                                                    if (locationText)
+                                                        statusSummary.push(`位置：${locationText}`)
+
+                                                    if (statusSummary.length > 0) {
+                                                        content = `${content} [角色状态参考：${statusSummary.join('，')}]`
+                                                    }
+                                                } catch (e) {
+                                                    console.warn(
+                                                        '[AI Service] Failed to parse inner voice for context:',
+                                                        e,
+                                                    )
+                                                }
+                                            }
+                                            return `${sender}: ${content}`
+                                        })
+                                        .join('\n')
                                     memoryParts.push(`${title}\n${text}`)
                                 }
                             }
@@ -730,22 +920,29 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             console.warn('[AI Service] Failed to link memories:', e)
         }
 
-        const userLoc = char.userLocation || char.bio?.location || settingsStore.weather?.userLocation || settingsStore.weather?.virtualLocation || {}
+        const userLoc =
+            char.userLocation ||
+            char.bio?.location ||
+            settingsStore.weather?.userLocation ||
+            settingsStore.weather?.virtualLocation ||
+            {}
         console.log('[AI Service - 通话模式] 用户位置数据源检查:', {
             'char.userLocation': char.userLocation,
             'char.bio?.location': char.bio?.location,
             'settingsStore.weather?.userLocation': settingsStore.weather?.userLocation,
             'settingsStore.weather?.virtualLocation': settingsStore.weather?.virtualLocation,
-            '最终 userLoc': userLoc
+            '最终 userLoc': userLoc,
         })
-                
+
         let locName = '未知'
         if (typeof userLoc === 'string' && userLoc.trim()) locName = userLoc.trim()
         else if (userLoc && typeof userLoc === 'object') locName = userLoc.name?.trim() || '未知'
-                
+
         console.log('[AI Service - 通话模式] 解析后的位置名称:', locName)
-        
-        const userLocText = `\n【用户位置】${locName}` + (userLoc.coords ? ` (坐标：${userLoc.coords.lat}, ${userLoc.coords.lng})` : '')
+
+        const userLocText =
+            `\n【用户位置】${locName}` +
+            (userLoc.coords ? ` (坐标：${userLoc.coords.lat}, ${userLoc.coords.lng})` : '')
 
         // Battery Context
         const batteryInfo = batteryMonitor.getBatteryInfo()
@@ -754,7 +951,11 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             : ''
 
         // Append all to environmental context
-        const finalEnvContext = locationContext + userLocText + batteryContext + (char.searchEnabled ? '\n【联网搜索】已开启。' : '')
+        const finalEnvContext =
+            locationContext +
+            userLocText +
+            batteryContext +
+            (char.searchEnabled ? '\n【联网搜索】已开启。' : '')
 
         // Remove pruning for proactive call to keep identity intact
         const prunedChar = { ...char }
@@ -770,23 +971,31 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             console.warn('[AI Service] phoneStore init failed:', e.message)
         }
 
-        const runtimeGroupCtx = char.isGroup ? {
-            isGroup: true,
-            settings: char.groupSettings || {},
-            participants: (char.participants || []).map(p => {
-                // Fetch the specific 'User Persona' configured for this NPC in their private chat
-                const privateChat = chatStore?.chats?.[p.id];
-                return {
-                    ...p,
-                    individualUserPersona: privateChat?.userPersona || ''
-                };
-            })
-        } : null;
+        const runtimeGroupCtx = char.isGroup
+            ? {
+                  isGroup: true,
+                  settings: char.groupSettings || {},
+                  participants: (char.participants || []).map((p) => {
+                      // Fetch the specific 'User Persona' configured for this NPC in their private chat
+                      const privateChat = chatStore?.chats?.[p.id]
+                      return {
+                          ...p,
+                          individualUserPersona: privateChat?.userPersona || '',
+                      }
+                  }),
+              }
+            : null
 
         const calendarStore = useCalendarStore()
         const calendarContext = char.id ? calendarStore.getAIContextPrompt(char.id) : ''
 
-        const contactListStr = chatStore ? chatStore.contactList.filter(c => !c.isGroup).slice(0, 30).map(c => `- ${c.name} (ID: ${c.id})`).join('\n') : ''
+        const contactListStr = chatStore
+            ? chatStore.contactList
+                  .filter((c) => !c.isGroup)
+                  .slice(0, 30)
+                  .map((c) => `- ${c.name} (ID: ${c.id})`)
+                  .join('\n')
+            : ''
 
         // 妫€鏌ユ槸鍚﹀浜庣嚎涓嬫ā寮?
         const isOfflineMode = settingsStore.isOfflineMode
@@ -808,38 +1017,69 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                 drawingConfigForPrompt = {
                     ...baseDrawingConfig,
                     availableMembers,
-                    volcStyle: baseDrawingConfig.globalImageStyle === 'anime' ? '动漫插画风格' : '真实照片风格'
+                    volcStyle:
+                        baseDrawingConfig.globalImageStyle === 'anime'
+                            ? '动漫插画风格'
+                            : '真实照片风格',
                 }
             }
         }
 
         let promptContent = options.isCall
-            ? CALL_SYSTEM_PROMPT_TEMPLATE(prunedChar, userProfile, worldInfoText, memoryText, finalEnvContext, momentsContext, char.bio)
-            : SYSTEM_PROMPT_TEMPLATE(prunedChar, userProfile, availableStickers, worldInfoText, memoryText, patSettings, finalEnvContext, momentsContext, char.bio, runtimeGroupCtx, linkedGroupMemory, contactListStr, calendarContext, '', drawingConfigForPrompt)
+            ? CALL_SYSTEM_PROMPT_TEMPLATE(
+                  prunedChar,
+                  userProfile,
+                  worldInfoText,
+                  memoryText,
+                  finalEnvContext,
+                  momentsContext,
+                  char.bio,
+              )
+            : SYSTEM_PROMPT_TEMPLATE(
+                  prunedChar,
+                  userProfile,
+                  availableStickers,
+                  worldInfoText,
+                  memoryText,
+                  patSettings,
+                  finalEnvContext,
+                  momentsContext,
+                  char.bio,
+                  runtimeGroupCtx,
+                  linkedGroupMemory,
+                  contactListStr,
+                  calendarContext,
+                  '',
+                  drawingConfigForPrompt,
+              )
 
         // [FIX] 将最新心声状态注入系统提示，确保 AI 始终感知当前内心世界
         if (prunedChar.mindscape) {
             const ms = prunedChar.mindscape
-            const mindscapeSection = typeof ms === 'string'
-                ? `\n\n【${prunedChar.name}的内心独白（最新）】\n${ms}`
-                : (ms.thought || ms.content || JSON.stringify(ms))
-                    ? `\n\n【${prunedChar.name}的内心独白（最新）】\n${ms.thought || ms.content || JSON.stringify(ms)}`
-                    : ''
+            const mindscapeSection =
+                typeof ms === 'string'
+                    ? `\n\n【${prunedChar.name}的内心独白（最新）】\n${ms}`
+                    : ms.thought || ms.content || JSON.stringify(ms)
+                      ? `\n\n【${prunedChar.name}的内心独白（最新）】\n${ms.thought || ms.content || JSON.stringify(ms)}`
+                      : ''
             if (mindscapeSection) {
                 promptContent += mindscapeSection
             }
         }
-        
+
         // 线上/线下模式追加提示词
         const forceOffline = options.mode === 'offline' || isOfflineMode
         if (!options.isCall) {
             if (forceOffline) {
-                promptContent += '\n\n【重要提示】当前处于线下文游模式，请严格按照【场景 B：线下文游模式】输出。必须使用长段式、小说式、沉浸式描写，重点写环境、动作、氛围和剧情推进；不要模仿线上微信聊天，不要一句一句拆成很多短气泡。'
+                promptContent +=
+                    '\n\n【重要提示】当前处于线下文游模式，请严格按照【场景 B：线下文游模式】输出。必须使用长段式、小说式、沉浸式描写，重点写环境、动作、氛围和剧情推进；不要模仿线上微信聊天，不要一句一句拆成很多短气泡。'
                 if (settingsStore.offlineMode?.enableAIBackground) {
-                    promptContent += '\n\n【背景图更新】你可以使用【场景：英文场景描写】指令来更新聊天背景图。例如：【场景：a cozy coffee shop with warm lighting】。当场景发生变化时，使用此指令生成匹配的背景图。'
+                    promptContent +=
+                        '\n\n【背景图更新】你可以使用【场景：英文场景描写】指令来更新聊天背景图。例如：【场景：a cozy coffee shop with warm lighting】。当场景发生变化时，使用此指令生成匹配的背景图。'
                 }
             } else {
-                promptContent += '\n\n【重要提示】当前处于线上微信聊天模式，请严格按照【场景 A：微信聊天】输出。使用短句、口语化表达，保持自然的微信聊天节奏。'
+                promptContent +=
+                    '\n\n【重要提示】当前处于线上微信聊天模式，请严格按照【场景 A：微信聊天】输出。使用短句、口语化表达，保持自然的微信聊天节奏。'
             }
         }
 
@@ -862,7 +1102,8 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             //   但那个 const 是块级作用域(在 if (charId && !isSimpleTask && ...) {...} 内),
             //   出块(line 457)后就消失了,到此处变成未声明变量 → ReferenceError,整个聊天就废了。
             //   这里现场再算一次(与 line 402 同样的查法),避免改动记忆模块的现有逻辑。
-            const _lastUserText = ([...(messages || [])].reverse().find(m => m.role === 'user')?.content) || ''
+            const _lastUserText =
+                [...(messages || [])].reverse().find((m) => m.role === 'user')?.content || ''
             const socialCtx = buildSocialContext(_lastUserText, charId)
             if (socialCtx) {
                 promptContent += '\n\n' + socialCtx
@@ -871,10 +1112,9 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
 
         systemMsg = {
             role: 'system',
-            content: promptContent
+            content: promptContent,
         }
     }
-
 
     // --- Helper: Resolve Image URL to Base64 (Vision Proxy) ---
     const resolveToBase64 = async (url) => {
@@ -916,7 +1156,8 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
 
     let totalImagesCount = 0
     const visionLimit = 5 // Max historical (already-replied) images to include for context
-    const imageRegex = /\[(?:图片|IMAGE)[:：]((?:https?:\/\/|data:image\/)[^\]]+)\]|\[(?:表情包|STICKER)[:：]([^\]]+)\]/gi
+    const imageRegex =
+        /\[(?:图片|IMAGE)[:：]((?:https?:\/\/|data:image\/)[^\]]+)\]|\[(?:表情包|STICKER)[:：]([^\]]+)\]/gi
 
     // Find the index of the LAST assistant message — everything after is "new/unseen"
     let lastAssistantIndex = -1
@@ -930,7 +1171,10 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
     messages.forEach((msg, idx) => {
         if (!msg || msg.role !== 'user' || idx <= lastAssistantIndex) return
         // This is a user message after the last AI reply → it's "unseen"
-        if (msg.image || (typeof msg.content === 'string' && msg.content.startsWith('data:image/'))) {
+        if (
+            msg.image ||
+            (typeof msg.content === 'string' && msg.content.startsWith('data:image/'))
+        ) {
             allUnseenIds.push(msg.id)
         } else if (typeof msg.content === 'string' && imageRegex.test(msg.content)) {
             allUnseenIds.push(msg.id)
@@ -939,10 +1183,10 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
         }
     })
     // [FIX] Cap unseen images to last 8 to prevent massive request payload / OOM on mobile
-    allUnseenIds.slice(-8).forEach(id => unseenUserImageIds.add(id))
+    allUnseenIds.slice(-8).forEach((id) => unseenUserImageIds.add(id))
 
     // Count total images & track which ones are user's
-    messages.forEach(msg => {
+    messages.forEach((msg) => {
         if (!msg || (msg.role !== 'user' && msg.role !== 'assistant')) return
 
         if (msg.image) {
@@ -961,7 +1205,9 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
         }
     })
 
-    console.log(`[aiService Vision] Total images: ${totalImagesCount}, limit: ${visionLimit}, lastAssistantIdx: ${lastAssistantIndex}, unseenImageIds: [...${unseenUserImageIds.size} items]`)
+    console.log(
+        `[aiService Vision] Total images: ${totalImagesCount}, limit: ${visionLimit}, lastAssistantIdx: ${lastAssistantIndex}, unseenImageIds: [...${unseenUserImageIds.size} items]`,
+    )
 
     // The index of the first historical (already-replied) image that should be sent to Vision
     // Unseen images (after last AI reply) bypass this limit entirely
@@ -969,7 +1215,7 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
     let currentImageIndex = 0
 
     const formattedMessages = []
-    for (const msg of (messages || [])) {
+    for (const msg of messages || []) {
         if (!msg) {
             formattedMessages.push({ role: 'user', content: '' })
             continue
@@ -994,7 +1240,7 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                         ivText = `[INNER_VOICE]${JSON.stringify(msg.innerVoice)}[/INNER_VOICE]`
                     }
                 }
-                content = `${ivText}\n${content}`;
+                content = `${ivText}\n${content}`
             }
 
             // Include giftId in context for gift messages
@@ -1005,7 +1251,14 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             // 1. Priority: msg.image property (New standard)
             // v1.10.180: 排除卡片类消息的封面图(link_card/moment_card/favorite_card等),
             //   这些图不是用户主动发送的图片,不能传给AI多模态,也不能当头像
-            const isCardType = ['link_card', 'moment_card', 'favorite_card', 'tarot_card', 'tarot_interpretation', 'html'].includes(msg.type)
+            const isCardType = [
+                'link_card',
+                'moment_card',
+                'favorite_card',
+                'tarot_card',
+                'tarot_interpretation',
+                'html',
+            ].includes(msg.type)
             if (msg.image && !isCardType) {
                 // Sticker (表情包) 也走视觉通道,但不当作头像图片
                 // 加上明确的【表情包】前缀,避免 AI 把它当成头像素材
@@ -1017,27 +1270,29 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                 currentImageIndex++
 
                 if (isVisionEnabled) {
-                    const imageId = msg.id || 'curr';
+                    const imageId = msg.id || 'curr'
                     // v1.10.59: sticker 不再带"如需更换头像"提示,避免 AI 错把表情包当头像
                     const refText = isSticker
                         ? `【表情包: ${msg.stickerName || (msg.content && msg.content.replace(/^\[表情包[:：]\s*/, '').replace(/\]\s*$/, '')) || '表情'}】(图片ID: ${imageId})`
-                        : `【图片ID: ${imageId}】如需更换头像，请使用: [更换头像:${imageId}]`;
+                        : `【图片ID: ${imageId}】如需更换头像，请使用: [更换头像:${imageId}]`
 
                     // Resolve to B64 if remote
-                    const imgUrl = (msg.image.startsWith('http')) ? (await resolveToBase64(msg.image) || msg.image) : msg.image;
+                    const imgUrl = msg.image.startsWith('http')
+                        ? (await resolveToBase64(msg.image)) || msg.image
+                        : msg.image
 
                     formattedMessages.push({
                         role: msg.role === 'assistant' ? 'assistant' : 'user',
                         content: [
                             { type: 'text', text: `${refText}${content ? '\n' + content : ''}` },
-                            { type: 'image_url', image_url: { url: imgUrl } }
-                        ]
+                            { type: 'image_url', image_url: { url: imgUrl } },
+                        ],
                     })
                     continue
                 } else {
                     formattedMessages.push({
                         role: msg.role === 'assistant' ? 'assistant' : 'user',
-                        content: `${content} [图片: (由于上下文过长，旧图片视觉信息已忽略)]`
+                        content: `${content} [图片: (由于上下文过长，旧图片视觉信息已忽略)]`,
                     })
                     continue
                 }
@@ -1051,22 +1306,22 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                 currentImageIndex++
 
                 if (isVisionEnabled) {
-                    const imageId = msg.id || 'curr';
-                    const refText = `【图片ID: ${imageId}】如需更换头像，请使用: [更换头像:${imageId}]`;
+                    const imageId = msg.id || 'curr'
+                    const refText = `【图片ID: ${imageId}】如需更换头像，请使用: [更换头像:${imageId}]`
 
                     formattedMessages.push({
                         role: msg.role === 'assistant' ? 'assistant' : 'user',
                         content: [
                             { type: 'text', text: refText },
-                            { type: 'image_url', image_url: { url: content } }
-                        ]
+                            { type: 'image_url', image_url: { url: content } },
+                        ],
                     })
                     continue
                 } else {
                     // Placeholder for older images
                     formattedMessages.push({
                         role: msg.role,
-                        content: `[图片: (历史图片已省略以节省流量)]`
+                        content: `[图片: (历史图片已省略以节省流量)]`,
                     })
                     continue
                 }
@@ -1077,39 +1332,51 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
 
             // 2. Check if the message is a raw sticker URL (exact match)
             // Note: Stickers are typically small URLs, but we treat them as images for consistency
-            const matchedSticker = allStickers.find(s => s.url === content.trim())
+            const matchedSticker = allStickers.find((s) => s.url === content.trim())
             if (matchedSticker) {
                 const isVisionEnabled = currentImageIndex >= visionStartIndex
                 currentImageIndex++
 
                 if (isVisionEnabled) {
-                    const imgUrl = (matchedSticker.url.startsWith('http')) ? (await resolveToBase64(matchedSticker.url) || matchedSticker.url) : matchedSticker.url;
+                    const imgUrl = matchedSticker.url.startsWith('http')
+                        ? (await resolveToBase64(matchedSticker.url)) || matchedSticker.url
+                        : matchedSticker.url
                     formattedMessages.push({
                         role: msg.role === 'assistant' ? 'assistant' : 'user',
                         content: [
-                            { type: 'text', text: msg.role === 'user' ? `（用户发送了表情包 ${matchedSticker.name}）` : `[表情包:${matchedSticker.name}]` },
-                            { type: 'image_url', image_url: { url: imgUrl } }
-                        ]
+                            {
+                                type: 'text',
+                                text:
+                                    msg.role === 'user'
+                                        ? `（用户发送了表情包 ${matchedSticker.name}）`
+                                        : `[表情包:${matchedSticker.name}]`,
+                            },
+                            { type: 'image_url', image_url: { url: imgUrl } },
+                        ],
                     })
                     continue
                 } else {
                     formattedMessages.push({
                         role: msg.role,
-                        content: `[表情包: ${matchedSticker.name}]` // Just keep text
+                        content: `[表情包: ${matchedSticker.name}]`, // Just keep text
                     })
                     continue
                 }
             }
 
             // 3. Handle potential [图片:URL] and [表情包:名称] within text
-            const combinedRegex = /\[(?:图片|IMAGE)[:：]((?:https?:\/\/|data:image\/)[^\]]+)\]|\[(?:表情包|STICKER)[:：]([^\]]+)\]/gi
+            const combinedRegex =
+                /\[(?:图片|IMAGE)[:：]((?:https?:\/\/|data:image\/)[^\]]+)\]|\[(?:表情包|STICKER)[:：]([^\]]+)\]/gi
             let lastIndex = 0
             let match
             combinedRegex.lastIndex = 0
 
             while ((match = combinedRegex.exec(content)) !== null) {
                 if (match.index > lastIndex) {
-                    contentParts.push({ type: 'text', text: content.substring(lastIndex, match.index) })
+                    contentParts.push({
+                        type: 'text',
+                        text: content.substring(lastIndex, match.index),
+                    })
                 }
 
                 const isVisionEnabled = currentImageIndex >= visionStartIndex
@@ -1117,22 +1384,35 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
 
                 if (match[1]) {
                     if (isVisionEnabled) {
-                        const imageId = msg.id || 'curr';
-                        contentParts.push({ type: 'text', text: ` 【图片ID: ${imageId}】如需更换头像，请使用: [更换头像:${imageId}]` });
-                        const finalImgUrl = (match[1].startsWith('http')) ? (await resolveToBase64(match[1]) || match[1]) : match[1];
+                        const imageId = msg.id || 'curr'
+                        contentParts.push({
+                            type: 'text',
+                            text: ` 【图片ID: ${imageId}】如需更换头像，请使用: [更换头像:${imageId}]`,
+                        })
+                        const finalImgUrl = match[1].startsWith('http')
+                            ? (await resolveToBase64(match[1])) || match[1]
+                            : match[1]
                         contentParts.push({ type: 'image_url', image_url: { url: finalImgUrl } })
                     } else {
-                        contentParts.push({ type: 'text', text: `[图片: ${match[1].startsWith('data:') ? '(历史图片)' : match[1]}]` })
+                        contentParts.push({
+                            type: 'text',
+                            text: `[图片: ${match[1].startsWith('data:') ? '(历史图片)' : match[1]}]`,
+                        })
                     }
                 } else if (match[2]) {
                     const stickerName = match[2].trim()
-                    const sticker = allStickers.find(s => s.name === stickerName)
+                    const sticker = allStickers.find((s) => s.name === stickerName)
 
                     if (sticker) {
                         if (isVisionEnabled) {
-                            const finalStickerUrl = (sticker.url.startsWith('http')) ? (await resolveToBase64(sticker.url) || sticker.url) : sticker.url;
+                            const finalStickerUrl = sticker.url.startsWith('http')
+                                ? (await resolveToBase64(sticker.url)) || sticker.url
+                                : sticker.url
                             contentParts.push({ type: 'text', text: `[表情包:${stickerName}]` })
-                            contentParts.push({ type: 'image_url', image_url: { url: finalStickerUrl } })
+                            contentParts.push({
+                                type: 'image_url',
+                                image_url: { url: finalStickerUrl },
+                            })
                         } else {
                             contentParts.push({ type: 'text', text: `[表情包:${stickerName}]` })
                         }
@@ -1169,7 +1449,7 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
     const visualContextMessages = []
     const userAvatar = realUserProfile?.avatar
     const charAvatar = char.avatar
-    const isImage = (s) => typeof s === 'string' && (s.trim().length > 0)
+    const isImage = (s) => typeof s === 'string' && s.trim().length > 0
 
     let userAvatarDesc = null
     let charAvatarDesc = null
@@ -1177,13 +1457,21 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
     if ((isImage(userAvatar) || isImage(charAvatar)) && !options.isSimpleTask) {
         const [userB64, charB64] = await Promise.all([
             resolveToBase64(userAvatar),
-            resolveToBase64(charAvatar)
+            resolveToBase64(charAvatar),
         ])
 
         // 1. Get descriptions (cached or fresh)
         const results = await Promise.all([
-            getOrFetchAvatarDesc(userAvatar, userB64, userProfile.name, provider, apiKey, apiUrl, model),
-            getOrFetchAvatarDesc(charAvatar, charB64, char.name, provider, apiKey, apiUrl, model)
+            getOrFetchAvatarDesc(
+                userAvatar,
+                userB64,
+                userProfile.name,
+                provider,
+                apiKey,
+                apiUrl,
+                model,
+            ),
+            getOrFetchAvatarDesc(charAvatar, charB64, char.name, provider, apiKey, apiUrl, model),
         ])
         userAvatarDesc = results[0]
         charAvatarDesc = results[1]
@@ -1202,15 +1490,22 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
     if (charAvatarDesc) char.avatarDescription = charAvatarDesc
 
     // 构建完整消息链
-    const fullMessages = [systemMsg, ...visualContextMessages, ...formattedMessages].filter(Boolean).filter(msg => {
-        // FILTER: Remove empty messages (Gemini throws 400 Invalid Argument for empty content)
-        if (!msg.content) return false
-        if (typeof msg.content === 'string') return msg.content.trim().length > 0
-        if (Array.isArray(msg.content)) return msg.content.length > 0
-        return true
-    })
+    const fullMessages = [systemMsg, ...visualContextMessages, ...formattedMessages]
+        .filter(Boolean)
+        .filter((msg) => {
+            // FILTER: Remove empty messages (Gemini throws 400 Invalid Argument for empty content)
+            if (!msg.content) return false
+            if (typeof msg.content === 'string') return msg.content.trim().length > 0
+            if (Array.isArray(msg.content)) return msg.content.length > 0
+            return true
+        })
     // [FIX] Avoid JSON.stringify(fullMessages) as it can be MASSIVE (base64 images) and crash mobile tabs.
-    console.log('[AI Debug] Request Chain ready. Length:', fullMessages.length, 'Images in chain:', currentImageIndex)
+    console.log(
+        '[AI Debug] Request Chain ready. Length:',
+        fullMessages.length,
+        'Images in chain:',
+        currentImageIndex,
+    )
 
     // --- PROVIDER SWITCHING LOGIC ---
     let endpoint = baseUrl || ''
@@ -1245,45 +1540,49 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             contentMessages.shift()
         }
 
-        const geminiContents = contentMessages.map(msg => {
-            let role = msg.role
-            // Gemini uses 'model' instead of 'assistant'
-            if (role === 'system') return null // Should be handled above, but just in case
-            if (role === 'assistant') role = 'model'
+        const geminiContents = contentMessages
+            .map((msg) => {
+                let role = msg.role
+                // Gemini uses 'model' instead of 'assistant'
+                if (role === 'system') return null // Should be handled above, but just in case
+                if (role === 'assistant') role = 'model'
 
-            let parts = []
-            if (typeof msg.content === 'string') {
-                parts = [{ text: msg.content }]
-            } else if (Array.isArray(msg.content)) {
-                parts = msg.content.map(p => {
-                    if (p.type === 'image_url') {
-                        // Gemini Native expects base64 inline_data
-                        const url = p.image_url.url
-                        if (url && url.startsWith('data:')) {
-                            try {
-                                const parts = url.split(';base64,')
-                                if (parts.length === 2) {
-                                    const mime = parts[0].replace('data:', '')
-                                    // Robust Sanitization: Remove any non-base64 chars (e.g. appended text hints)
-                                    const data = parts[1].replace(/[^A-Za-z0-9+/=]/g, '')
-                                    if (!data) {
-                                        console.warn('[Gemini] Dropping empty image data after sanitization')
-                                        return null
+                let parts = []
+                if (typeof msg.content === 'string') {
+                    parts = [{ text: msg.content }]
+                } else if (Array.isArray(msg.content)) {
+                    parts = msg.content.map((p) => {
+                        if (p.type === 'image_url') {
+                            // Gemini Native expects base64 inline_data
+                            const url = p.image_url.url
+                            if (url && url.startsWith('data:')) {
+                                try {
+                                    const parts = url.split(';base64,')
+                                    if (parts.length === 2) {
+                                        const mime = parts[0].replace('data:', '')
+                                        // Robust Sanitization: Remove any non-base64 chars (e.g. appended text hints)
+                                        const data = parts[1].replace(/[^A-Za-z0-9+/=]/g, '')
+                                        if (!data) {
+                                            console.warn(
+                                                '[Gemini] Dropping empty image data after sanitization',
+                                            )
+                                            return null
+                                        }
+                                        return { inline_data: { mime_type: mime, data: data } }
                                     }
-                                    return { inline_data: { mime_type: mime, data: data } }
+                                } catch (e) {
+                                    console.error('[Gemini] Data URL parse failed', p.image_url.url)
                                 }
-                            } catch (e) {
-                                console.error('[Gemini] Data URL parse failed', p.image_url.url)
                             }
+                            // Fallback for non-base64 or failed parse
+                            return { text: `[图片: ${url}]` }
                         }
-                        // Fallback for non-base64 or failed parse
-                        return { text: `[图片: ${url}]` }
-                    }
-                    return { text: p.text || '' }
-                })
-            }
-            return { role, parts }
-        }).filter(c => c)
+                        return { text: p.text || '' }
+                    })
+                }
+                return { role, parts }
+            })
+            .filter((c) => c)
 
         reqBody = {
             contents: geminiContents,
@@ -1294,19 +1593,21 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                 // 改用: NaN 或 undefined/null 时回退, 0 保留.
                 temperature: (() => {
                     const t = Number(temperature)
-                    return (temperature === undefined || temperature === null || Number.isNaN(t)) ? 0.45 : t
+                    return temperature === undefined || temperature === null || Number.isNaN(t)
+                        ? 0.45
+                        : t
                 })(),
                 maxOutputTokens: Math.min(Number(effectiveMaxTokens) || 4096, 65536),
             },
             safetySettings: [
-                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+                { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+                { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+                { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+                { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
             ],
             ...(char.searchEnabled && {
-                tools: [{ google_search: {} }]
-            })
+                tools: [{ google_search: {} }],
+            }),
         }
     } else {
         // --- OPENAI / PROXY MODE ---
@@ -1320,64 +1621,79 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             } else if (endpoint.endsWith('/v1/')) {
                 endpoint = `${endpoint}chat/completions`
             } else {
-                endpoint = endpoint.endsWith('/') ? `${endpoint}chat/completions` : `${endpoint}/chat/completions`
+                endpoint = endpoint.endsWith('/')
+                    ? `${endpoint}chat/completions`
+                    : `${endpoint}/chat/completions`
             }
         }
 
         // 3. Payload (Standard Messages)
-        let finalMessages = [...fullMessages];
-        const isGeminiModel = model.toLowerCase().includes('gemini') || model.toLowerCase().includes('goog');
+        let finalMessages = [...fullMessages]
+        const isGeminiModel =
+            model.toLowerCase().includes('gemini') || model.toLowerCase().includes('goog')
 
         if (isGeminiModel) {
             // [FIX] Gemini via OpenAI proxy: system role often fails with 400
-            finalMessages = finalMessages.map(msg => {
+            finalMessages = finalMessages.map((msg) => {
                 if (msg.role === 'system') {
-                    const content = msg.content.startsWith('[System Instructions]') ? msg.content : `[System Instructions]\n${msg.content}`;
-                    return { ...msg, role: 'user', content: content };
+                    const content = msg.content.startsWith('[System Instructions]')
+                        ? msg.content
+                        : `[System Instructions]\n${msg.content}`
+                    return { ...msg, role: 'user', content: content }
                 }
-                return msg;
-            });
+                return msg
+            })
         }
         // For all other models (OpenAI, Claude via proxy, etc.): keep system role as-is
         // Most OpenAI-compatible proxies handle role:'system' correctly
 
         if (isGeminiModel) {
             // [FIX] Ensure first message has correct prefix after map
-            if (finalMessages.length > 0 && !finalMessages[0].content.startsWith('[System Instructions]')) {
-                finalMessages[0].content = `[System Instructions]\n${finalMessages[0].content}`;
+            if (
+                finalMessages.length > 0 &&
+                !finalMessages[0].content.startsWith('[System Instructions]')
+            ) {
+                finalMessages[0].content = `[System Instructions]\n${finalMessages[0].content}`
             }
 
             // Optimization: If the immediate next message is ALSO User, merge them to avoid "User, User" sequence
             // (Many models perform better with strictly alternating User/Assistant roles)
             if (finalMessages.length > 1 && finalMessages[1].role === 'user') {
-                const nextUserMsg = finalMessages[1];
+                const nextUserMsg = finalMessages[1]
                 // Append next user content to our new "System-User" message
                 // Handle multimodal arrays if necessary (simple text merge for now)
-                const nextContent = typeof nextUserMsg.content === 'string' ? nextUserMsg.content : (Array.isArray(nextUserMsg.content) ? nextUserMsg.content.map(c => c.text || '').join('\n') : '');
+                const nextContent =
+                    typeof nextUserMsg.content === 'string'
+                        ? nextUserMsg.content
+                        : Array.isArray(nextUserMsg.content)
+                          ? nextUserMsg.content.map((c) => c.text || '').join('\n')
+                          : ''
 
-                finalMessages[0].content += `\n\n[User Message]\n${nextContent} `;
+                finalMessages[0].content += `\n\n[User Message]\n${nextContent} `
 
-                // If the next msg had images, we should technically preserve them. 
+                // If the next msg had images, we should technically preserve them.
                 // For safety/simplicity in this specific patch, we assume text-heavy merges or risk formatting.
                 // Ideally, if next is array, we convert [0] to array and push.
                 if (Array.isArray(nextUserMsg.content)) {
                     // Convert our current string to array
-                    finalMessages[0].content = [{ type: 'text', text: finalMessages[0].content }];
+                    finalMessages[0].content = [{ type: 'text', text: finalMessages[0].content }]
                     // Append non-text parts (images) from next msg
-                    const images = nextUserMsg.content.filter(c => c.type === 'image_url');
-                    if (images.length > 0) finalMessages[0].content.push(...images);
+                    const images = nextUserMsg.content.filter((c) => c.type === 'image_url')
+                    if (images.length > 0) finalMessages[0].content.push(...images)
                 }
 
-                finalMessages.splice(1, 1);
+                finalMessages.splice(1, 1)
             }
         }
 
         if (char.searchEnabled) {
-            const searchHint = "\n\n【System Order: Web Search Enabled】You have access to real-time information via web search tools. When asked about current events, specific facts, or data after your cutoff, please prioritize using your search tools to provide accurate, up-to-date answers.";
+            const searchHint =
+                '\n\n【System Order: Web Search Enabled】You have access to real-time information via web search tools. When asked about current events, specific facts, or data after your cutoff, please prioritize using your search tools to provide accurate, up-to-date answers.'
             if (finalMessages && finalMessages.length > 0) {
-                const lastMsg = finalMessages[0]; // Usually the system-user merged message
-                if (typeof lastMsg.content === 'string') lastMsg.content += searchHint;
-                else if (Array.isArray(lastMsg.content)) lastMsg.content.push({ type: 'text', text: searchHint });
+                const lastMsg = finalMessages[0] // Usually the system-user merged message
+                if (typeof lastMsg.content === 'string') lastMsg.content += searchHint
+                else if (Array.isArray(lastMsg.content))
+                    lastMsg.content.push({ type: 'text', text: searchHint })
             }
         }
 
@@ -1388,15 +1704,14 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
         let safeMaxTokens = Number(effectiveMaxTokens) || 4096
         if (safeMaxTokens > 65536) safeMaxTokens = 65536 // Keep global 64k safety, but revert 8k limit
 
-
         // Ensure all messages have valid roles before sending to API
         // Allow: system, user, assistant (most OpenAI-compatible APIs support all three)
-        finalMessages = finalMessages.map(msg => {
+        finalMessages = finalMessages.map((msg) => {
             if (msg.role !== 'user' && msg.role !== 'assistant' && msg.role !== 'system') {
-                return { ...msg, role: 'user' };
+                return { ...msg, role: 'user' }
             }
-            return msg;
-        });
+            return msg
+        })
 
         reqBody = {
             model: model,
@@ -1404,64 +1719,92 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             // [BUG FIX] 同 Gemini 路径, `Number(temperature) || 0.7` 在 temperature=0 时被吞.
             temperature: (() => {
                 const t = Number(temperature)
-                return (temperature === undefined || temperature === null || Number.isNaN(t)) ? 0.7 : t
+                return temperature === undefined || temperature === null || Number.isNaN(t)
+                    ? 0.7
+                    : t
             })(),
             max_tokens: safeMaxTokens,
             stream: !!options.onChunk,
             // 流式模式下请求返回 usage 数据（OpenAI 兼容接口）
-            ...((!!options.onChunk && !model.toLowerCase().includes('gemini')) && { stream_options: { include_usage: true } }),
+            ...(!!options.onChunk &&
+                !model.toLowerCase().includes('gemini') && {
+                    stream_options: { include_usage: true },
+                }),
             // [ST Feature] Support SillyTavern-style advanced parameters
             // Only add if they are present in config AND deviate from defaults (to avoid 400 errors)
             // [FIX] Use Number(...) casting to ensure string values from localStorage don't fail the check
-            ...(config.top_p !== undefined && Number(config.top_p) !== 1.0 && { top_p: Number(config.top_p) }),
-            ...(config.top_k !== undefined && Number(config.top_k) > 0 && { top_k: Number(config.top_k) }),
-            ...(config.frequency_penalty !== undefined && Number(config.frequency_penalty) !== 0 && { frequency_penalty: Number(config.frequency_penalty) }),
-            ...(config.presence_penalty !== undefined && Number(config.presence_penalty) !== 0 && { presence_penalty: Number(config.presence_penalty) }),
-            ...(config.repetition_penalty !== undefined && Number(config.repetition_penalty) !== 1.0 && { repetition_penalty: Number(config.repetition_penalty) }),
-            ...(config.min_p !== undefined && Number(config.min_p) > 0 && { min_p: Number(config.min_p) }),
-            ...(char.searchEnabled && !disableTools && {
-                // [FIX] Use strictly standard 'function' type to avoid 422 errors on most providers.
-                // Even for search-capable proxies, they usually prefer functions or internal model flags.
-                tools: [
-                    {
-                        type: 'function',
-                        function: {
-                            name: 'web_search',
-                            description: 'Search the web for real-time information and facts.',
-                            parameters: {
-                                type: 'object',
-                                properties: {
-                                    query: { type: 'string', description: 'The search query string' }
+            ...(config.top_p !== undefined &&
+                Number(config.top_p) !== 1.0 && { top_p: Number(config.top_p) }),
+            ...(config.top_k !== undefined &&
+                Number(config.top_k) > 0 && { top_k: Number(config.top_k) }),
+            ...(config.frequency_penalty !== undefined &&
+                Number(config.frequency_penalty) !== 0 && {
+                    frequency_penalty: Number(config.frequency_penalty),
+                }),
+            ...(config.presence_penalty !== undefined &&
+                Number(config.presence_penalty) !== 0 && {
+                    presence_penalty: Number(config.presence_penalty),
+                }),
+            ...(config.repetition_penalty !== undefined &&
+                Number(config.repetition_penalty) !== 1.0 && {
+                    repetition_penalty: Number(config.repetition_penalty),
+                }),
+            ...(config.min_p !== undefined &&
+                Number(config.min_p) > 0 && { min_p: Number(config.min_p) }),
+            ...(char.searchEnabled &&
+                !disableTools && {
+                    // [FIX] Use strictly standard 'function' type to avoid 422 errors on most providers.
+                    // Even for search-capable proxies, they usually prefer functions or internal model flags.
+                    tools: [
+                        {
+                            type: 'function',
+                            function: {
+                                name: 'web_search',
+                                description: 'Search the web for real-time information and facts.',
+                                parameters: {
+                                    type: 'object',
+                                    properties: {
+                                        query: {
+                                            type: 'string',
+                                            description: 'The search query string',
+                                        },
+                                    },
+                                    required: ['query'],
                                 },
-                                required: ['query']
-                            }
-                        }
-                    }
-                ]
-            })
+                            },
+                        },
+                    ],
+                }),
         }
 
         // Remove thinking_budget if present
         // STRATEGY CHANGE: Aggressive deletion of all known 'thinking' parameters
         // to prevent Proxy injection or API rejection.
         const forbiddenKeys = [
-            'thinking_budget', 'thinking_config', 'reasoning_budget', 'budget',
-            'thinking_mode', 'thinking_level', 'parallel_tool_calls', 'tool_choice',
-            'generationConfig', 'extra_body', 'response_format'
+            'thinking_budget',
+            'thinking_config',
+            'reasoning_budget',
+            'budget',
+            'thinking_mode',
+            'thinking_level',
+            'parallel_tool_calls',
+            'tool_choice',
+            'generationConfig',
+            'extra_body',
+            'response_format',
         ]
 
-        forbiddenKeys.forEach(key => {
+        forbiddenKeys.forEach((key) => {
             if (reqBody[key] !== undefined) delete reqBody[key]
         })
 
         // Double check: If model has "nothinking", we definitely want to scrub everything.
         if (model.includes('nothinking')) {
-            // Maybe the proxy sees "nothinking" and TRIES to set budget=0. 
-            // We can't stop the proxy from modifying our request, 
+            // Maybe the proxy sees "nothinking" and TRIES to set budget=0.
+            // We can't stop the proxy from modifying our request,
             // but we can try to send a clean one.
         }
     }
-
 
     // Log the endpoint for debugging
     useLoggerStore().addLog('DEBUG', 'API Config', { endpoint, model, provider })
@@ -1471,7 +1814,8 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
         provider,
         endpoint,
         payload: reqBody,
-        hasCustomSystem: fullMessages && fullMessages.length > 0 && fullMessages[0].role === 'system'
+        hasCustomSystem:
+            fullMessages && fullMessages.length > 0 && fullMessages[0].role === 'system',
     })
 
     try {
@@ -1481,18 +1825,30 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             // 旧逻辑: 排除 [LS_JSON: 提示词(避免与解析器冲突)。
             // 但 LS_JSON 解析器本身已支持纯 JSON 兜底(\{[\s\S]*\} 匹配), 强制 JSON mode 反而能提升可靠性,
             // 避免 AI 在包装格式上"时对时错"。
-            if (fullMessages && fullMessages.length > 0 && fullMessages[0].content.includes('JSON')) {
-                reqBody.generationConfig = { response_mime_type: "application/json" };
+            if (
+                fullMessages &&
+                fullMessages.length > 0 &&
+                fullMessages[0].content.includes('JSON')
+            ) {
+                reqBody.generationConfig = { response_mime_type: 'application/json' }
             }
         } else {
             // OpenAI compatible json object mode
             // [FIX] 同上, 去掉 [LS_JSON 例外, 任何含 JSON 提示词的任务都强制 JSON 输出
-            if (fullMessages && fullMessages.length > 0 && fullMessages[0].content.includes('JSON')) {
-                reqBody.response_format = { type: "json_object" };
+            if (
+                fullMessages &&
+                fullMessages.length > 0 &&
+                fullMessages[0].content.includes('JSON')
+            ) {
+                reqBody.response_format = { type: 'json_object' }
             }
         }
 
-        console.log(`[AI Request] (${provider})`, { endpoint, model, msgCount: fullMessages ? fullMessages.length : 0 })
+        console.log(`[AI Request] (${provider})`, {
+            endpoint,
+            model,
+            msgCount: fullMessages ? fullMessages.length : 0,
+        })
 
         // [FIX] 网络错误自动重试：Failed to fetch / NetworkError / TypeError 等网络层异常
         const MAX_NETWORK_RETRIES = 3
@@ -1503,62 +1859,69 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                     method: 'POST',
                     headers: reqHeaders,
                     body: JSON.stringify(reqBody),
-                    signal: signal || undefined
+                    signal: signal || undefined,
                 })
                 break // 成功则退出循环
             } catch (fetchErr) {
-                const isNetworkError = fetchErr instanceof TypeError &&
+                const isNetworkError =
+                    fetchErr instanceof TypeError &&
                     (fetchErr.message.includes('Failed to fetch') ||
-                     fetchErr.message.includes('NetworkError') ||
-                     fetchErr.message.includes('Network request failed') ||
-                     fetchErr.message.includes('Load failed') ||
-                     fetchErr.name === 'AbortError')
+                        fetchErr.message.includes('NetworkError') ||
+                        fetchErr.message.includes('Network request failed') ||
+                        fetchErr.message.includes('Load failed') ||
+                        fetchErr.name === 'AbortError')
 
                 if (isNetworkError && attempt < MAX_NETWORK_RETRIES - 1) {
                     const delayMs = Math.min(1000 * Math.pow(2, attempt), 5000)
-                    useLoggerStore().addLog('WARN', `网络请求失败，${delayMs}ms 后自动重试 (${attempt + 1}/${MAX_NETWORK_RETRIES})`, { error: fetchErr.message, endpoint })
-                    await new Promise(r => setTimeout(r, delayMs))
+                    useLoggerStore().addLog(
+                        'WARN',
+                        `网络请求失败，${delayMs}ms 后自动重试 (${attempt + 1}/${MAX_NETWORK_RETRIES})`,
+                        { error: fetchErr.message, endpoint },
+                    )
+                    await new Promise((r) => setTimeout(r, delayMs))
                 } else {
                     throw fetchErr // 最后一次或非网络错误，直接抛出
                 }
             }
         }
 
-        let data;
+        let data
 
         if (reqBody.stream && response.ok) {
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder("utf-8");
-            let fullContent = "";
-            let done = false;
-            let streamUsage = null;
+            const reader = response.body.getReader()
+            const decoder = new TextDecoder('utf-8')
+            let fullContent = ''
+            let done = false
+            let streamUsage = null
 
             // [BUG FIX] buffer 保留跨 chunk 的不完整行, 防止 SSE 半行 JSON 丢失
-            let buffer = "";
+            let buffer = ''
             try {
                 while (!done) {
-                    const { value, done: readerDone } = await reader.read();
-                    done = readerDone;
+                    const { value, done: readerDone } = await reader.read()
+                    done = readerDone
                     if (value) {
-                        buffer += decoder.decode(value, { stream: true });
-                        const lines = buffer.split("\n");
-                        buffer = lines.pop() || ""; // 最后一段可能不完整, 留给下个 chunk
+                        buffer += decoder.decode(value, { stream: true })
+                        const lines = buffer.split('\n')
+                        buffer = lines.pop() || '' // 最后一段可能不完整, 留给下个 chunk
                         for (const line of lines) {
-                            if (line.startsWith("data: ")) {
-                                const dataStr = line.replace(/^data: /, "").trim();
-                                if (dataStr === "[DONE]") break;
+                            if (line.startsWith('data: ')) {
+                                const dataStr = line.replace(/^data: /, '').trim()
+                                if (dataStr === '[DONE]') break
                                 try {
-                                    const json = JSON.parse(dataStr);
-                                    const delta = json.choices?.[0]?.delta?.content || "";
+                                    const json = JSON.parse(dataStr)
+                                    const delta = json.choices?.[0]?.delta?.content || ''
                                     if (delta) {
-                                        fullContent += delta;
-                                        if (options.onChunk) options.onChunk(delta, fullContent);
+                                        fullContent += delta
+                                        if (options.onChunk) options.onChunk(delta, fullContent)
                                     }
                                     // 提取流式响应中的 usage 数据（部分API在最后一个chunk返回）
                                     if (json.usage) {
-                                        streamUsage = json.usage;
+                                        streamUsage = json.usage
                                     }
-                                } catch (e) { /* ignore partial json */ }
+                                } catch (e) {
+                                    /* ignore partial json */
+                                }
                             }
                         }
                     }
@@ -1566,20 +1929,24 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                 // [BUG FIX] decoder flush: 用 {stream:true} 解码时, 解码器内部可能缓存
                 // 不完整 UTF-8 尾字节 (多字节字符被截断), 循环结束后必须再调一次无参
                 // decode() 把残留字节冲刷出来, 否则最后一个字符可能丢失 (中文/emoji).
-                const tail = decoder.decode();
+                const tail = decoder.decode()
                 if (tail) {
-                    buffer += tail;
-                    const lastLine = buffer.startsWith("data: ") ? buffer.replace(/^data: /, "").trim() : null;
-                    if (lastLine && lastLine !== "[DONE]") {
+                    buffer += tail
+                    const lastLine = buffer.startsWith('data: ')
+                        ? buffer.replace(/^data: /, '').trim()
+                        : null
+                    if (lastLine && lastLine !== '[DONE]') {
                         try {
-                            const json = JSON.parse(lastLine);
-                            const delta = json.choices?.[0]?.delta?.content || "";
+                            const json = JSON.parse(lastLine)
+                            const delta = json.choices?.[0]?.delta?.content || ''
                             if (delta) {
-                                fullContent += delta;
-                                if (options.onChunk) options.onChunk(delta, fullContent);
+                                fullContent += delta
+                                if (options.onChunk) options.onChunk(delta, fullContent)
                             }
-                            if (json.usage) streamUsage = json.usage;
-                        } catch (e) { /* ignore */ }
+                            if (json.usage) streamUsage = json.usage
+                        } catch (e) {
+                            /* ignore */
+                        }
                     }
                 }
             } catch (streamError) {
@@ -1590,28 +1957,37 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                 //    改为: AbortError 直接 re-throw, 让调用方感知取消.
                 //  - 真正的网络中断仍用部分内容继续 (原有行为).
                 if (streamError?.name === 'AbortError') {
-                    throw streamError;
+                    throw streamError
                 }
-                console.warn('[Stream Error] Connection interrupted, using partial content:', fullContent);
+                console.warn(
+                    '[Stream Error] Connection interrupted, using partial content:',
+                    fullContent,
+                )
                 // Continue with whatever we got
             } finally {
                 // [BUG FIX] reader 资源清理: 原代码无 finally, reader 在出错/abort 时
                 // 不会 cancel/releaseLock, 底层 HTTP 连接泄漏 (直到 GC, 可能数分钟).
                 // 频繁触发会耗尽浏览器连接池.
-                try { reader.cancel() } catch (_) {}
-                try { reader.releaseLock() } catch (_) {}
+                try {
+                    reader.cancel()
+                } catch (_) {}
+                try {
+                    reader.releaseLock()
+                } catch (_) {}
             }
-            
+
             // Create a mock data object for the rest of the parsing pipeline
             data = {
-                choices: [{
-                    message: { content: fullContent },
-                    finish_reason: 'stop'
-                }],
-                usage: streamUsage || { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 }
-            };
+                choices: [
+                    {
+                        message: { content: fullContent },
+                        finish_reason: 'stop',
+                    },
+                ],
+                usage: streamUsage || { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 },
+            }
         } else if (response.ok) {
-            data = await response.json().catch(() => null);
+            data = await response.json().catch(() => null)
             console.log('[AI Response Raw]', data)
         }
 
@@ -1626,7 +2002,8 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             // Hint for 503 Token/Service Error
             if (response.status === 503) {
                 if (errText.includes('Token') || errText.includes('refresh')) {
-                    errorMsg += ' (提示: 代理服务的 Token 刷新失败。这不是代码问题，而是您的 API Key 或代理服务器内部账号过期，请尝试更换 Key 或模型。)'
+                    errorMsg +=
+                        ' (提示: 代理服务的 Token 刷新失败。这不是代码问题，而是您的 API Key 或代理服务器内部账号过期，请尝试更换 Key 或模型。)'
                 } else {
                     errorMsg += ' (提示: 服务暂时不可用，请稍后重试。)'
                 }
@@ -1634,29 +2011,36 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             // Hint for Thinking Budget 400
             if (response.status === 400) {
                 if (errText.includes('thinking_budget')) {
-                    errorMsg += ' (提示: 检测到模型代理注入了不支持的参数 thinking_budget。请尝试更换不带 "nothinking" 后缀的模型名称。)'
+                    errorMsg +=
+                        ' (提示: 检测到模型代理注入了不支持的参数 thinking_budget。请尝试更换不带 "nothinking" 后缀的模型名称。)'
                 } else {
                     // AUTO-RETRY LOGIC for General 400 (likely image corruption)
-                    console.warn('[AI Service] 400 Error detected. Attempting text-only fallback...', errText)
+                    console.warn(
+                        '[AI Service] 400 Error detected. Attempting text-only fallback...',
+                        errText,
+                    )
 
                     // 1. Strip images from payload
                     const textOnlyBody = JSON.parse(JSON.stringify(reqBody))
                     if (textOnlyBody.contents) {
                         // Gemini Format
-                        textOnlyBody.contents.forEach(c => {
-                            if (c.parts) c.parts = c.parts.filter(p => !p.inline_data && !p.image_url)
+                        textOnlyBody.contents.forEach((c) => {
+                            if (c.parts)
+                                c.parts = c.parts.filter((p) => !p.inline_data && !p.image_url)
                         })
                     } else if (textOnlyBody.messages) {
                         // OpenAI Format
-                        textOnlyBody.messages.forEach(m => {
+                        textOnlyBody.messages.forEach((m) => {
                             if (Array.isArray(m.content)) {
-                                m.content = m.content.filter(c => c.type === 'text')
+                                m.content = m.content.filter((c) => c.type === 'text')
                             }
                         })
                     }
 
                     // 2. Add System Note
-                    useLoggerStore().addLog('AI', '⚠️ 400错误自动重试 (转纯文本模式/SystemOrder)', { originalError: errText })
+                    useLoggerStore().addLog('AI', '⚠️ 400错误自动重试 (转纯文本模式/SystemOrder)', {
+                        originalError: errText,
+                    })
 
                     // 3. Retry Request
                     // [BUG FIX] 补上 signal: 用户在 400 重试期间点"停止", abort 不会传到
@@ -1665,7 +2049,7 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                         method: 'POST',
                         headers: reqHeaders,
                         body: JSON.stringify(textOnlyBody),
-                        signal: signal || undefined
+                        signal: signal || undefined,
                     })
 
                     if (retryResp.ok) {
@@ -1691,49 +2075,54 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
         let rawContent = ''
 
         if (data.choices && data.choices.length > 0) {
-            const message = data.choices[0].message || {};
-            rawContent = message.content || message.text || '';
+            const message = data.choices[0].message || {}
+            rawContent = message.content || message.text || ''
 
             // [FIX] v1.10.63: 思考型模型兜底 — content 可能是空，真实内容在 reasoning_content
             // 适用: DeepSeek-R1 / Doubao-thinking / Claude-extended / o1 系列
             if (!rawContent && message.reasoning_content) {
-                const rc = String(message.reasoning_content).trim();
+                const rc = String(message.reasoning_content).trim()
                 if (rc) {
-                    console.log('[AI Service] content 为空，使用 reasoning_content 兜底 (len=' + rc.length + ')');
-                    rawContent = rc;
+                    console.log(
+                        '[AI Service] content 为空，使用 reasoning_content 兜底 (len=' +
+                            rc.length +
+                            ')',
+                    )
+                    rawContent = rc
                 }
             }
 
             // Fallback: If content is empty but tool_calls exist (likely thinking/search)
             if (!rawContent && message.tool_calls && message.tool_calls.length > 0) {
-                const thoughtCall = message.tool_calls.find(tc =>
-                    tc.function?.name === 'thought' ||
-                    tc.function?.name === 'search' ||
-                    tc.type === 'thought'
-                );
+                const thoughtCall = message.tool_calls.find(
+                    (tc) =>
+                        tc.function?.name === 'thought' ||
+                        tc.function?.name === 'search' ||
+                        tc.type === 'thought',
+                )
                 if (thoughtCall) {
                     try {
-                        const args = JSON.parse(thoughtCall.function.arguments);
-                        rawContent = args.thought || args.query || args.thinking || '';
+                        const args = JSON.parse(thoughtCall.function.arguments)
+                        rawContent = args.thought || args.query || args.thinking || ''
                     } catch (e) {
-                        rawContent = thoughtCall.function?.arguments || '';
+                        rawContent = thoughtCall.function?.arguments || ''
                     }
                 }
             }
         } else if (data.candidates && data.candidates.length > 0) {
             // Google/Gemini Format
-            const contents = data.candidates[0].content || {};
-            const parts = contents.parts || [];
+            const contents = data.candidates[0].content || {}
+            const parts = contents.parts || []
 
             // Check for text parts
-            const textPart = parts.find(p => p.text);
+            const textPart = parts.find((p) => p.text)
             if (textPart) {
-                rawContent = textPart.text;
+                rawContent = textPart.text
             } else {
                 // Check for reasoning/thought parts (Gemini 2.0 Thinking)
-                const thoughtPart = parts.find(p => p.thought || p.reasoning_content);
+                const thoughtPart = parts.find((p) => p.thought || p.reasoning_content)
                 if (thoughtPart) {
-                    rawContent = thoughtPart.thought || thoughtPart.reasoning_content;
+                    rawContent = thoughtPart.thought || thoughtPart.reasoning_content
                 }
             }
         }
@@ -1743,19 +2132,22 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             // [FIX] v1.10.63: 额外记录 message 完整字段，便于诊断代理/模型问题
             const messageDump = (() => {
                 try {
-                    const m = data.choices?.[0]?.message || {};
+                    const m = data.choices?.[0]?.message || {}
                     return {
                         content: m.content,
                         reasoning_content: m.reasoning_content,
                         refusal: m.refusal,
                         tool_calls: m.tool_calls,
-                        finish_reason: data.choices?.[0]?.finish_reason
-                    };
-                } catch (e) { return null; }
-            })();
+                        finish_reason: data.choices?.[0]?.finish_reason,
+                    }
+                } catch (e) {
+                    return null
+                }
+            })()
             useLoggerStore().addLog('WARN', 'AI 返回内容为空', { data, messageDump })
             // Check for safety/finish reason
-            const finishReason = data.choices?.[0]?.finish_reason || data.candidates?.[0]?.finishReason
+            const finishReason =
+                data.choices?.[0]?.finish_reason || data.candidates?.[0]?.finishReason
             if (finishReason === 'safety' || finishReason === 'content_filter') {
                 return {
                     error: '内容被 AI 安全策略拦截 (Safety Filter)',
@@ -1763,15 +2155,19 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                         provider,
                         endpoint,
                         headers: reqHeaders,
-                        body: reqBody
-                    }
+                        body: reqBody,
+                    },
                 }
             }
             // If it's a tool call we couldn't parse, just say it's processing
             if (data.choices?.[0]?.message?.tool_calls) {
-                return { content: '正在思考中...', innerVoice: null, raw: JSON.stringify(data.choices[0].message.tool_calls) }
+                return {
+                    content: '正在思考中...',
+                    innerVoice: null,
+                    raw: JSON.stringify(data.choices[0].message.tool_calls),
+                }
             }
-                    
+
             // AUTO-RETRY: If empty content, retry once with shorter context
             if (!options.retryAttempt) {
                 useLoggerStore().addLog('AI', '⚠️ 空内容自动重试...', { originalData: data })
@@ -1785,9 +2181,10 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                     const currentMaxTokens = Number(maxTokens) || 4096
                     const bumped = Math.max(currentMaxTokens * 2, 8192)
                     retryOptions.overrideMaxTokens = Math.min(bumped, 32768)
-                    useLoggerStore().addLog('AI',
+                    useLoggerStore().addLog(
+                        'AI',
                         `检测到 finish_reason=length, 提高 max_tokens ${currentMaxTokens} → ${retryOptions.overrideMaxTokens} 重试`,
-                        { model, finishReason, completionTokens: data.usage?.completion_tokens }
+                        { model, finishReason, completionTokens: data.usage?.completion_tokens },
                     )
                 } else if (options.characters && options.characters.length > 3) {
                     // Only use first 3 characters for retry
@@ -1797,28 +2194,32 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                 // Recursive retry
                 return await _generateReplyInternal(messages, char, signal, retryOptions)
             }
-                    
+
             return {
                 error: 'AI 返回了空内容（已重试仍失败）',
                 request: {
                     provider,
                     endpoint,
                     headers: reqHeaders,
-                    body: reqBody
-                }
+                    body: reqBody,
+                },
             }
         }
 
         // --- Call Protocol Enforcement (Aggressive Extraction) ---
         if (options.isCall && rawContent) {
             // Find the deepest/last JSON block that contains 'speech'
-            const jsonBlocks = [...rawContent.matchAll(/\{[\s\S]*?\}/g)];
+            const jsonBlocks = [...rawContent.matchAll(/\{[\s\S]*?\}/g)]
             for (let i = jsonBlocks.length - 1; i >= 0; i--) {
-                const block = jsonBlocks[i][0];
-                if (block.includes('"speech"') || block.includes('"status"') || block.includes('"action"')) {
-                    rawContent = `[CALL_START]\n${block}\n[CALL_END]`;
-                    console.log('[AI Service] Call Protocol: Extracted and wrapped JSON block');
-                    break;
+                const block = jsonBlocks[i][0]
+                if (
+                    block.includes('"speech"') ||
+                    block.includes('"status"') ||
+                    block.includes('"action"')
+                ) {
+                    rawContent = `[CALL_START]\n${block}\n[CALL_END]`
+                    console.log('[AI Service] Call Protocol: Extracted and wrapped JSON block')
+                    break
                 }
             }
         }
@@ -1827,15 +2228,20 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
         if (data.usage) {
             const input = data.usage.prompt_tokens || 0
             const output = data.usage.completion_tokens || 0
-            const total = data.usage.total_tokens || (input + output)
-            useLoggerStore().addLog(total > 50000 ? 'WARN' : 'INFO', `Token: ${input}入/${output}出 = ${total}`, data.usage)
+            const total = data.usage.total_tokens || input + output
+            useLoggerStore().addLog(
+                total > 50000 ? 'WARN' : 'INFO',
+                `Token: ${input}入/${output}出 = ${total}`,
+                data.usage,
+            )
         }
 
         // ========== 【长记忆检索 RAG-lite】==========
         const searchPattern = /\[\s*SEARCH\s*\]([\s\S]*?)\[\s*\/\s*SEARCH\s*\]/i
         const searchMatch = rawContent.match(searchPattern)
 
-        if (searchMatch && !options._isSearchRetry) { // Prevent infinite loops
+        if (searchMatch && !options._isSearchRetry) {
+            // Prevent infinite loops
             console.log('[AI Service] AI Requested History Search!')
             try {
                 const searchArgs = JSON.parse(searchMatch[1].trim())
@@ -1843,7 +2249,7 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
 
                 // 1. Perform local search
                 const store = useChatStore()
-                const searchResults = store.searchHistory(char.id, searchArgs) 
+                const searchResults = store.searchHistory(char.id, searchArgs)
 
                 // 2. Build injection block
                 let searchInjection = `\n\n【系统提示：您刚才发起了记忆检索，以下是本地数据库中找到的关联聊天记录，请结合以下记忆重新回答用户。】\n`
@@ -1860,8 +2266,10 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                 newMessages.push({ role: 'system', content: searchInjection }) // Pushed the system's reply to the invocation
 
                 // Recursive call (must set a flag to prevent loops)
-                return await _generateReplyInternal(newMessages, char, signal, { ...options, _isSearchRetry: true })
-
+                return await _generateReplyInternal(newMessages, char, signal, {
+                    ...options,
+                    _isSearchRetry: true,
+                })
             } catch (searchErr) {
                 console.error('[AI Service] Search parsing failed:', searchErr)
                 useLoggerStore().addLog('WARN', 'AI记忆检索指令解析失败', searchErr.message)
@@ -1873,20 +2281,21 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             rawContent = rawContent.replace(searchPattern, '').trim()
         }
 
-
         // ========== 【终极修复版】心声提取逻辑（完美支持嵌套JSON，不认标签只认内容） ==========
         let content = rawContent
         let innerVoice = null
 
         // [SKIP PROCESSING] Special flag for data-only requests (like generating members/summaries)
         if (options.skipProcessing) {
-            console.log('[AI Service] skipProcessing enabled - returning raw content');
-            content = content.replace(/<reasoning_content>[\s\S]*?<\/reasoning_content>/gi, '').trim()
+            console.log('[AI Service] skipProcessing enabled - returning raw content')
+            content = content
+                .replace(/<reasoning_content>[\s\S]*?<\/reasoning_content>/gi, '')
+                .trim()
             return {
                 content,
                 innerVoice: null,
                 raw: rawContent,
-                request: { provider, endpoint, headers: reqHeaders, body: reqBody }
+                request: { provider, endpoint, headers: reqHeaders, body: reqBody },
             }
         }
 
@@ -1898,8 +2307,8 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
          * 策略 B: 字段级正则  — JSON 格式不合法时的兜底
          */
         function tryExtractInnerVoice(text) {
-            const result = {};
-            let foundCount = 0;
+            const result = {}
+            let foundCount = 0
 
             // ====== 预处理：还原转义字符与 JSON 修复 ======
             if (text.includes('\\"') || text.includes('\\n')) {
@@ -1907,44 +2316,51 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                     .replace(/\\"/g, '"')
                     .replace(/\\n/g, '\n')
                     .replace(/\\t/g, '  ')
-                    .replace(/\\\\/g, '\\');
+                    .replace(/\\\\/g, '\\')
             }
             // 修复 AI 常见的 JSON 格式错误：双引号重复、尾部逗号、中文引号等
-            text = text.trim()
-                .replace(/([^\\])""/g, '$1"')  // 修复 "value"" 这种多了一个引号的情况
-                .replace(/[“＂”]/g, '"')       // 统一全角双引号
-                .replace(/，/g, ',')           // 统一全角逗号
-                .replace(/：/g, ':')           // 统一全角冒号
+            text = text
+                .trim()
+                .replace(/([^\\])""/g, '$1"') // 修复 "value"" 这种多了一个引号的情况
+                .replace(/[“＂”]/g, '"') // 统一全角双引号
+                .replace(/，/g, ',') // 统一全角逗号
+                .replace(/：/g, ':') // 统一全角冒号
                 .replace(/,\s*([\}\]])/g, '$1') // 移除数组或对象末尾多余的逗号
-                .replace(/([{,]\s*)([a-zA-Z0-9_\u4e00-\u9fa5]+)\s*:/g, '$1"$2":'); // 给没加引号的 key 补上引号
+                .replace(/([{,]\s*)([a-zA-Z0-9_\u4e00-\u9fa5]+)\s*:/g, '$1"$2":') // 给没加引号的 key 补上引号
 
             // ====== 策略A：整体 JSON.parse（最高优先级）======
             // 用平衡括号法找到最外层 {} 块
-            const firstBrace = text.indexOf('{');
+            const firstBrace = text.indexOf('{')
             if (firstBrace !== -1) {
-                let depth = 0;
-                let endIdx = -1;
+                let depth = 0
+                let endIdx = -1
                 for (let i = firstBrace; i < text.length; i++) {
-                    if (text[i] === '{') depth++;
+                    if (text[i] === '{') depth++
                     else if (text[i] === '}') {
-                        depth--;
-                        if (depth === 0) { endIdx = i + 1; break; }
+                        depth--
+                        if (depth === 0) {
+                            endIdx = i + 1
+                            break
+                        }
                     }
                 }
                 if (endIdx > firstBrace + 1) {
                     try {
-                        let jsonStr = text.substring(firstBrace, endIdx);
+                        let jsonStr = text.substring(firstBrace, endIdx)
                         // Fix unescaped newlines/quotes inside string values before parsing
                         jsonStr = fixJsonStringValues(jsonStr)
-                        const parsed = JSON.parse(jsonStr);
+                        const parsed = JSON.parse(jsonStr)
                         // 确认是心声 JSON（含已知中文字段或 stats/status）
-                        const knownKeys = ['status', '心声', '着装', '环境', '行为', 'stats'];
-                        if (knownKeys.some(k => parsed[k] !== undefined)) {
-                            console.log('[AI Service] 心声 JSON.parse 成功', Object.keys(parsed));
-                            return parsed; // ✅ 直接返回，无需正则
+                        const knownKeys = ['status', '心声', '着装', '环境', '行为', 'stats']
+                        if (knownKeys.some((k) => parsed[k] !== undefined)) {
+                            console.log('[AI Service] 心声 JSON.parse 成功', Object.keys(parsed))
+                            return parsed // ✅ 直接返回，无需正则
                         }
                     } catch (e) {
-                        console.log('[AI Service] JSON.parse 失败，回落到字段正则', e.message?.substring(0, 80));
+                        console.log(
+                            '[AI Service] JSON.parse 失败，回落到字段正则',
+                            e.message?.substring(0, 80),
+                        )
                     }
                 }
             }
@@ -1952,154 +2368,224 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             // ====== 策略 B：字段级正则（兜底）======
 
             // 裸露英文 stats 子字段检测
-            const nakedStatsPattern = /(?:^|\n)\s*["']?(spirit|mood|heartRate|distance|location|energy|stress|intimacy|trust|temperature|hunger|thirst|bladder|sleepiness|emotion)["']?\s*[:：][ \t]*[\s\S]*?(?=\n\s*["']?(?:spirit|mood|heartRate|distance|location|energy|stress|intimacy|trust|temperature|hunger|thirst|bladder|sleepiness|status|stats|emotion|speech|action|behavior|outfit|environment|mind|thought)["']?\s*[:：]|\n\s*[\/\[{"']|$)/gi;
-            const nakedStatsMatches = [...text.matchAll(nakedStatsPattern)];
+            const nakedStatsPattern =
+                /(?:^|\n)\s*["']?(spirit|mood|heartRate|distance|location|energy|stress|intimacy|trust|temperature|hunger|thirst|bladder|sleepiness|emotion)["']?\s*[:：][ \t]*[\s\S]*?(?=\n\s*["']?(?:spirit|mood|heartRate|distance|location|energy|stress|intimacy|trust|temperature|hunger|thirst|bladder|sleepiness|status|stats|emotion|speech|action|behavior|outfit|environment|mind|thought)["']?\s*[:：]|\n\s*[\/\[{"']|$)/gi
+            const nakedStatsMatches = [...text.matchAll(nakedStatsPattern)]
             if (nakedStatsMatches.length >= 2) {
-                let statsObj = {};
-                let hasNakedStats = false;
+                let statsObj = {}
+                let hasNakedStats = false
                 for (const nm of nakedStatsMatches) {
                     try {
-                        const fieldName = nm[1];
-                        let fieldValue = nm[0].trim().replace(new RegExp(`^\\s*["']?${fieldName}["']?\\s*[:：]\\s*`), '');
-                        fieldValue = fieldValue.trim().replace(/[,\}]?\s*$/, '');
-                        if ((fieldValue.startsWith('"') && fieldValue.endsWith('"')) ||
-                            (fieldValue.startsWith("'") && fieldValue.endsWith("'"))) {
-                            fieldValue = fieldValue.slice(1, -1);
+                        const fieldName = nm[1]
+                        let fieldValue = nm[0]
+                            .trim()
+                            .replace(new RegExp(`^\\s*["']?${fieldName}["']?\\s*[:：]\\s*`), '')
+                        fieldValue = fieldValue.trim().replace(/[,\}]?\s*$/, '')
+                        if (
+                            (fieldValue.startsWith('"') && fieldValue.endsWith('"')) ||
+                            (fieldValue.startsWith("'") && fieldValue.endsWith("'"))
+                        ) {
+                            fieldValue = fieldValue.slice(1, -1)
                         } else if (/^-?\d+(\.\d+)?$/.test(fieldValue)) {
-                            fieldValue = parseFloat(fieldValue);
+                            fieldValue = parseFloat(fieldValue)
                         } else if (fieldValue.startsWith('{')) {
-                            try { fieldValue = JSON.parse(fieldValue.replace(/,\s*$/, '')); } catch(e) {}
+                            try {
+                                fieldValue = JSON.parse(fieldValue.replace(/,\s*$/, ''))
+                            } catch (e) {}
                         }
-                        statsObj[fieldName] = fieldValue;
-                        hasNakedStats = true;
-                    } catch(e) {}
+                        statsObj[fieldName] = fieldValue
+                        hasNakedStats = true
+                    } catch (e) {}
                 }
                 if (hasNakedStats && Object.keys(statsObj).length >= 2) {
-                    result.stats = { ...result.stats, ...statsObj };
-                    foundCount++;
-                    text = text.replace(nakedStatsPattern, '\n').replace(/\n{2,}/g, '\n').trim();
+                    result.stats = { ...result.stats, ...statsObj }
+                    foundCount++
+                    text = text
+                        .replace(nakedStatsPattern, '\n')
+                        .replace(/\n{2,}/g, '\n')
+                        .trim()
                 }
             }
 
             // 通用字段提取器：匹配到下一个已知字段名为止，兼容单行和多行JSON
             function extractField(keyRegexStr, sourceText) {
                 // 策略1：直接匹配双引号包裹的字符串值（最可靠，适用于绝大多数AI输出）
-                const quotedRegex = new RegExp(`["']?(?:${keyRegexStr})["']?\\s*[:：]\\s*"([^"]*)"`, 'i');
-                const quotedMatch = sourceText.match(quotedRegex);
+                const quotedRegex = new RegExp(
+                    `["']?(?:${keyRegexStr})["']?\\s*[:：]\\s*"([^"]*)"`,
+                    'i',
+                )
+                const quotedMatch = sourceText.match(quotedRegex)
                 if (quotedMatch) {
-                    return quotedMatch[1].trim();
+                    return quotedMatch[1].trim()
                 }
 
                 // 策略2：匹配中文引号「」包裹的值
-                const cnQuotedRegex = new RegExp(`["']?(?:${keyRegexStr})["']?\\s*[:：]\\s*「([^」]*)」`, 'i');
-                const cnQuotedMatch = sourceText.match(cnQuotedRegex);
+                const cnQuotedRegex = new RegExp(
+                    `["']?(?:${keyRegexStr})["']?\\s*[:：]\\s*「([^」]*)」`,
+                    'i',
+                )
+                const cnQuotedMatch = sourceText.match(cnQuotedRegex)
                 if (cnQuotedMatch) {
-                    return cnQuotedMatch[1].trim();
+                    return cnQuotedMatch[1].trim()
                 }
 
                 // 策略3：通用兜底 — 用逗号+已知字段名或闭合花括号作前瞻（兼容单行和多行）
-                const knownKeys = 'status|state|心声|心心声|着装|环境|行为|stats|spirit|mood|heartRate|distance|location|energy|stress|intimacy|trust|temperature|hunger|thirst|bladder|sleepiness|emotion|date|time';
-                const nextKeyLookahead = `(?:\\s*,\\s*["']?(?:${knownKeys})["']?\\s*[:：]|\\s*["']?\\s*\\}[\\s\\S]*$)`;
-                const regex = new RegExp(`["']?(?:${keyRegexStr})["']?\\s*[:：]\\s*["「]?([\\s\\S]*)(?:${nextKeyLookahead})`, 'i');
-                const match = sourceText.match(regex);
+                const knownKeys =
+                    'status|state|心声|心心声|着装|环境|行为|stats|spirit|mood|heartRate|distance|location|energy|stress|intimacy|trust|temperature|hunger|thirst|bladder|sleepiness|emotion|date|time'
+                const nextKeyLookahead = `(?:\\s*,\\s*["']?(?:${knownKeys})["']?\\s*[:：]|\\s*["']?\\s*\\}[\\s\\S]*$)`
+                const regex = new RegExp(
+                    `["']?(?:${keyRegexStr})["']?\\s*[:：]\\s*["「]?([\\s\\S]*)(?:${nextKeyLookahead})`,
+                    'i',
+                )
+                const match = sourceText.match(regex)
                 if (match) {
-                    let val = match[1].trim();
-                    val = val.replace(/^["「]/, '').replace(/["」]$/, '');
-                    val = val.replace(/[,"\\]+$/, '').trim();
-                    return val;
+                    let val = match[1].trim()
+                    val = val.replace(/^["「]/, '').replace(/["」]$/, '')
+                    val = val.replace(/[,"\\]+$/, '').trim()
+                    return val
                 }
-                return null;
+                return null
             }
 
-            const m_status = extractField('status|state', text);
-            if (m_status) { result.status = m_status; foundCount++; }
+            const m_status = extractField('status|state', text)
+            if (m_status) {
+                result.status = m_status
+                foundCount++
+            }
 
-            const m_voice = extractField('心心声|心声', text);
-            console.log('[AI Service] 心声提取 - 原始文本片段:', text.substring(0, 300), '提取结果:', m_voice);
-            if (m_voice) { result['心声'] = m_voice; foundCount++; }
+            const m_voice = extractField('心心声|心声', text)
+            console.log(
+                '[AI Service] 心声提取 - 原始文本片段:',
+                text.substring(0, 300),
+                '提取结果:',
+                m_voice,
+            )
+            if (m_voice) {
+                result['心声'] = m_voice
+                foundCount++
+            }
 
-            const m_outfit = extractField('着装', text);
-            if (m_outfit) { result['着装'] = m_outfit; foundCount++; }
+            const m_outfit = extractField('着装', text)
+            if (m_outfit) {
+                result['着装'] = m_outfit
+                foundCount++
+            }
 
-            const m_env = extractField('环境', text);
-            if (m_env) { result['环境'] = m_env; foundCount++; }
+            const m_env = extractField('环境', text)
+            if (m_env) {
+                result['环境'] = m_env
+                foundCount++
+            }
 
-            const m_action = extractField('行为', text);
-            if (m_action) { result['行为'] = m_action; foundCount++; }
+            const m_action = extractField('行为', text)
+            if (m_action) {
+                result['行为'] = m_action
+                foundCount++
+            }
             // stats: 支持嵌套JSON的平衡花括号提取（AI返回的 emotion/spirit/mood 都是对象）
-            const m6 = text.match(/["']?stats["']?\s*[:：]\s*(\{)/);
+            const m6 = text.match(/["']?stats["']?\s*[:：]\s*(\{)/)
             if (m6) {
-                const startIdx = text.indexOf('{', m6.index);
+                const startIdx = text.indexOf('{', m6.index)
                 if (startIdx !== -1) {
-                    let depth = 0;
-                    let endIdx = startIdx;
+                    let depth = 0
+                    let endIdx = startIdx
                     for (let i = startIdx; i < text.length; i++) {
-                        if (text[i] === '{') depth++;
+                        if (text[i] === '{') depth++
                         else if (text[i] === '}') {
-                            depth--;
-                            if (depth === 0) { endIdx = i + 1; break; }
+                            depth--
+                            if (depth === 0) {
+                                endIdx = i + 1
+                                break
+                            }
                         }
                     }
                     if (endIdx > startIdx + 1) {
-                        try { result.stats = JSON.parse(text.substring(startIdx, endIdx)); foundCount++; } catch (e) {}
+                        try {
+                            result.stats = JSON.parse(text.substring(startIdx, endIdx))
+                            foundCount++
+                        } catch (e) {}
                     }
                 }
             }
-            return foundCount > 0 ? result : null;
+            return foundCount > 0 ? result : null
         }
 
         // ======== 核心提取与无情剥离流程 ========
         if (!isCallProtocol && !isCommandTask && !isSimpleTask) {
-            
             // 模式 1: 规范情况，含 [INNER_VOICE] 标签
-            const ivPattern = /\[\s*INNER[\s-_]*VOICE\s*\]([\s\S]*?)(?:\[\/\s*(?:INNER[\s-_]*)?VOICE\s*\]|(?=\n\s*\[(?:CARD|ONLINE|OFFLINE|IMAGE|VIDEO|AUDIO|FILE|MOMENT|红包|转账|表情包|图片))|$)/i;
-            const ivMatch = content.match(ivPattern);
+            const ivPattern =
+                /\[\s*INNER[\s-_]*VOICE\s*\]([\s\S]*?)(?:\[\/\s*(?:INNER[\s-_]*)?VOICE\s*\]|(?=\n\s*\[(?:CARD|ONLINE|OFFLINE|IMAGE|VIDEO|AUDIO|FILE|MOMENT|红包|转账|表情包|图片))|$)/i
+            const ivMatch = content.match(ivPattern)
             if (ivMatch) {
-                console.log('[AI Service] InnerVoice tag matched, content length:', ivMatch[1].length);
-                innerVoice = tryExtractInnerVoice(ivMatch[1]);
-                console.log('[AI Service] tryExtractInnerVoice result:', innerVoice ? Object.keys(innerVoice) : 'null');
-                
+                console.log(
+                    '[AI Service] InnerVoice tag matched, content length:',
+                    ivMatch[1].length,
+                )
+                innerVoice = tryExtractInnerVoice(ivMatch[1])
+                console.log(
+                    '[AI Service] tryExtractInnerVoice result:',
+                    innerVoice ? Object.keys(innerVoice) : 'null',
+                )
+
                 // Fallback: If AI leaked stats outside the [INNER_VOICE] tag, try to recover them from rawContent
-                if (!innerVoice || !innerVoice.stats || (!innerVoice.spirit && !innerVoice.emotion && !innerVoice.mood)) {
-                     const fallbackVoice = tryExtractInnerVoice(rawContent);
-                     if (fallbackVoice && Object.keys(fallbackVoice).length > 0) {
-                          innerVoice = innerVoice || {};
-                          // Merge properties, prioritizing naked stats regex recovery if deeply missing
-                          innerVoice = { ...fallbackVoice, ...innerVoice }; 
-                          if (fallbackVoice.stats && innerVoice.stats) {
-                              innerVoice.stats = { ...fallbackVoice.stats, ...innerVoice.stats };
-                          } else if (fallbackVoice.stats) {
-                              innerVoice.stats = fallbackVoice.stats;
-                          }
-                          console.log('[AI Service] 从标签外部找回泄露的心声字段/Stats:', Object.keys(fallbackVoice));
-                     }
+                if (
+                    !innerVoice ||
+                    !innerVoice.stats ||
+                    (!innerVoice.spirit && !innerVoice.emotion && !innerVoice.mood)
+                ) {
+                    const fallbackVoice = tryExtractInnerVoice(rawContent)
+                    if (fallbackVoice && Object.keys(fallbackVoice).length > 0) {
+                        innerVoice = innerVoice || {}
+                        // Merge properties, prioritizing naked stats regex recovery if deeply missing
+                        innerVoice = { ...fallbackVoice, ...innerVoice }
+                        if (fallbackVoice.stats && innerVoice.stats) {
+                            innerVoice.stats = { ...fallbackVoice.stats, ...innerVoice.stats }
+                        } else if (fallbackVoice.stats) {
+                            innerVoice.stats = fallbackVoice.stats
+                        }
+                        console.log(
+                            '[AI Service] 从标签外部找回泄露的心声字段/Stats:',
+                            Object.keys(fallbackVoice),
+                        )
+                    }
                 }
 
                 // 保留 INNER_VOICE 块在 content 中，由 ChatMessageItem 解析并渲染为心声卡片
                 if (innerVoice) {
-                    console.log('[AI Service] 心声提取成功（标签模式）', Object.keys(innerVoice));
+                    console.log('[AI Service] 心声提取成功（标签模式）', Object.keys(innerVoice))
                 } else {
-                    console.warn('[AI Service] 心声块存在但解析失败，保留标签由前端清理');
+                    console.warn('[AI Service] 心声块存在但解析失败，保留标签由前端清理')
                 }
             } else {
                 // 模式 2: AI 忘记标签，直接输出裸露的 JSON 对象 `{ "status": ... }`
-                const firstBrace = content.indexOf('{');
+                const firstBrace = content.indexOf('{')
                 if (firstBrace !== -1) {
-                    let depth = 0;
-                    let endIdx = -1;
+                    let depth = 0
+                    let endIdx = -1
                     for (let i = firstBrace; i < content.length; i++) {
-                        if (content[i] === '{') depth++;
+                        if (content[i] === '{') depth++
                         else if (content[i] === '}') {
-                            depth--;
-                            if (depth === 0) { endIdx = i + 1; break; }
+                            depth--
+                            if (depth === 0) {
+                                endIdx = i + 1
+                                break
+                            }
                         }
                     }
                     if (endIdx > firstBrace + 1) {
-                        const jsonStr = content.substring(firstBrace, endIdx);
-                        const strippedJsonObj = tryExtractInnerVoice(jsonStr);
-                        if (strippedJsonObj || jsonStr.includes('footprint') || jsonStr.includes('diary') || jsonStr.includes('type')) {
-                            innerVoice = strippedJsonObj || innerVoice;
-                            console.log('[AI Service] 心声/指令提取成功（裸露 JSON 对象模式）', innerVoice ? Object.keys(innerVoice) : 'JSON detected');
+                        const jsonStr = content.substring(firstBrace, endIdx)
+                        const strippedJsonObj = tryExtractInnerVoice(jsonStr)
+                        if (
+                            strippedJsonObj ||
+                            jsonStr.includes('footprint') ||
+                            jsonStr.includes('diary') ||
+                            jsonStr.includes('type')
+                        ) {
+                            innerVoice = strippedJsonObj || innerVoice
+                            console.log(
+                                '[AI Service] 心声/指令提取成功（裸露 JSON 对象模式）',
+                                innerVoice ? Object.keys(innerVoice) : 'JSON detected',
+                            )
                             // 保留在 content 中，由前端组件渲染
                         }
                     }
@@ -2107,29 +2593,43 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             }
 
             // 模式 3: 漏网之鱼字段扫描（AI 把 stats 或其他字段扔在结构外）
-            const supplement = tryExtractInnerVoice(content);
+            const supplement = tryExtractInnerVoice(content)
             if (supplement) {
-                if (!innerVoice) innerVoice = {};
+                if (!innerVoice) innerVoice = {}
                 for (const [key, val] of Object.entries(supplement)) {
                     if (innerVoice[key] === undefined || innerVoice[key] === null) {
-                        innerVoice[key] = val;
+                        innerVoice[key] = val
                     }
                 }
-                console.log('[AI Service] 心声补充提取（残兵败将扫描合并）', Object.keys(supplement), '→ 合并后', Object.keys(innerVoice));
+                console.log(
+                    '[AI Service] 心声补充提取（残兵败将扫描合并）',
+                    Object.keys(supplement),
+                    '→ 合并后',
+                    Object.keys(innerVoice),
+                )
             }
-            
+
             // 🗑️ 统一清洁工：拔除哪怕一点点外泄可能存在的残留结构
             // 清理裸露的 stats 块和散落的英文属性行
-            content = content.replace(/[\r\n\s]*[,，]?\s*["']?(?:stats|type|footprint|diary|sticky|commands)["']?\s*[:：]\s*(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|[^,\n\]]+)/gi, '');
-            content = content.replace(/[\r\n\s]*["']?(spirit|mood|heartRate|distance|location|energy|stress|intimacy|trust|temperature|hunger|thirst|bladder|sleepiness|emotion|date|time)["']?\s*[:：][^\n]*/gi, '');
-            
+            content = content.replace(
+                /[\r\n\s]*[,，]?\s*["']?(?:stats|type|footprint|diary|sticky|commands)["']?\s*[:：]\s*(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}|[^,\n\]]+)/gi,
+                '',
+            )
+            content = content.replace(
+                /[\r\n\s]*["']?(spirit|mood|heartRate|distance|location|energy|stress|intimacy|trust|temperature|hunger|thirst|bladder|sleepiness|emotion|date|time)["']?\s*[:：][^\n]*/gi,
+                '',
+            )
+
             // 对散落的中文特征属性，进行安全、保守行清理（仅当以"key": "value"开头单独占行时清理）
-            const chineseKeys = ['status', 'state', '心声', '心心声', '着装', '环境', '行为'];
-            chineseKeys.forEach(key => {
-                const garbageReg = new RegExp(`^[\\r\\n\\s]*["']?${key}["']?\\s*[:：]\\s*["「].*?["」]`, 'gm');
-                content = content.replace(garbageReg, '');
-            });
-            content = content.trim();
+            const chineseKeys = ['status', 'state', '心声', '心心声', '着装', '环境', '行为']
+            chineseKeys.forEach((key) => {
+                const garbageReg = new RegExp(
+                    `^[\\r\\n\\s]*["']?${key}["']?\\s*[:：]\\s*["「].*?["」]`,
+                    'gm',
+                )
+                content = content.replace(garbageReg, '')
+            })
+            content = content.trim()
         }
 
         // Clean up residual tags from display text
@@ -2137,31 +2637,37 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             .replace(/\[(\s*)INNER(\s*)_VOICE(\s*)\]/gi, '')
             .replace(/\[(\s*)\/(\s*)INNER(\s*)_VOICE(\s*)\]/gi, '')
             .replace(/^\s*[\r\n]/gm, '')
-            .trim();
-        if (!content || content.length === 0) content = '\u5598';
+            .trim()
+        if (!content || content.length === 0) content = '\u5598'
 
         // Fill defaults only for missing extracted fields (preserve real AI output!)
         if (innerVoice && !isCallProtocol && !isCommandTask && !isSimpleTask) {
-            const now = new Date();
+            const now = new Date()
             innerVoice = {
                 status: innerVoice.status || '\u6b63\u5e38\u5bf9\u8bdd',
-                '\u7740\u88c5': innerVoice['\u7740\u88c5'] || '\u4e0a\u88c5\uff1a\u65e5\u5e38\u7a7f\u642d \u4e0b\u88c5\uff1a\u4f11\u95f2\u88e4 \u978b\u5b50\uff1a\u5c0f\u767d\u978b \u88c5\u9970\uff1a\u65e0',
-                '\u73af\u5883': innerVoice['\u73af\u5883'] || now.toLocaleDateString('zh-CN') + ' \u5ba4\u5185 \u5e38\u6e29 \u5b89\u9759\u73af\u5883',
+                '\u7740\u88c5':
+                    innerVoice['\u7740\u88c5'] ||
+                    '\u4e0a\u88c5\uff1a\u65e5\u5e38\u7a7f\u642d \u4e0b\u88c5\uff1a\u4f11\u95f2\u88e4 \u978b\u5b50\uff1a\u5c0f\u767d\u978b \u88c5\u9970\uff1a\u65e0',
+                '\u73af\u5883':
+                    innerVoice['\u73af\u5883'] ||
+                    now.toLocaleDateString('zh-CN') +
+                        ' \u5ba4\u5185 \u5e38\u6e29 \u5b89\u9759\u73af\u5883',
                 '\u5fc3\u58f0': innerVoice['\u5fc3\u58f0'] || '',
-                '\u884c\u4e3a': innerVoice['\u884c\u4e3a'] || '\u3010\u7ebf\u4e0a\u3011\u6b63\u62ff\u7740\u624b\u673a\u56de\u590d\u7528\u6237\u7684\u6d88\u606f',
+                '\u884c\u4e3a':
+                    innerVoice['\u884c\u4e3a'] ||
+                    '\u3010\u7ebf\u4e0a\u3011\u6b63\u62ff\u7740\u624b\u673a\u56de\u590d\u7528\u6237\u7684\u6d88\u606f',
                 stats: innerVoice.stats || {
                     date: now.toLocaleDateString('zh-CN'),
                     time: now.toLocaleTimeString('zh-CN', { hour12: false }),
-                    emotion: { label: "\u5e73\u9759", value: 60 },
-                    spirit: { label: "\u6b63\u5e38", value: 70 },
-                    mood: { label: "\u5e73\u7a33", value: 65 },
-                    location: "\u672a\u77e5\u5730\u70b9",
-                    distance: "\u672a\u77e5\u8ddd\u79bb"
-                }
-            };
+                    emotion: { label: '\u5e73\u9759', value: 60 },
+                    spirit: { label: '\u6b63\u5e38', value: 70 },
+                    mood: { label: '\u5e73\u7a33', value: 65 },
+                    location: '\u672a\u77e5\u5730\u70b9',
+                    distance: '\u672a\u77e5\u8ddd\u79bb',
+                },
+            }
         }
         // ========== 【心声提取v2结束】 ==========
-
 
         // 移除 <reasoning_content> (如果有)
         content = content.replace(/<reasoning_content>[\s\S]*?<\/reasoning_content>/gi, '').trim()
@@ -2174,23 +2680,28 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                 provider,
                 endpoint,
                 headers: reqHeaders,
-                body: reqBody
-            }
+                body: reqBody,
+            },
         }
-
     } catch (error) {
         console.error('AI Generation Failed:', error)
         // [FIX] Ensure error is logged to System Logs UI with actionable hint
         try {
             const _msg = (error && error.message) || String(error)
-            const _isNet = error instanceof TypeError && (
-                _msg.includes('Failed to fetch') ||
-                _msg.includes('NetworkError') ||
-                _msg.includes('Network request failed') ||
-                _msg.includes('Load failed')
+            const _isNet =
+                error instanceof TypeError &&
+                (_msg.includes('Failed to fetch') ||
+                    _msg.includes('NetworkError') ||
+                    _msg.includes('Network request failed') ||
+                    _msg.includes('Load failed'))
+            const _hint = _isNet
+                ? ' → 请检查 设置→API 里的 Base URL 是否可访问/有效，或网络/代理是否可用'
+                : ''
+            useLoggerStore().addLog(
+                'ERROR',
+                `API请求失败 (${endpoint || '未知接口'}): ${_msg}${_hint}`,
+                { error: error.toString(), stack: error.stack, endpoint },
             )
-            const _hint = _isNet ? ' → 请检查 设置→API 里的 Base URL 是否可访问/有效，或网络/代理是否可用' : ''
-            useLoggerStore().addLog('ERROR', `API请求失败 (${endpoint || '未知接口'}): ${_msg}${_hint}`, { error: error.toString(), stack: error.stack, endpoint })
         } catch (logErr) {
             console.error('Logger failed:', logErr)
         }
@@ -2205,15 +2716,19 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
 
             // Check if we actually changed the model to avoid infinite retry of same thing
             if (cleanModel !== model) {
-                useLoggerStore().addLog('WARN', `检测到代理注入异常，尝试『根源净化』(去除前缀+后缀: ${cleanModel}) 并重置Token限制...`, { from: model, to: cleanModel })
+                useLoggerStore().addLog(
+                    'WARN',
+                    `检测到代理注入异常，尝试『根源净化』(去除前缀+后缀: ${cleanModel}) 并重置Token限制...`,
+                    { from: model, to: cleanModel },
+                )
 
-                // Deep clone messages or use fullMessages if available in scope?? 
+                // Deep clone messages or use fullMessages if available in scope??
                 // We need to re-call _generateReplyInternal but we need arguments.
                 // Actually we can just re-fetch here if we update reqBody.
 
                 // Update reqBody
                 reqBody.model = cleanModel
-                // [FIX] Cap max_tokens to safe limit (8192) because standard Gemini models don't support >65536 output, 
+                // [FIX] Cap max_tokens to safe limit (8192) because standard Gemini models don't support >65536 output,
                 // and user settings might be huge (e.g. 2999256).
                 reqBody.max_tokens = 8192
 
@@ -2223,7 +2738,7 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                         headers: reqHeaders,
                         body: JSON.stringify(reqBody),
                         // [BUG FIX] 补 signal, 同 400 重试路径
-                        signal: signal || undefined
+                        signal: signal || undefined,
                     })
 
                     if (!retryResponse.ok) {
@@ -2235,7 +2750,7 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                     useLoggerStore().addLog('AI', '自动重试成功 (Retry Success)', retryData)
 
                     // ... Duplicate parsing logic ...
-                    // To avoid code duplication, we return a recursive call? 
+                    // To avoid code duplication, we return a recursive call?
                     // No, internal function signature is strictly messages/char/signal.
                     // We can't change 'char' easily here.
 
@@ -2251,22 +2766,31 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
                     // Post-process
                     let content = rawRetry
                     let innerVoice = null
-                    const ivMatch = content.match(/\[\s*INNER[\s-_]*VOICE\s*\]([\s\S]*?)(?:\[\/\s*(?:INNER[\s-_]*)?VOICE\s*\]|(?=\n\s*\[(?:CARD|ONLINE|OFFLINE|IMAGE|VIDEO|AUDIO|FILE|MOMENT|红包|转账|表情包|图片))|$)/i)
+                    const ivMatch = content.match(
+                        /\[\s*INNER[\s-_]*VOICE\s*\]([\s\S]*?)(?:\[\/\s*(?:INNER[\s-_]*)?VOICE\s*\]|(?=\n\s*\[(?:CARD|ONLINE|OFFLINE|IMAGE|VIDEO|AUDIO|FILE|MOMENT|红包|转账|表情包|图片))|$)/i,
+                    )
                     if (ivMatch) {
                         try {
-                            let segment = ivMatch[1].trim().replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '').trim()
+                            let segment = ivMatch[1]
+                                .trim()
+                                .replace(/^```json\s*/i, '')
+                                .replace(/^```\s*/, '')
+                                .replace(/\s*```$/, '')
+                                .trim()
                             try {
                                 innerVoice = JSON.parse(segment)
                             } catch (e) {
                                 const jsonObjectMatch = segment.match(/\{[\s\S]*\}/)
-                                if (jsonObjectMatch) innerVoice = JSON.parse(jsonObjectMatch[0].trim())
+                                if (jsonObjectMatch)
+                                    innerVoice = JSON.parse(jsonObjectMatch[0].trim())
                             }
-                        } catch (e) { }
+                        } catch (e) {}
                     }
-                    content = content.replace(/<reasoning_content>[\s\S]*?<\/reasoning_content>/gi, '').trim()
+                    content = content
+                        .replace(/<reasoning_content>[\s\S]*?<\/reasoning_content>/gi, '')
+                        .trim()
 
                     return { content, innerVoice, raw: rawRetry }
-
                 } catch (retryErr) {
                     useLoggerStore().addLog('ERROR', '自动重试失败', retryErr.message)
                     // Fall through to return original error
@@ -2279,7 +2803,11 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
 }
 
 export async function generateSummary(messages, customPrompt = '', abortSignal) {
-    return apiQueue.enqueue(_generateSummaryInternal, [messages, customPrompt, abortSignal], abortSignal);
+    return apiQueue.enqueue(
+        _generateSummaryInternal,
+        [messages, customPrompt, abortSignal],
+        abortSignal,
+    )
 }
 
 async function _generateSummaryInternal(messages, customPrompt = '', signal) {
@@ -2299,12 +2827,20 @@ async function _generateSummaryInternal(messages, customPrompt = '', signal) {
     if (!config || !apiKey || !model) return 'API未配置 (检查Key/模型/基础URL)'
 
     const now = new Date()
-    const dateStr = now.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })
+    const dateStr = now.toLocaleDateString('zh-CN', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        weekday: 'long',
+    })
     const timeStr = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
     const timeContext = `\n\n【当前真实时间】${dateStr} ${timeStr}。总结中涉及的所有日期和时间必须基于这个真实时间，禁止编造日期。`
 
     // System Prompt (The instruction to summarize)
-    const systemContent = (customPrompt || '请简要总结上述对话的主要内容和关键信息，作为长期记忆归档。请保持客观，不要使用第一人称。') + timeContext
+    const systemContent =
+        (customPrompt ||
+            '请简要总结上述对话的主要内容和关键信息，作为长期记忆归档。请保持客观，不要使用第一人称。') +
+        timeContext
 
     // --- PROVIDER SWITCHING LOGIC ---
     let endpoint = apiUrl || ''
@@ -2334,7 +2870,7 @@ async function _generateSummaryInternal(messages, customPrompt = '', signal) {
         // Convert History to Contents
         // Convert History to Contents (Robust for Gemini: alternate user/model + start with user)
         const geminiContents = []
-        messages.forEach(msg => {
+        messages.forEach((msg) => {
             let role = msg.role
             if (role === 'system') return // Skip system msgs in history for Gemini
             if (role === 'assistant' || role === 'ai') role = 'model'
@@ -2342,18 +2878,22 @@ async function _generateSummaryInternal(messages, customPrompt = '', signal) {
 
             let text = ''
             if (typeof msg.content === 'string') text = msg.content
-            else if (Array.isArray(msg.content)) text = msg.content.map(p => p.text || '').join('\n')
+            else if (Array.isArray(msg.content))
+                text = msg.content.map((p) => p.text || '').join('\n')
             else text = JSON.stringify(msg.content)
 
             if (!text.trim()) return
 
-            if (geminiContents.length > 0 && geminiContents[geminiContents.length - 1].role === role) {
+            if (
+                geminiContents.length > 0 &&
+                geminiContents[geminiContents.length - 1].role === role
+            ) {
                 // Combine consecutive same-role messages for Gemini
                 geminiContents[geminiContents.length - 1].parts[0].text += '\n' + text
             } else {
                 geminiContents.push({
                     role: role,
-                    parts: [{ text: text }]
+                    parts: [{ text: text }],
                 })
             }
         })
@@ -2368,16 +2908,15 @@ async function _generateSummaryInternal(messages, customPrompt = '', signal) {
             system_instruction: systemInstruction,
             generationConfig: {
                 temperature: 0.3,
-                maxOutputTokens: 4000,  // 思考型模型需要更多 token 预算
+                maxOutputTokens: 4000, // 思考型模型需要更多 token 预算
             },
             safetySettings: [
-                { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-                { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-            ]
+                { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+                { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+                { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+                { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+            ],
         }
-
     } else {
         // --- OPENAI MODE ---
         // 1. Full Messages Chain
@@ -2391,7 +2930,9 @@ async function _generateSummaryInternal(messages, customPrompt = '', signal) {
             } else if (endpoint.endsWith('/v1/')) {
                 endpoint = `${endpoint}chat/completions`
             } else {
-                endpoint = endpoint.endsWith('/') ? `${endpoint}chat/completions` : `${endpoint}/chat/completions`
+                endpoint = endpoint.endsWith('/')
+                    ? `${endpoint}chat/completions`
+                    : `${endpoint}/chat/completions`
             }
         }
 
@@ -2401,8 +2942,8 @@ async function _generateSummaryInternal(messages, customPrompt = '', signal) {
             model: model,
             messages: fullMessages,
             temperature: 0.3,
-            max_tokens: 4000,  // 思考型模型需要更多 token 预算
-            stream: false
+            max_tokens: 4000, // 思考型模型需要更多 token 预算
+            stream: false,
         }
     }
 
@@ -2413,7 +2954,7 @@ async function _generateSummaryInternal(messages, customPrompt = '', signal) {
         model,
         endpoint,
         // Clone to avoid mutation issues if any
-        requestBody: JSON.parse(JSON.stringify(reqBody))
+        requestBody: JSON.parse(JSON.stringify(reqBody)),
     })
 
     try {
@@ -2431,24 +2972,30 @@ async function _generateSummaryInternal(messages, customPrompt = '', signal) {
                     // [BUG FIX] 补 signal: _generateSummaryInternal 接收了 signal 参数,
                     // 但 fetch 没传, 用户切页面/取消总结时无法中断, 队列槽位被占用阻塞后续请求.
                     // 对比 _generateReplyInternal 主 fetch (line ~1468) 已正确传 signal.
-                    signal: signal || undefined
+                    signal: signal || undefined,
                 })
             } catch (fetchErr) {
-                const isNetworkError = fetchErr instanceof TypeError &&
+                const isNetworkError =
+                    fetchErr instanceof TypeError &&
                     (fetchErr.message.includes('Failed to fetch') ||
-                     fetchErr.message.includes('NetworkError') ||
-                     fetchErr.message.includes('Network request failed') ||
-                     fetchErr.message.includes('Load failed'))
+                        fetchErr.message.includes('NetworkError') ||
+                        fetchErr.message.includes('Network request failed') ||
+                        fetchErr.message.includes('Load failed'))
                 if (isNetworkError && attempt < MAX_SUMMARY_RETRIES - 1) {
                     const delayMs = Math.min(1000 * Math.pow(2, attempt), 5000)
-                    useLoggerStore().addLog('WARN', `总结请求网络失败，${delayMs}ms 后重试 (${attempt + 1}/${MAX_SUMMARY_RETRIES})`, { error: fetchErr.message })
-                    await new Promise(r => setTimeout(r, delayMs))
+                    useLoggerStore().addLog(
+                        'WARN',
+                        `总结请求网络失败，${delayMs}ms 后重试 (${attempt + 1}/${MAX_SUMMARY_RETRIES})`,
+                        { error: fetchErr.message },
+                    )
+                    await new Promise((r) => setTimeout(r, delayMs))
                     continue
                 }
                 throw fetchErr
             }
 
-            if (!response.ok) throw new Error(`API Error: ${response.status} ${await response.text()}`)
+            if (!response.ok)
+                throw new Error(`API Error: ${response.status} ${await response.text()}`)
 
             // [BUG FIX] response.json() 在 body 为空/HTML 错误页/非 JSON 时会 throw,
             // 直接跳出 for 循环落到外层 catch, 下面的"非有效对象重试"逻辑 (line 2421)
@@ -2458,25 +3005,32 @@ async function _generateSummaryInternal(messages, customPrompt = '', signal) {
             // [FIX] 防御 response.json() 返回 null 或非对象值（某些代理在空 body 时返回 null）
             if (!data || typeof data !== 'object') {
                 if (attempt < MAX_SUMMARY_RETRIES - 1) {
-                    useLoggerStore().addLog('WARN', `总结响应非有效JSON对象，1.5s 后重试 (${attempt + 1}/${MAX_SUMMARY_RETRIES})`, { dataType: typeof data })
-                    await new Promise(r => setTimeout(r, 1500))
+                    useLoggerStore().addLog(
+                        'WARN',
+                        `总结响应非有效JSON对象，1.5s 后重试 (${attempt + 1}/${MAX_SUMMARY_RETRIES})`,
+                        { dataType: typeof data },
+                    )
+                    await new Promise((r) => setTimeout(r, 1500))
                     continue
                 }
                 throw new Error(`Invalid API response: expected object, got ${typeof data}`)
             }
 
             // [FIX] 空响应重试：Gemini 有时返回 choices=[] 或 completion_tokens=0（安全过滤/限流）
-            const isEmptyResponse = (
+            const isEmptyResponse =
                 (Array.isArray(data.choices) && data.choices.length === 0) ||
                 (Array.isArray(data.candidates) && data.candidates.length === 0) ||
                 data.usage?.completion_tokens === 0
-            )
             if (isEmptyResponse && attempt < MAX_SUMMARY_RETRIES - 1) {
-                useLoggerStore().addLog('WARN', `总结返回空响应（可能被安全过滤），1.5s 后重试 (${attempt + 1}/${MAX_SUMMARY_RETRIES})`, { model: data.model, usage: data.usage })
-                await new Promise(r => setTimeout(r, 1500))
+                useLoggerStore().addLog(
+                    'WARN',
+                    `总结返回空响应（可能被安全过滤），1.5s 后重试 (${attempt + 1}/${MAX_SUMMARY_RETRIES})`,
+                    { model: data.model, usage: data.usage },
+                )
+                await new Promise((r) => setTimeout(r, 1500))
                 continue
             }
-            break  // 成功获取非空响应，退出重试循环
+            break // 成功获取非空响应，退出重试循环
         }
 
         // Parse Response (Enhanced Robust - 多路径兼容各种 API 代理格式)
@@ -2492,7 +3046,11 @@ async function _generateSummaryInternal(messages, customPrompt = '', signal) {
             if (!content && message.reasoning_content) {
                 const rc = String(message.reasoning_content).trim()
                 if (rc) {
-                    console.log('[AI Service Summary] content 为空,使用 reasoning_content 兜底 (len=' + rc.length + ')')
+                    console.log(
+                        '[AI Service Summary] content 为空,使用 reasoning_content 兜底 (len=' +
+                            rc.length +
+                            ')',
+                    )
                     content = rc
                 }
             }
@@ -2500,31 +3058,51 @@ async function _generateSummaryInternal(messages, customPrompt = '', signal) {
         // 路径2: Gemini 格式 candidates[0].content.parts[0].text
         if (!content && data.candidates && data.candidates.length > 0) {
             const candidate = data.candidates[0]
-            content = candidate.content?.parts?.[0]?.text ||
-                       candidate.content?.parts?.[0]?.content ||
-                       candidate.text ||
-                       ''
+            content =
+                candidate.content?.parts?.[0]?.text ||
+                candidate.content?.parts?.[0]?.content ||
+                candidate.text ||
+                ''
             // 兼容：遍历所有 parts 取第一个有文本的
             if (!content && Array.isArray(candidate.content?.parts)) {
                 for (const part of candidate.content.parts) {
-                    if (part.text) { content = part.text; break }
-                    if (part.content) { content = part.content; break }
+                    if (part.text) {
+                        content = part.text
+                        break
+                    }
+                    if (part.content) {
+                        content = part.content
+                        break
+                    }
                     // 思考型 Gemini 兜底:thought / reasoning_content
-                    if (part.thought) { content = part.thought; break }
-                    if (part.reasoning_content) { content = part.reasoning_content; break }
+                    if (part.thought) {
+                        content = part.thought
+                        break
+                    }
+                    if (part.reasoning_content) {
+                        content = part.reasoning_content
+                        break
+                    }
                 }
             }
         }
         // 路径3: 某些代理返回 data.output / data.response / data.text / data.result
         if (!content) {
-            content = data.output || data.response || data.text || data.result ||
-                     data.data?.content || data.data?.text || ''
+            content =
+                data.output ||
+                data.response ||
+                data.text ||
+                data.result ||
+                data.data?.content ||
+                data.data?.text ||
+                ''
         }
         // 路径4: 兼容嵌套结构 data.data.choices / data.body 等
         if (!content && data.data) {
             const nested = data.data
             if (nested.choices?.[0]?.message?.content) content = nested.choices[0].message.content
-            else if (nested.candidates?.[0]?.content?.parts?.[0]?.text) content = nested.candidates[0].content.parts[0].text
+            else if (nested.candidates?.[0]?.content?.parts?.[0]?.text)
+                content = nested.candidates[0].content.parts[0].text
         }
         // 路径5: 深度搜索任何字符串内容（兜底）
         if (!content && typeof data === 'object') {
@@ -2536,9 +3114,10 @@ async function _generateSummaryInternal(messages, customPrompt = '', signal) {
 
         if (!content) {
             // 尝试从 finish_reason 给出更友好的错误
-            const finishReason = data.choices?.[0]?.finish_reason
-                || data.candidates?.[0]?.finishReason
-                || data.candidates?.[0]?.finish_reason
+            const finishReason =
+                data.choices?.[0]?.finish_reason ||
+                data.candidates?.[0]?.finishReason ||
+                data.candidates?.[0]?.finish_reason
             let extraHint = ''
             if (finishReason === 'length') {
                 extraHint = ' (模型达到 max_tokens 上限被截断,可尝试 max_tokens 或换模型)'
@@ -2548,12 +3127,13 @@ async function _generateSummaryInternal(messages, customPrompt = '', signal) {
                 extraHint = ' (模型输出为空)'
             }
             useLoggerStore().addLog('WARN', '总结结果为空 (Raw Response)' + extraHint, data)
-            throw new Error(`Empty Content - finish_reason=${finishReason || 'unknown'}${extraHint}`)
+            throw new Error(
+                `Empty Content - finish_reason=${finishReason || 'unknown'}${extraHint}`,
+            )
         }
 
         useLoggerStore().addLog('AI', '总结结果 (Response)', { content })
         return content
-
     } catch (e) {
         console.error('Summary API Error:', e)
         useLoggerStore().addLog('ERROR', '总结失败', e.message)
@@ -2577,17 +3157,24 @@ Strictly output ONLY the English prompt text without any explanations.`
 
     const messages = [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Translate and expand this to a drawing prompt: ${text}` }
+        { role: 'user', content: `Translate and expand this to a drawing prompt: ${text}` },
     ]
 
     try {
-        const result = await apiQueue.enqueue(_generateReplyInternal, [messages, { name: 'Translator' }, null])
+        const result = await apiQueue.enqueue(_generateReplyInternal, [
+            messages,
+            { name: 'Translator' },
+            null,
+        ])
         if (result.error) return text
 
-        let translated = result.content || text;
+        let translated = result.content || text
         // Aggressively strip unwanted style keywords causing "oiliness"
-        translated = translated.replace(/\b(photorealistic|realistic|3d|cinematic|oil paiting|hyperrealistic|studio lighting|8k)\b/gi, "");
-        return translated;
+        translated = translated.replace(
+            /\b(photorealistic|realistic|3d|cinematic|oil paiting|hyperrealistic|studio lighting|8k)\b/gi,
+            '',
+        )
+        return translated
     } catch (e) {
         console.error('Translation failed:', e)
         return text
@@ -2639,18 +3226,32 @@ ${worldContext ? `\n【背景参考】\n${worldContext}` : ''}`
     const messages = [{ role: 'system', content: systemPrompt }]
 
     try {
-        const result = await apiQueue.enqueue(_generateReplyInternal, [messages, { name }, null, { skipVisualContext: true }])
+        const result = await apiQueue.enqueue(_generateReplyInternal, [
+            messages,
+            { name },
+            null,
+            { skipVisualContext: true },
+        ])
         if (result.error) throw new Error(result.error)
 
         // Parse the JSON from AI response with robust cleaning
         let jsonStr = result.content.trim()
 
         // Remove markdown code blocks if present
-        jsonStr = jsonStr.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+        jsonStr = jsonStr
+            .replace(/```json\s*/gi, '')
+            .replace(/```\s*/g, '')
+            .trim()
 
         // Clean protocol tags that may leak into JSON response (INNER_VOICE, OFFLINE, ONLINE, DONE, etc.)
-        jsonStr = jsonStr.replace(/[\[【]\s*(?:INNER[-_ ]?VOICE|心声)\s*[\]】][\s\S]*?(?:[\[【]\s*\/\s*(?:INNER[-_ ]?VOICE|心声)\s*[\]】]|(?=\s*[\[【]\s*(?:CARD|LS_JSON|情侣空间|IMAGE|OFFLINE|ONLINE|DONE|\/))|$)/gi, '')
-        jsonStr = jsonStr.replace(/[\[【]\s*(?:\/?\s*(?:OFFLINE|ONLINE|DONE|DONE_TOKEN|INNER[-_ ]?VOICE|心声))\s*[\]】]/gi, '')
+        jsonStr = jsonStr.replace(
+            /[\[【]\s*(?:INNER[-_ ]?VOICE|心声)\s*[\]】][\s\S]*?(?:[\[【]\s*\/\s*(?:INNER[-_ ]?VOICE|心声)\s*[\]】]|(?=\s*[\[【]\s*(?:CARD|LS_JSON|情侣空间|IMAGE|OFFLINE|ONLINE|DONE|\/))|$)/gi,
+            '',
+        )
+        jsonStr = jsonStr.replace(
+            /[\[【]\s*(?:\/?\s*(?:OFFLINE|ONLINE|DONE|DONE_TOKEN|INNER[-_ ]?VOICE|心声))\s*[\]】]/gi,
+            '',
+        )
         jsonStr = jsonStr.trim()
         if (!jsonStr) throw new Error('AI 返回内容仅包含协议标签，无有效 JSON')
 
@@ -2658,8 +3259,15 @@ ${worldContext ? `\n【背景参考】\n${worldContext}` : ''}`
         const objectStartIndex = jsonStr.indexOf('{')
         const objectEndIndex = jsonStr.lastIndexOf('}')
 
-        if (objectStartIndex === -1 || objectEndIndex === -1 || objectEndIndex <= objectStartIndex) {
-            console.error('[Moment] Cannot find JSON object in response:', jsonStr.substring(0, 500))
+        if (
+            objectStartIndex === -1 ||
+            objectEndIndex === -1 ||
+            objectEndIndex <= objectStartIndex
+        ) {
+            console.error(
+                '[Moment] Cannot find JSON object in response:',
+                jsonStr.substring(0, 500),
+            )
             throw new Error('AI Response does not contain a valid JSON object')
         }
 
@@ -2683,7 +3291,7 @@ ${worldContext ? `\n【背景参考】\n${worldContext}` : ''}`
             location: data.location || '',
             images: [],
             imageDescriptions: [],
-            interactions: data.interactions || []
+            interactions: data.interactions || [],
         }
 
         if (data.imagePrompt) {
@@ -2694,7 +3302,6 @@ ${worldContext ? `\n【背景参考】\n${worldContext}` : ''}`
         }
 
         return finalResult
-
     } catch (e) {
         console.error('[aiService] generateMomentContent failed', e)
         throw e
@@ -2709,20 +3316,34 @@ ${worldContext ? `\n【背景参考】\n${worldContext}` : ''}`
 function extractBalancedJSON(text) {
     const openers = { '{': '}', '[': ']' }
     const closers = { '}': '{', ']': '[' }
-    let inString = false, stringChar = '', depth = 0
-    let start = -1, openChar = '', closeChar = ''
+    let inString = false,
+        stringChar = '',
+        depth = 0
+    let start = -1,
+        openChar = '',
+        closeChar = ''
 
     for (let i = 0; i < text.length; i++) {
         const ch = text[i]
         if (inString) {
-            if (ch === '\\') { i++; continue }
+            if (ch === '\\') {
+                i++
+                continue
+            }
             if (ch === stringChar) inString = false
             continue
         }
-        if (ch === '"' || ch === "'") { inString = true; stringChar = ch; continue }
+        if (ch === '"' || ch === "'") {
+            inString = true
+            stringChar = ch
+            continue
+        }
 
         if (depth === 0 && openers[ch]) {
-            depth = 1; start = i; openChar = ch; closeChar = openers[ch]
+            depth = 1
+            start = i
+            openChar = ch
+            closeChar = openers[ch]
             continue
         }
         if (depth > 0) {
@@ -2757,14 +3378,28 @@ function sanitizeJSON(text, aggressive = false) {
 
 function fixMalformedStringValues(jsonStr) {
     let result = ''
-    let inString = false, stringChar = '', escaped = false
+    let inString = false,
+        stringChar = '',
+        escaped = false
     for (let i = 0; i < jsonStr.length; i++) {
         const ch = jsonStr[i]
-        if (escaped) { result += ch; escaped = false; continue }
-        if (ch === '\\' && inString) { result += ch; escaped = true; continue }
+        if (escaped) {
+            result += ch
+            escaped = false
+            continue
+        }
+        if (ch === '\\' && inString) {
+            result += ch
+            escaped = true
+            continue
+        }
         if ((ch === '"' || ch === "'") && !escaped) {
-            if (inString && ch === stringChar) { inString = false }
-            else if (!inString) { inString = true; stringChar = ch }
+            if (inString && ch === stringChar) {
+                inString = false
+            } else if (!inString) {
+                inString = true
+                stringChar = ch
+            }
             result += ch
             continue
         }
@@ -2783,67 +3418,99 @@ function fixMalformedStringValues(jsonStr) {
 }
 
 export async function generateBatchMomentsWithInteractions(options) {
-    const { characters, worldContext, customPrompt, userProfile, historicalMoments = [], count = 3 } = options
+    const {
+        characters,
+        worldContext,
+        customPrompt,
+        userProfile,
+        historicalMoments = [],
+        count = 3,
+    } = options
 
     // 1. Build character list with recent chat snippets for context
     // 全局统一声明表情列表（节省 token）
     const allEmojis = new Set()
-       
-    const charList = characters.map((c, idx) => {
-        const bio = localStorage.getItem(`char_bio_${c.id}`) || ''
-        const bioText = bio ? `\n   个人简介/详细背景：${bio}` : ''
-   
-        // 获取该角色对应的用户设定（如果有）
-        const userSpecificName = c.userName || userProfile?.name || '用户'
-        const userSpecificPersona = c.userPersona ? `\n   【用户（${userSpecificName}）在此角色剧本中的身份/设定】：${c.userPersona}` : ''
-   
-        const chatText = c.recentChats ? `\n   最近聊天碎片：${c.recentChats.substring(0, 500)}` : ''
-        const personalHistoryText = c.personalHistory ? `\n   TA 最近发过：${c.personalHistory.substring(0, 300)}` : ''
-   
-        // 收集所有表情包（去重），不在每个角色后重复
-        if (c.emojis && c.emojis.length > 0) {
-            c.emojis.forEach(e => allEmojis.add(e.name))
-        }
-   
-        return `${idx + 1}. 【${c.name}】(ID: ${c.id})
+
+    const charList = characters
+        .map((c, idx) => {
+            const bio = localStorage.getItem(`char_bio_${c.id}`) || ''
+            const bioText = bio ? `\n   个人简介/详细背景：${bio}` : ''
+
+            // 获取该角色对应的用户设定（如果有）
+            const userSpecificName = c.userName || userProfile?.name || '用户'
+            const userSpecificPersona = c.userPersona
+                ? `\n   【用户（${userSpecificName}）在此角色剧本中的身份/设定】：${c.userPersona}`
+                : ''
+
+            const chatText = c.recentChats
+                ? `\n   最近聊天碎片：${c.recentChats.substring(0, 500)}`
+                : ''
+            const personalHistoryText = c.personalHistory
+                ? `\n   TA 最近发过：${c.personalHistory.substring(0, 300)}`
+                : ''
+
+            // 收集所有表情包（去重），不在每个角色后重复
+            if (c.emojis && c.emojis.length > 0) {
+                c.emojis.forEach((e) => allEmojis.add(e.name))
+            }
+
+            return `${idx + 1}. 【${c.name}】(ID: ${c.id})
    核心人设：${c.persona || ''}${bioText}${userSpecificPersona}
    --- 
    当前与用户关系：${c.name} 称呼用户为"${userSpecificName}"${chatText}${personalHistoryText}`
-    }).join('\n\n')
-       
+        })
+        .join('\n\n')
+
     // 全局统一声明表情列表（节省 token）
-    const globalEmojiList = allEmojis.size > 0
-        ? `\n\n【通用表情包池】（所有角色都可使用，格式：[表情包：名字]）\n${Array.from(allEmojis).map(name => `  - "${name}"`).join('\n')}`
-        : ''
+    const globalEmojiList =
+        allEmojis.size > 0
+            ? `\n\n【通用表情包池】（所有角色都可使用，格式：[表情包：名字]）\n${Array.from(
+                  allEmojis,
+              )
+                  .map((name) => `  - "${name}"`)
+                  .join('\n')}`
+            : ''
 
     const now = new Date()
     const weekDays = ['日', '一', '二', '三', '四', '五', '六']
     const currentVirtualTime = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')} 星期${weekDays[now.getDay()]}`
 
     // 2. Build explicit recent history to allow "Ecosystem Interactions"
-    const historyText = historicalMoments.length > 0
-        ? "\n【最近20条朋友圈现状（请分析后决定是否进行互动，如回复评论、补赞、用户点赞等）】\n" + historicalMoments.map(m => {
-            const commentsStr = (m.comments || []).map(c => `   - [评论] ${c.authorName}: ${c.content}`).join('\n')
-            const likesStr = (m.likes || []).join(', ')
-            return `动态ID: ${m.id}
+    const historyText =
+        historicalMoments.length > 0
+            ? '\n【最近20条朋友圈现状（请分析后决定是否进行互动，如回复评论、补赞、用户点赞等）】\n' +
+              historicalMoments
+                  .map((m) => {
+                      const commentsStr = (m.comments || [])
+                          .map((c) => `   - [评论] ${c.authorName}: ${c.content}`)
+                          .join('\n')
+                      const likesStr = (m.likes || []).join(', ')
+                      return `动态ID: ${m.id}
 作者：${m.authorName}
 内容: ${m.content}
 评论区:
 ${commentsStr || '   (暂无评论)'}`
-        }).join('\n\n')
-        : ""
+                  })
+                  .join('\n\n')
+            : ''
 
     // Include user's bio and pinned moments if available
-    let userContextText = userProfile?.name ? `\n\n【当前用户 (${userProfile.name}) 资料】` : ""
+    let userContextText = userProfile?.name ? `\n\n【当前用户 (${userProfile.name}) 资料】` : ''
     if (userProfile?.signature) userContextText += `\n个性签名：${userProfile.signature}`
     if (userProfile?.pinnedMoments?.length > 0) {
-        userContextText += `\n置顶动态：\n` + userProfile.pinnedMoments.map((m, i) => `${i + 1}. ${m.content}`).join('\n')
+        userContextText +=
+            `\n置顶动态：\n` +
+            userProfile.pinnedMoments.map((m, i) => `${i + 1}. ${m.content}`).join('\n')
     }
     if (userProfile?.persona) userContextText += `\n背景设定：${userProfile.persona}`
 
     // 3. World Context & Custom Prompt
-    const worldBookText = worldContext ? `\n\n【世界观设定 (参考以下信息生成符合设定的内容)】\n${worldContext}` : ""
-    const userCustomPrompt = customPrompt ? `\n\n【用户的特别生成要求 (必须严格执行)】\n${customPrompt}` : ""
+    const worldBookText = worldContext
+        ? `\n\n【世界观设定 (参考以下信息生成符合设定的内容)】\n${worldContext}`
+        : ''
+    const userCustomPrompt = customPrompt
+        ? `\n\n【用户的特别生成要求 (必须严格执行)】\n${customPrompt}`
+        : ''
 
     const systemPrompt = `你是"朋友圈动态生成器"。当前虚拟时间：${currentVirtualTime}。
 
@@ -2893,7 +3560,12 @@ ${userContextText}
     const messages = [{ role: 'system', content: systemPrompt }]
 
     try {
-        const result = await apiQueue.enqueue(_generateReplyInternal, [messages, { name: 'MomentsGenerator' }, null, { skipVisualContext: true }])
+        const result = await apiQueue.enqueue(_generateReplyInternal, [
+            messages,
+            { name: 'MomentsGenerator' },
+            null,
+            { skipVisualContext: true },
+        ])
         if (!result || result.error) throw new Error(result?.error || 'AI 返回内容为空')
 
         const rawContent = result.content || ''
@@ -2901,25 +3573,47 @@ ${userContextText}
         if (!jsonStr) throw new Error('AI 返回内容为空串')
 
         // 1. 清除 markdown 代码块标记
-        jsonStr = jsonStr.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+        jsonStr = jsonStr
+            .replace(/```json\s*/gi, '')
+            .replace(/```\s*/g, '')
+            .trim()
 
         // 2. 清除协议标签（INNER_VOICE/OFFLINE 等）
-        jsonStr = jsonStr.replace(/[\[【]\s*(?:INNER[-_ ]?VOICE|心声)\s*[\]】][\s\S]*?[\[【]\s*\/\s*(?:INNER[-_ ]?VOICE|心声)\s*[\]】]/gi, '')
-        jsonStr = jsonStr.replace(/[\[【]\s*(?:\/?\s*(?:INNER[-_ ]?VOICE|心声|OFFLINE|ONLINE|DONE|DONE_TOKEN|CARD|TIMER|MCP|TIMER:|MCP:)[^\]]*)\s*[\]】]/gi, '')
+        jsonStr = jsonStr.replace(
+            /[\[【]\s*(?:INNER[-_ ]?VOICE|心声)\s*[\]】][\s\S]*?[\[【]\s*\/\s*(?:INNER[-_ ]?VOICE|心声)\s*[\]】]/gi,
+            '',
+        )
+        jsonStr = jsonStr.replace(
+            /[\[【]\s*(?:\/?\s*(?:INNER[-_ ]?VOICE|心声|OFFLINE|ONLINE|DONE|DONE_TOKEN|CARD|TIMER|MCP|TIMER:|MCP:)[^\]]*)\s*[\]】]/gi,
+            '',
+        )
         jsonStr = jsonStr.trim()
         if (!jsonStr) throw new Error('AI 返回内容仅包含协议标签，无有效 JSON')
 
         // 3. 使用 brace-counting 状态机精确查找第一个完整的顶层 JSON 对象（避免thinking/reasoning内容干扰）
         function findTopLevelJsonBounds(text) {
-            let inStr = false, esc = false, strChar = ''
-            let depth = 0, start = -1
+            let inStr = false,
+                esc = false,
+                strChar = ''
+            let depth = 0,
+                start = -1
             for (let i = 0; i < text.length; i++) {
                 const ch = text[i]
-                if (esc) { esc = false; continue }
-                if (ch === '\\' && inStr) { esc = true; continue }
+                if (esc) {
+                    esc = false
+                    continue
+                }
+                if (ch === '\\' && inStr) {
+                    esc = true
+                    continue
+                }
                 if ((ch === '"' || ch === "'") && !esc) {
-                    if (!inStr) { inStr = true; strChar = ch }
-                    else if (ch === strChar) { inStr = false }
+                    if (!inStr) {
+                        inStr = true
+                        strChar = ch
+                    } else if (ch === strChar) {
+                        inStr = false
+                    }
                     continue
                 }
                 if (inStr) continue
@@ -2936,7 +3630,10 @@ ${userContextText}
 
         const bounds = findTopLevelJsonBounds(jsonStr)
         if (!bounds) {
-            console.error('[Batch Moments] Cannot find JSON object in response:', jsonStr.substring(0, 500))
+            console.error(
+                '[Batch Moments] Cannot find JSON object in response:',
+                jsonStr.substring(0, 500),
+            )
             throw new Error('AI Response does not contain a valid JSON object')
         }
         jsonStr = jsonStr.substring(bounds.start, bounds.end + 1)
@@ -2959,7 +3656,7 @@ ${userContextText}
         } catch (parseError) {
             lastParseError = parseError
             console.warn('[Batch Moments] First JSON parse failed:', parseError.message)
-            
+
             // 6.1 尝试更激进的修复：移除所有在字符串外的BOM/零宽字符
             let aggressiveClean = jsonStr.replace(/[\u200B-\u200D\uFEFF]/g, '')
             aggressiveClean = deepRemoveTrailingCommas(aggressiveClean)
@@ -2976,13 +3673,22 @@ ${userContextText}
                 if (reconstructed) {
                     try {
                         parsedData = JSON.parse(reconstructed)
-                        useLoggerStore().addLog('AI', '⚠️ 朋友圈JSON解析失败，已通过容错恢复', { originalError: lastParseError?.message || parseError.message })
+                        useLoggerStore().addLog('AI', '⚠️ 朋友圈JSON解析失败，已通过容错恢复', {
+                            originalError: lastParseError?.message || parseError.message,
+                        })
                     } catch (reconstructErr) {
-                        console.error('[Batch Moments] Reconstruct fallback also failed:', reconstructErr.message)
-                        throw new Error(`Failed to parse AI response as JSON: ${lastParseError?.message || parseError.message} `)
+                        console.error(
+                            '[Batch Moments] Reconstruct fallback also failed:',
+                            reconstructErr.message,
+                        )
+                        throw new Error(
+                            `Failed to parse AI response as JSON: ${lastParseError?.message || parseError.message} `,
+                        )
                     }
                 } else {
-                    throw new Error(`Failed to parse AI response as JSON: ${lastParseError?.message || parseError.message} `)
+                    throw new Error(
+                        `Failed to parse AI response as JSON: ${lastParseError?.message || parseError.message} `,
+                    )
                 }
             }
         }
@@ -3015,35 +3721,39 @@ ${userContextText}
             momentsData = parsedData.moments
             ecosystemUpdates = parsedData.ecosystemUpdates || []
         } else {
-            // Safe Fallback: Find the first array property in the object, 
+            // Safe Fallback: Find the first array property in the object,
             // or assume it's just the moment data if AI completely ignored the requested structure
-            momentsData = Object.values(parsedData).find(v => Array.isArray(v)) || (Array.isArray(parsedData) ? parsedData : [])
+            momentsData =
+                Object.values(parsedData).find((v) => Array.isArray(v)) ||
+                (Array.isArray(parsedData) ? parsedData : [])
             ecosystemUpdates = []
         }
 
         const processedMoments = []
         for (const moment of momentsData) {
             // FIX: Skip items that are clearly interactions, not moments
-            if (moment.type === 'like' || moment.type === 'comment' || moment.type === 'reply') continue
+            if (moment.type === 'like' || moment.type === 'comment' || moment.type === 'reply')
+                continue
 
             const authorId = moment.authorId
             if (!authorId) continue
 
-
             const processed = {
                 authorId: authorId,
                 content: moment.content,
-                html: moment.html || null,  // ✅ 修复：支持 HTML 卡片内容
+                html: moment.html || null, // ✅ 修复：支持 HTML 卡片内容
                 location: moment.location || '',
                 images: [],
                 imageDescriptions: [],
                 mentions: moment.mentions || [],
-                interactions: Array.isArray(moment.interactions) ? moment.interactions : []
+                interactions: Array.isArray(moment.interactions) ? moment.interactions : [],
             }
 
             // Generate images
             const prompts = moment.imagePrompts || (moment.imagePrompt ? [moment.imagePrompt] : [])
-            const descriptions = moment.imageDescriptions || (moment.imageDescription ? [moment.imageDescription] : [])
+            const descriptions =
+                moment.imageDescriptions ||
+                (moment.imageDescription ? [moment.imageDescription] : [])
 
             console.log('[BatchMoments] 图片描述:', descriptions)
 
@@ -3059,23 +3769,32 @@ ${userContextText}
             if (finalPrompts.length > 0) {
                 console.log('[BatchMoments] 准备生成', finalPrompts.length, '张图片')
                 // [FIX] 每个 prompt 单独带重试: 失败时用更简化的 prompt 再试一次
-                const results = await Promise.all(finalPrompts.map(async (p) => {
-                    try {
-                        return await generateImage(p)
-                    } catch (e1) {
-                        console.warn('[BatchMoments] 第1次生图失败, 尝试简化 prompt:', p.substring(0, 30), e1.message)
+                const results = await Promise.all(
+                    finalPrompts.map(async (p) => {
                         try {
-                            // 简化: 截取 prompt 前 80 字符, 去掉括号等特殊字符
-                            const simplified = p.replace(/[()[\]【】]/g, ' ').substring(0, 80).trim()
-                            if (simplified && simplified !== p) {
-                                return await generateImage(simplified)
+                            return await generateImage(p)
+                        } catch (e1) {
+                            console.warn(
+                                '[BatchMoments] 第1次生图失败, 尝试简化 prompt:',
+                                p.substring(0, 30),
+                                e1.message,
+                            )
+                            try {
+                                // 简化: 截取 prompt 前 80 字符, 去掉括号等特殊字符
+                                const simplified = p
+                                    .replace(/[()[\]【】]/g, ' ')
+                                    .substring(0, 80)
+                                    .trim()
+                                if (simplified && simplified !== p) {
+                                    return await generateImage(simplified)
+                                }
+                            } catch (e2) {
+                                console.error('[BatchMoments] 简化后仍失败:', e2.message)
                             }
-                        } catch (e2) {
-                            console.error('[BatchMoments] 简化后仍失败:', e2.message)
+                            return null
                         }
-                        return null
-                    }
-                }))
+                    }),
+                )
                 processed.images = results.filter(Boolean)
                 processed.imageDescriptions = descriptions.slice(0, processed.images.length)
                 console.log('[BatchMoments] 实际生成图片数:', processed.images.length)
@@ -3085,9 +3804,13 @@ ${userContextText}
 
             // Sanitization
             if (processed.interactions.length > 0) {
-                processed.interactions.forEach(interaction => {
+                processed.interactions.forEach((interaction) => {
                     const userName = userProfile?.name || '用户'
-                    if (interaction.replyTo === 'User' || interaction.replyTo === '用户' || interaction.replyTo === '我') {
+                    if (
+                        interaction.replyTo === 'User' ||
+                        interaction.replyTo === '用户' ||
+                        interaction.replyTo === '我'
+                    ) {
                         interaction.replyTo = userName
                     }
                     if (interaction.content && interaction.content.includes('User')) {
@@ -3098,13 +3821,11 @@ ${userContextText}
                         interaction.authorId = null
                     }
 
-
                     if (interaction.replyTo) {
                         if (/^\d+$/.test(interaction.replyTo)) {
                             interaction.replyTo = '朋友'
                         }
                     }
-
 
                     if (interaction.isVirtual && !interaction.authorId) {
                         interaction.authorId = `virtual-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
@@ -3117,11 +3838,15 @@ ${userContextText}
 
         // Sanitize ecosystemUpdates
         if (Array.isArray(ecosystemUpdates)) {
-            ecosystemUpdates.forEach(update => {
+            ecosystemUpdates.forEach((update) => {
                 if (update.newInteractions) {
-                    update.newInteractions.forEach(inter => {
+                    update.newInteractions.forEach((inter) => {
                         const userName = userProfile?.name || '用户'
-                        if (inter.replyTo === 'User' || inter.replyTo === '用户' || inter.replyTo === '我') {
+                        if (
+                            inter.replyTo === 'User' ||
+                            inter.replyTo === '用户' ||
+                            inter.replyTo === '我'
+                        ) {
                             inter.replyTo = userName
                         }
                         if (inter.replyTo) {
@@ -3140,9 +3865,8 @@ ${userContextText}
 
         return {
             newMoments: processedMoments,
-            ecosystemUpdates: ecosystemUpdates
+            ecosystemUpdates: ecosystemUpdates,
         }
-
     } catch (e) {
         console.error('[aiService] generateBatchMomentsWithInteractions failed', e)
         throw e
@@ -3160,14 +3884,17 @@ async function _persistImageUrl(url) {
         } else {
             // 仍是临时 URL(如 pollinations / 火山 url 模式兜底): 下载后压缩; 失败则保留原 URL(避免丢图)
             const resp = await fetch(url, { signal: AbortSignal.timeout(30000) })
-            if (!resp.ok) { console.warn('[AI Image] Persist fetch failed, returning raw URL'); return url }
+            if (!resp.ok) {
+                console.warn('[AI Image] Persist fetch failed, returning raw URL')
+                return url
+            }
             blob = await resp.blob()
         }
 
         // Compress for storage (统一压缩到 800x800 q0.7, 控制 IndexedDB 占用)
         try {
             const { compressImage } = await import('./imageUtils')
-            const file = new File([blob], "ai_image.jpg", { type: 'image/jpeg' })
+            const file = new File([blob], 'ai_image.jpg', { type: 'image/jpeg' })
             return await compressImage(file, { maxWidth: 800, maxHeight: 800, quality: 0.7 })
         } catch (e) {
             return new Promise((resolve, reject) => {
@@ -3177,7 +3904,7 @@ async function _persistImageUrl(url) {
                 reader.readAsDataURL(blob)
             })
         }
-    } catch(e) {
+    } catch (e) {
         console.warn('[AI Image] Persist conversion failed, using raw URL:', e.message)
         return url
     }
@@ -3189,22 +3916,32 @@ async function _persistImageUrl(url) {
  * @param {Object} options 可选参数 { width, height, ... }
  */
 export async function generateImage(prompt, options = {}) {
-    return await apiQueue.enqueue(_generateImageInternal, [prompt, options]);
+    return await apiQueue.enqueue(_generateImageInternal, [prompt, options])
 }
 
 /**
  * Internal logic for image generation, handled by apiQueue.
  */
 async function _generateImageInternal(prompt, options = {}) {
-    const { width = 1024, height = 1024, chatId = null, referenceImage = null, appearanceRefMode = null, appearanceRefName = null } = options;
+    const {
+        width = 1024,
+        height = 1024,
+        chatId = null,
+        referenceImage = null,
+        appearanceRefMode = null,
+        appearanceRefName = null,
+    } = options
     const settingsStore = useSettingsStore()
     const drawingVal = settingsStore.drawing?.value || settingsStore.drawing || {}
     let provider = drawingVal.provider || 'pollinations'
     let apiKey = (drawingVal.keys?.[provider] || drawingVal.apiKey || '').trim()
-    let model = drawingVal.models?.[provider] || drawingVal.model || (provider === 'pollinations' ? 'flux' : '')
+    let model =
+        drawingVal.models?.[provider] ||
+        drawingVal.model ||
+        (provider === 'pollinations' ? 'flux' : '')
     const volc = drawingVal.volcengine || {}
     let globalImageStyle = drawingVal.globalImageStyle || 'realistic'
-    
+
     // v1.10.118: 优先使用角色设置中的默认生图风格,同时预读取角色形象图和用户形象图(避免后续分支重复import)
     // v1.10.155: 群聊时预读所有成员的形象图,支持 @角色名 暗号
     let charImageStyle = null
@@ -3229,7 +3966,7 @@ async function _generateImageInternal(prompt, options = {}) {
                             preloadedMemberAppearances.push({
                                 id: p.id,
                                 name: p.nickname || p.name || memberChat.name || '',
-                                appearanceImage: memberChat.appearanceImage
+                                appearanceImage: memberChat.appearanceImage,
                             })
                         }
                     }
@@ -3249,7 +3986,8 @@ async function _generateImageInternal(prompt, options = {}) {
             if (raw) {
                 const data = JSON.parse(raw)
                 if (data.drawing) {
-                    const fallbackKey = data.drawing.keys?.[data.drawing.provider] || data.drawing.apiKey
+                    const fallbackKey =
+                        data.drawing.keys?.[data.drawing.provider] || data.drawing.apiKey
                     if (fallbackKey) {
                         console.log('[AI Image] Recovered API key/config from raw localStorage')
                         // 优先使用 localStorage 里的 provider
@@ -3264,7 +4002,9 @@ async function _generateImageInternal(prompt, options = {}) {
         }
     }
 
-    console.log(`[AI Image] Drawing Triggered - Provider: ${provider}, Model: ${model}, Has Key: ${!!apiKey}`)
+    console.log(
+        `[AI Image] Drawing Triggered - Provider: ${provider}, Model: ${model}, Has Key: ${!!apiKey}`,
+    )
 
     // v1.10.165: 内置中文质量提示词
     // 解决 Seedream 等中文模型经常忘记风格、出胡子、生出小孩、身体比例崩坏的问题
@@ -3272,12 +4012,16 @@ async function _generateImageInternal(prompt, options = {}) {
     const QUALITY_PROMPT_ANIME = ',二次元动漫插画风格，精细线稿，赛璐璐上色，鲜艳色彩，平面光影，'
     const QUALITY_PROMPT_REALISTIC = ',真实摄影风格，4K高清照片质感，自然光线，专业构图，'
     // 通用质量护栏(动漫 + 真人 都加): 强制成年 + 干净面容 + 正常体型
-    const QUALITY_POSITIVE_GUARD = ',所有人物均为22-28岁成年男女，面容干净无胡须无体毛，身材匀称比例正常，'
+    const QUALITY_POSITIVE_GUARD =
+        ',所有人物均为22-28岁成年男女，面容干净无胡须无体毛，身材匀称比例正常，'
     // 强制年龄 + 干净面容 + 比例的中文 negative(火山引擎对 negative_prompt 字段支持有限,直接写进 prompt 更稳)
-    const QUALITY_NEGATIVE = '不要出现：小孩、儿童、未成年人；不要出现：胡子、胡须、络腮胡、胡茬、体毛、皱纹；不要出现：畸形的脸、变形的手、错误的眼睛、坏掉的四肢、比例失调、多手指少手指、错位的手指、错位的手指并连；不要出现：低质量、模糊、噪点、水印、文字、签名、边框；'
+    const QUALITY_NEGATIVE =
+        '不要出现：小孩、儿童、未成年人；不要出现：胡子、胡须、络腮胡、胡茬、体毛、皱纹；不要出现：畸形的脸、变形的手、错误的眼睛、坏掉的四肢、比例失调、多手指少手指、错位的手指、错位的手指并连；不要出现：低质量、模糊、噪点、水印、文字、签名、边框；'
     // 英文版质量护栏,给 SiliconFlow / Pollinations / SDXL 系列模型用
-    const QUALITY_POSITIVE_GUARD_EN = ', all characters are 22-28 years old adult, clean shaven face, no facial hair, no body hair, normal anatomy, correct body proportions, '
-    const QUALITY_NEGATIVE_EN = 'child, kid, minor, underage, baby, toddler, loli, shota, beard, mustache, stubble, facial hair, body hair, wrinkles, old, elderly, bad anatomy, bad hands, extra fingers, fewer fingers, fused fingers, missing fingers, mutated hands, poorly drawn face, deformed, ugly, blurry, low quality, worst quality, watermark, text, signature, '
+    const QUALITY_POSITIVE_GUARD_EN =
+        ', all characters are 22-28 years old adult, clean shaven face, no facial hair, no body hair, normal anatomy, correct body proportions, '
+    const QUALITY_NEGATIVE_EN =
+        'child, kid, minor, underage, baby, toddler, loli, shota, beard, mustache, stubble, facial hair, body hair, wrinkles, old, elderly, bad anatomy, bad hands, extra fingers, fewer fingers, fused fingers, missing fingers, mutated hands, poorly drawn face, deformed, ugly, blurry, low quality, worst quality, watermark, text, signature, '
 
     if (provider !== 'pollinations') {
         console.log(`[AI Image] Using Custom Generator API (${provider})...`)
@@ -3289,58 +4033,74 @@ async function _generateImageInternal(prompt, options = {}) {
         model,
         hasApiKey: !!apiKey,
         promptLength: prompt.length,
-        originalPrompt: prompt
+        originalPrompt: prompt,
     })
 
     if (!apiKey && provider === 'pollinations') {
-        console.warn('[AI Image] API Key is missing for Pollinations. Using anonymous endpoint (Limited).')
+        console.warn(
+            '[AI Image] API Key is missing for Pollinations. Using anonymous endpoint (Limited).',
+        )
     }
 
     // ... existing prompt logic ...
     const p = prompt.toLowerCase()
-    const isCouple = /\b(couple|kiss|hug|together|holding hands|intimate|romantic|with each other|kissing|hugging|cuddling)\b/.test(p)
+    const isCouple =
+        /\b(couple|kiss|hug|together|holding hands|intimate|romantic|with each other|kissing|hugging|cuddling)\b/.test(
+            p,
+        )
     const isMale = /\b(boy|man|guy|he|his|king|husband|ikemen|bishounen)\b/.test(p)
     const isFemale = /\b(girl|woman|lady|she|her|queen|waifu|wife)\b/.test(p)
-    const isPerson = isMale || isFemale || isCouple || /\b(person|human|people|face|selfie|character)\b/.test(p)
+    const isPerson =
+        isMale || isFemale || isCouple || /\b(person|human|people|face|selfie|character)\b/.test(p)
     const hasAbs = /\b(abs|muscle|muscular|six pack)\b/.test(p)
 
-    let negativeBoost = "(beard:1.5), (mustache:1.5), (facial hair:1.5), (stubble:1.4), (old:1.4), (wrinkles:1.3), (ugly:1.3), (bad anatomy:1.5), (bad proportions:1.5), (malformed limbs:1.5), (extra limbs:1.5), (missing limbs:1.5), (extra digits:1.5), (fused fingers:1.5), (too many fingers:1.5), (poorly drawn hands:1.5), (poorly drawn face:1.5), (mutation:1.5), (deformed:1.5), (child:1.8), (little girl:1.8), (little boy:1.8), (kid:1.8), (loli:1.8), (shota:1.8), (worst quality), (low quality), (watermark)"
+    let negativeBoost =
+        '(beard:1.5), (mustache:1.5), (facial hair:1.5), (stubble:1.4), (old:1.4), (wrinkles:1.3), (ugly:1.3), (bad anatomy:1.5), (bad proportions:1.5), (malformed limbs:1.5), (extra limbs:1.5), (missing limbs:1.5), (extra digits:1.5), (fused fingers:1.5), (too many fingers:1.5), (poorly drawn hands:1.5), (poorly drawn face:1.5), (mutation:1.5), (deformed:1.5), (child:1.8), (little girl:1.8), (little boy:1.8), (kid:1.8), (loli:1.8), (shota:1.8), (worst quality), (low quality), (watermark)'
 
     if (isRealisticStyle) {
-        negativeBoost += ", (anime:1.8), (cartoon:1.8), (illustration:1.5), (2d:1.5), (cel shading:1.5), (drawing:1.5), (painting:1.3)"
+        negativeBoost +=
+            ', (anime:1.8), (cartoon:1.8), (illustration:1.5), (2d:1.5), (cel shading:1.5), (drawing:1.5), (painting:1.3)'
     } else {
-        negativeBoost += ", (realistic:1.5), (photorealistic:1.5), (3d:1.5), (thick painting:1.6), (semirealism:1.5), (oil painting:1.5), (sketch), (korean manhwa:1.5), (flowers:1.9), (flower:1.9), (floral:1.9), (blossom:1.9), (blossoms:1.9), (cherry blossom:1.9), (rose:1.8), (roses:1.8), (tulip:1.8), (lily:1.8), (sunflower:1.8), (daisy:1.8), (wisteria:1.8), (lavender:1.8), (bouquet:1.8), (wreath:1.8), (petals:1.8), (flower field:1.9), (flower garden:1.9), (flowerbed:1.9), (flowerbed:1.9), (flower shop:1.8), (vase of flowers:1.8), (park:1.9), (public park:1.9), (city park:1.9), (park bench:1.9), (parking lot park:1.5), (garden:1.8), (botanical garden:1.9), (English garden:1.9), (Japanese garden:1.8), (flowers background:1.9), (floral background:1.9), (garden background:1.9), (nature background:1.5), (outdoor flowers:1.9), (field of flowers:1.9), (blossom background:1.9), (cherry blossom background:1.9), (cherry tree:1.8), (rose background:1.9), (lily of the valley:1.8), (blooming:1.7), (bloom:1.6), (in bloom:1.7), (petal:1.8), (petals falling:1.8), (grass field:1.4), (meadow:1.4)"
+        negativeBoost +=
+            ', (realistic:1.5), (photorealistic:1.5), (3d:1.5), (thick painting:1.6), (semirealism:1.5), (oil painting:1.5), (sketch), (korean manhwa:1.5), (flowers:1.9), (flower:1.9), (floral:1.9), (blossom:1.9), (blossoms:1.9), (cherry blossom:1.9), (rose:1.8), (roses:1.8), (tulip:1.8), (lily:1.8), (sunflower:1.8), (daisy:1.8), (wisteria:1.8), (lavender:1.8), (bouquet:1.8), (wreath:1.8), (petals:1.8), (flower field:1.9), (flower garden:1.9), (flowerbed:1.9), (flowerbed:1.9), (flower shop:1.8), (vase of flowers:1.8), (park:1.9), (public park:1.9), (city park:1.9), (park bench:1.9), (parking lot park:1.5), (garden:1.8), (botanical garden:1.9), (English garden:1.9), (Japanese garden:1.8), (flowers background:1.9), (floral background:1.9), (garden background:1.9), (nature background:1.5), (outdoor flowers:1.9), (field of flowers:1.9), (blossom background:1.9), (cherry blossom background:1.9), (cherry tree:1.8), (rose background:1.9), (lily of the valley:1.8), (blooming:1.7), (bloom:1.6), (in bloom:1.7), (petal:1.8), (petals falling:1.8), (grass field:1.4), (meadow:1.4)'
     }
 
-    let enhancedPrompt = ""
-    const animeStyleBase = "(anime style:1.6), (Japanese anime style:1.5), (light novel illustration:1.4), (clean lineart:1.4), (flat shading:1.3), (2D:1.6), (illustration:1.4), (cel shading:1.3), (pastel colors), (soft lighting), (no thick painting), (no korean manhwa), (no realistic), (no 3D)"
-    const realisticStyleBase = "(photorealistic:1.6), (realistic:1.5), (hyperrealistic:1.3), (8k uhd:1.4), (professional photography:1.5), (natural lighting:1.3), (high detail:1.4), (sharp focus:1.3), (film grain:0.8), (DSLR photo:1.3)"
+    let enhancedPrompt = ''
+    const animeStyleBase =
+        '(anime style:1.6), (Japanese anime style:1.5), (light novel illustration:1.4), (clean lineart:1.4), (flat shading:1.3), (2D:1.6), (illustration:1.4), (cel shading:1.3), (pastel colors), (soft lighting), (no thick painting), (no korean manhwa), (no realistic), (no 3D)'
+    const realisticStyleBase =
+        '(photorealistic:1.6), (realistic:1.5), (hyperrealistic:1.3), (8k uhd:1.4), (professional photography:1.5), (natural lighting:1.3), (high detail:1.4), (sharp focus:1.3), (film grain:0.8), (DSLR photo:1.3)'
     const styleBase = isRealisticStyle ? realisticStyleBase : animeStyleBase
-    const defaultBackground = isRealisticStyle 
-        ? "(natural background:1.3), (realistic environment:1.2), (no flowers:1.5), (no park:1.3)"
-        : "(modern city background: 1.5), (urban setting: 1.4), (indoor environment: 1.4), (clean simple background: 1.4), (no flowers: 1.9), (no flower: 1.9), (no floral: 1.9), (no garden: 1.8), (no park: 1.9), (no blossom: 1.8), (no rose: 1.8), (no bouquet: 1.8), (no petals: 1.7), (no botanical: 1.8), (no flower field: 1.9), (no flower bed: 1.8), (no flowerbed: 1.8), (no flower shop: 1.7), (no meadow: 1.5), (no grass field: 1.4)"
+    const defaultBackground = isRealisticStyle
+        ? '(natural background:1.3), (realistic environment:1.2), (no flowers:1.5), (no park:1.3)'
+        : '(modern city background: 1.5), (urban setting: 1.4), (indoor environment: 1.4), (clean simple background: 1.4), (no flowers: 1.9), (no flower: 1.9), (no floral: 1.9), (no garden: 1.8), (no park: 1.9), (no blossom: 1.8), (no rose: 1.8), (no bouquet: 1.8), (no petals: 1.7), (no botanical: 1.8), (no flower field: 1.9), (no flower bed: 1.8), (no flowerbed: 1.8), (no flower shop: 1.7), (no meadow: 1.5), (no grass field: 1.4)'
 
     if (options.isProduct) {
-        negativeBoost = "(human:1.8), (person:1.8), (people:1.8), (face:1.8), (hands:1.8), (body:1.8), (fingers:1.8), (model:1.8), (ugly:1.3), (worst quality), (low quality), (blurry), (watermark)"
+        negativeBoost =
+            '(human:1.8), (person:1.8), (people:1.8), (face:1.8), (hands:1.8), (body:1.8), (fingers:1.8), (model:1.8), (ugly:1.3), (worst quality), (low quality), (blurry), (watermark)'
         enhancedPrompt = `masterpiece, highly detailed, professional product photography, (photorealistic:1.5), (realistic:1.5), studio lighting, 8k resolution, crisp focus, (product only:1.5), (no humans:1.8), ${prompt}`
     } else if (isCouple) {
         const coupleDesc = isRealisticStyle
-            ? "(realistic couple portrait:1.5), (natural skin texture:1.3), (candid photo:1.2)"
-            : "(two distinct individuals), (young adult couple: 1.5)"
+            ? '(realistic couple portrait:1.5), (natural skin texture:1.3), (candid photo:1.2)'
+            : '(two distinct individuals), (young adult couple: 1.5)'
         enhancedPrompt = `masterpiece, best quality, ${styleBase}, ${defaultBackground}, ${coupleDesc}, ${prompt}, (perfect anatomy: 1.3), (correct proportions: 1.3), (well drawn hands: 1.3), (detailed fingers: 1.2), romantic atmosphere, highly detailed, 18-25 years old`
     } else if (isMale) {
-        const clothingEnforcement = hasAbs ? "" : "(fully clothed:1.4), (wearing shirt:1.3), (covered chest:1.3), "
-        const bodyType = hasAbs ? "(lean athletic build:1.2)" : isRealisticStyle 
-            ? "(average build:1.3), (natural physique:1.3), (normal body:1.2)"
-            : "(slender elegant build:1.5), (thin:1.3), (no muscles:1.5), (delicate frame:1.3)"
+        const clothingEnforcement = hasAbs
+            ? ''
+            : '(fully clothed:1.4), (wearing shirt:1.3), (covered chest:1.3), '
+        const bodyType = hasAbs
+            ? '(lean athletic build:1.2)'
+            : isRealisticStyle
+              ? '(average build:1.3), (natural physique:1.3), (normal body:1.2)'
+              : '(slender elegant build:1.5), (thin:1.3), (no muscles:1.5), (delicate frame:1.3)'
         const maleDesc = isRealisticStyle
-            ? "(handsome young man: 1.6), (attractive man: 1.4), (natural features: 1.3)"
-            : "(beautiful bishounen: 1.6), (pretty boy: 1.4), (young adult man: 1.5), (otome game cg: 1.5), (delicate features: 1.4)"
+            ? '(handsome young man: 1.6), (attractive man: 1.4), (natural features: 1.3)'
+            : '(beautiful bishounen: 1.6), (pretty boy: 1.4), (young adult man: 1.5), (otome game cg: 1.5), (delicate features: 1.4)'
         enhancedPrompt = `masterpiece, best quality, ${styleBase}, ${defaultBackground}, ${maleDesc}, (clean shaven: 1.3), (no facial hair: 1.3), ${clothingEnforcement}${bodyType}, (soft expression), (perfect anatomy: 1.3), (correct proportions: 1.3), (well drawn hands: 1.3), (detailed fingers: 1.2), ${prompt}, sharp focus, ${isRealisticStyle ? 'natural skin texture, detailed eyes, professional portrait, 20-28 years old' : 'detailed sparkling eyes, handsome, elegant, 20-25 years old'}`
     } else if (isFemale || isPerson) {
         const femaleDesc = isRealisticStyle
-            ? "(beautiful young woman:1.5), (attractive woman:1.4), (natural beauty:1.3), (soft natural makeup:1.1)"
-            : "(beautiful anime girl: 1.3), (young adult woman: 1.5), (detailed huge eyes)"
+            ? '(beautiful young woman:1.5), (attractive woman:1.4), (natural beauty:1.3), (soft natural makeup:1.1)'
+            : '(beautiful anime girl: 1.3), (young adult woman: 1.5), (detailed huge eyes)'
         enhancedPrompt = `masterpiece, best quality, ${styleBase}, ${defaultBackground}, ${femaleDesc}, (perfect anatomy: 1.3), (correct proportions: 1.3), (well drawn hands: 1.3), (detailed fingers: 1.2), ${prompt}, sharp focus, ${isRealisticStyle ? 'natural skin, realistic eyes, natural lighting, portrait photography, 18-28 years old' : 'vibrant pastel colors, cute, 18-22 years old'}`
     } else {
         enhancedPrompt = `masterpiece, best quality, ${styleBase}, ${defaultBackground}, ${prompt}, highly detailed, sharp focus, ${isRealisticStyle ? 'natural colors, realistic lighting, professional photo' : 'vibrant colors, clear background'}`
@@ -3370,8 +4130,12 @@ async function _generateImageInternal(prompt, options = {}) {
 
         // SECURITY / ARCHITECTURE CHECK:
         if (apiKey.startsWith('sk_')) {
-            console.error('[AI Image] DETECTED SECRET KEY (sk_). These keys are meant for SERVERS only and will be BLOCKED by Pollinations anti-bot (Turnstile) in a browser.')
-            throw new Error('检测到 Secret Key (sk_)。这类密钥不适合在浏览器直接调用，会被官方拦截。请使用 pk_ 开头的 Publishable Key。')
+            console.error(
+                '[AI Image] DETECTED SECRET KEY (sk_). These keys are meant for SERVERS only and will be BLOCKED by Pollinations anti-bot (Turnstile) in a browser.',
+            )
+            throw new Error(
+                '检测到 Secret Key (sk_)。这类密钥不适合在浏览器直接调用，会被官方拦截。请使用 pk_ 开头的 Publishable Key。',
+            )
         }
 
         try {
@@ -3382,8 +4146,8 @@ async function _generateImageInternal(prompt, options = {}) {
             // URL params are extremely fragile for prompt text.
             const safePrompt = enhancedPrompt
                 .replace(/[,锛?锛歕n\r]/g, ' ') // CRITICAL: Stop commas/colons breaking URL structure
-                .replace(/[#?%&]/g, '')        // Remove strict URL control chars
-                .replace(/\s+/g, ' ')          // Collapse spaces
+                .replace(/[#?%&]/g, '') // Remove strict URL control chars
+                .replace(/\s+/g, ' ') // Collapse spaces
                 .trim()
 
             const url = `https://${host}/${path}/${encodeURIComponent(safePrompt)}?model=${model || 'flux'}&seed=${seed}&width=${width}&height=${height}&nologo=true&key=${apiKey}`
@@ -3403,8 +4167,8 @@ async function _generateImageInternal(prompt, options = {}) {
                 response = await fetch(url, {
                     signal: controller.signal,
                     headers: {
-                        'Authorization': `Bearer ${apiKey}`
-                    }
+                        Authorization: `Bearer ${apiKey}`,
+                    },
                 })
             } finally {
                 clearTimeout(timeoutId)
@@ -3414,21 +4178,31 @@ async function _generateImageInternal(prompt, options = {}) {
                 const errText = await response.text()
 
                 if (response.status === 401) {
-                    throw new Error('密钥校验失败 (401)。这通常意味着你的 pk_ 密钥额度已耗尽，或提示词被拦截。')
+                    throw new Error(
+                        '密钥校验失败 (401)。这通常意味着你的 pk_ 密钥额度已耗尽，或提示词被拦截。',
+                    )
                 }
 
-                if (response.status === 403 || errText.includes('Turnstile') || errText.includes('token')) {
-                    throw new Error('被官方人机验证拦截 (Turnstile 403)。即使带 Key 也可能因 IP 风控失败，建议改用 SiliconFlow。')
+                if (
+                    response.status === 403 ||
+                    errText.includes('Turnstile') ||
+                    errText.includes('token')
+                ) {
+                    throw new Error(
+                        '被官方人机验证拦截 (Turnstile 403)。即使带 Key 也可能因 IP 风控失败，建议改用 SiliconFlow。',
+                    )
                 }
                 throw new Error(`API 响应异常 ${response.status}: ${errText.substring(0, 100)}`)
             }
 
             const contentType = response.headers.get('content-type') || ''
             if (!contentType.includes('image')) {
-                const text = await response.text();
+                const text = await response.text()
                 // Custom handling for Turnstile errors or credits
                 if (text.includes('Turnstile') || text.includes('Captcha')) {
-                    throw new Error('API blocked by Anti-bot. Recommend trying SiliconFlow provider.')
+                    throw new Error(
+                        'API blocked by Anti-bot. Recommend trying SiliconFlow provider.',
+                    )
                 }
                 throw new Error('Response is not an image.')
             }
@@ -3438,17 +4212,24 @@ async function _generateImageInternal(prompt, options = {}) {
             // Convert to Blob and then to compressed Base64
             try {
                 const { compressImage } = await import('./imageUtils')
-                const file = new File([blob], "ai_image.jpg", { type: 'image/jpeg' })
-                const compressedBase64 = await compressImage(file, { maxWidth: 800, maxHeight: 800, quality: 0.7 })
-                
+                const file = new File([blob], 'ai_image.jpg', { type: 'image/jpeg' })
+                const compressedBase64 = await compressImage(file, {
+                    maxWidth: 800,
+                    maxHeight: 800,
+                    quality: 0.7,
+                })
+
                 useLoggerStore().addLog('AI', '图片生成成功并已压缩 (Pollinations)', {
                     originalSize: blob.size,
                     compressedSize: compressedBase64.length,
-                    provider: 'pollinations'
+                    provider: 'pollinations',
                 })
                 return compressedBase64
             } catch (compressErr) {
-                console.warn('[AI Image] Compression failed, falling back to raw base64', compressErr)
+                console.warn(
+                    '[AI Image] Compression failed, falling back to raw base64',
+                    compressErr,
+                )
                 return new Promise((resolve, reject) => {
                     const reader = new FileReader()
                     reader.onloadend = () => resolve(reader.result)
@@ -3459,12 +4240,12 @@ async function _generateImageInternal(prompt, options = {}) {
         } catch (e) {
             console.error('[AI Image] Pollinations Final Failure:', e)
             useLoggerStore().addLog('ERROR', '图片生成失败 (Pollinations)', e.message)
-                    
+
             // Special handling for AbortError (timeout/network issues)
             if (e.name === 'AbortError' || e.message.includes('aborted')) {
                 throw new Error('请求超时，可能是网络不稳定或 API 服务响应过慢。请检查网络后重试。')
             }
-                    
+
             // CRITICAL: Stop falling back to anonymous image.pollinations.ai because it returns the "WE HAVE MOVED" placeholder.
             // We want the user to see the AUTH error so they can fix their key.
             throw new Error(`绘制失败：${e.message}`)
@@ -3474,7 +4255,10 @@ async function _generateImageInternal(prompt, options = {}) {
     if (provider === 'siliconflow' || provider === 'flux-api') {
         // SiliconFlow / Flux-API (requires API Key)
         try {
-            const baseUrl = provider === 'siliconflow' ? 'https://api.siliconflow.cn/v1' : 'https://api.flux-api.example/v1'
+            const baseUrl =
+                provider === 'siliconflow'
+                    ? 'https://api.siliconflow.cn/v1'
+                    : 'https://api.flux-api.example/v1'
             // Timeout controller: 免费模型响应较慢，延长至 90 秒
             const controller = new AbortController()
             const timeoutId = setTimeout(() => controller.abort(), 90000) // 90 秒超时
@@ -3483,7 +4267,7 @@ async function _generateImageInternal(prompt, options = {}) {
                 provider,
                 model: model || 'flux-v1',
                 prompt: enhancedPrompt.substring(0, 50) + '...',
-                timeout: '90s'
+                timeout: '90s',
             })
 
             // [BUG FIX] clearTimeout 原来放在 await fetch 之后, 若 fetch reject 会跳过清理,
@@ -3494,16 +4278,16 @@ async function _generateImageInternal(prompt, options = {}) {
                     method: 'POST',
                     signal: controller.signal,
                     headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'Content-Type': 'application/json'
+                        Authorization: `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
                         model: model || 'flux-v1',
                         prompt: enhancedPrompt,
                         negative_prompt: negativeBoost,
                         width: width,
-                        height: height
-                    })
+                        height: height,
+                    }),
                 })
             } finally {
                 clearTimeout(timeoutId)
@@ -3513,9 +4297,9 @@ async function _generateImageInternal(prompt, options = {}) {
                 const err = await response.text()
                 console.error('[AI Image] SiliconFlow API error:', {
                     status: response.status,
-                    error: err
+                    error: err,
                 })
-                
+
                 // 更友好的错误提示
                 if (response.status === 401) {
                     throw new Error('API 密钥无效或已过期，请检查设置中的密钥配置')
@@ -3531,21 +4315,24 @@ async function _generateImageInternal(prompt, options = {}) {
 
             const data = await response.json()
             console.log('[AI Image] SiliconFlow response:', data)
-            const imageUrl = data.images?.[0]?.url || data.data?.[0]?.url || `https://via.placeholder.com/1024?text=GenerationFailed`
+            const imageUrl =
+                data.images?.[0]?.url ||
+                data.data?.[0]?.url ||
+                `https://via.placeholder.com/1024?text=GenerationFailed`
             useLoggerStore().addLog('AI', `图片生成成功 (${provider})`, {
                 provider,
-                hasUrl: !!imageUrl
+                hasUrl: !!imageUrl,
             })
             return await _persistImageUrl(imageUrl)
         } catch (e) {
             console.error('Drawing API failed:', e)
             useLoggerStore().addLog('ERROR', `图片生成失败 (${provider})`, e.message)
-            
+
             // Special handling for AbortError
             if (e.name === 'AbortError' || e.message.includes('aborted')) {
                 throw new Error('请求超时（90 秒），免费模型响应较慢，请检查网络或稍后重试')
             }
-            
+
             throw e
         }
     }
@@ -3560,7 +4347,7 @@ async function _generateImageInternal(prompt, options = {}) {
 
         // 决定走文生图还是图生图:有参考图 + 开启 useAppearanceImage → 图生图
         let useImageModel = false
-        let refImages = []  // v1.11.0: 改为数组,支持多图参考(Seedream 4.0+ 最多14张)
+        let refImages = [] // v1.11.0: 改为数组,支持多图参考(Seedream 4.0+ 最多14张)
         // v1.10.122: 重写人像/非人像检测
         // 旧逻辑用 \b 包中文关键词,但 JS 的 \b 只在 ASCII \w 边界生效,中文之间不算边界,
         // 导致"一个男人给我送礼"这种含"我"但主体是别人的句子也被判为 self-only。
@@ -3574,42 +4361,233 @@ async function _generateImageInternal(prompt, options = {}) {
         //     但用户描述角色场景时(如"一个穿白裙的女孩在海边散步")通常不带这些词,
         //     导致走纯文生图生成出别的人像。现在只要检测到人像提示词且不是
         //     "我"主体明确,就默认用角色形象图作参考;仅风景/物品等非人像才不附加。
-        const includesAny = (text, words) => words.some(w => text.includes(w))
+        const includesAny = (text, words) => words.some((w) => text.includes(w))
         const testEnglishWords = (text, words) => {
             if (!words.length) return false
             return new RegExp(`\\b(${words.join('|')})\\b`, 'i').test(text)
         }
 
         // 合照关键词
-        const coupleZh = ['我们', '我俩', '俩人', '两人', '两个人', '合照', '合影', '一起', '情侣照', '双人', '我和你', '你和我']
-        const coupleEn = ['couple', 'us', 'we', 'together', 'both', 'two people', 'group photo', 'selfie together']
-        const isCouplePrompt = includesAny(prompt, coupleZh) || testEnglishWords(prompt, coupleEn) ||
-            (includesAny(prompt, ['我']) && includesAny(prompt, ['你', '角色']) && includesAny(prompt, ['一起', '合影', '合照', '和']))
+        const coupleZh = [
+            '我们',
+            '我俩',
+            '俩人',
+            '两人',
+            '两个人',
+            '合照',
+            '合影',
+            '一起',
+            '情侣照',
+            '双人',
+            '我和你',
+            '你和我',
+        ]
+        const coupleEn = [
+            'couple',
+            'us',
+            'we',
+            'together',
+            'both',
+            'two people',
+            'group photo',
+            'selfie together',
+        ]
+        const isCouplePrompt =
+            includesAny(prompt, coupleZh) ||
+            testEnglishWords(prompt, coupleEn) ||
+            (includesAny(prompt, ['我']) &&
+                includesAny(prompt, ['你', '角色']) &&
+                includesAny(prompt, ['一起', '合影', '合照', '和']))
 
         // 主体明确是"我"——只在"我"作为图片主体时才成立
         // 排除"一个男人给我送礼"这种含"我"但主体是别人的歧义句
-        const selfSubjectZh = ['画我', '我的照片', '我的自拍', '自拍', '我自己', '给我画', '帮我画', '我拍照', '我站在', '我坐在', '我在', '给我生成', '照片中的我', '主角是我']
-        const selfSubjectEn = ['myself', 'selfie of me', 'photo of me', 'picture of me', 'draw me', 'of me', 'me taking', 'me standing', 'me sitting']
+        const selfSubjectZh = [
+            '画我',
+            '我的照片',
+            '我的自拍',
+            '自拍',
+            '我自己',
+            '给我画',
+            '帮我画',
+            '我拍照',
+            '我站在',
+            '我坐在',
+            '我在',
+            '给我生成',
+            '照片中的我',
+            '主角是我',
+        ]
+        const selfSubjectEn = [
+            'myself',
+            'selfie of me',
+            'photo of me',
+            'picture of me',
+            'draw me',
+            'of me',
+            'me taking',
+            'me standing',
+            'me sitting',
+        ]
         // 含"我"但主体是别人的歧义模式:某人 + 给/对/向 + 我
-        const ambiguousSelfPattern = /(男|女|人|哥|姐|孩|客|老板|医生|老师|学生|路人)[^，。、,.\s]*[给对向跟][我]/i
-        const hasExplicitSelfSubject = includesAny(prompt, selfSubjectZh) || testEnglishWords(prompt, selfSubjectEn)
-        const isSelfOnly = !isCouplePrompt && hasExplicitSelfSubject && !ambiguousSelfPattern.test(prompt) &&
-            !includesAny(prompt, ['你', '角色']) && !testEnglishWords(prompt, ['you', 'your', 'her', 'him', 'his', 'character'])
+        const ambiguousSelfPattern =
+            /(男|女|人|哥|姐|孩|客|老板|医生|老师|学生|路人)[^，。、,.\s]*[给对向跟][我]/i
+        const hasExplicitSelfSubject =
+            includesAny(prompt, selfSubjectZh) || testEnglishWords(prompt, selfSubjectEn)
+        const isSelfOnly =
+            !isCouplePrompt &&
+            hasExplicitSelfSubject &&
+            !ambiguousSelfPattern.test(prompt) &&
+            !includesAny(prompt, ['你', '角色']) &&
+            !testEnglishWords(prompt, ['you', 'your', 'her', 'him', 'his', 'character'])
 
         // 主体明确是"你/角色"
-        const charSubjectZh = ['画你', '你的照片', '你的自拍', '你自己', '你在', '你站在', '你坐在', '你拍照', '角色', 'TA']
-        const charSubjectEn = ['yourself', 'your photo', 'your selfie', 'draw you', 'you standing', 'you sitting', 'you taking', 'you in', 'character']
-        const isCharOnly = !isCouplePrompt && !isSelfOnly &&
+        const charSubjectZh = [
+            '画你',
+            '你的照片',
+            '你的自拍',
+            '你自己',
+            '你在',
+            '你站在',
+            '你坐在',
+            '你拍照',
+            '角色',
+            'TA',
+        ]
+        const charSubjectEn = [
+            'yourself',
+            'your photo',
+            'your selfie',
+            'draw you',
+            'you standing',
+            'you sitting',
+            'you taking',
+            'you in',
+            'character',
+        ]
+        const isCharOnly =
+            !isCouplePrompt &&
+            !isSelfOnly &&
             (includesAny(prompt, charSubjectZh) || testEnglishWords(prompt, charSubjectEn)) &&
-            !includesAny(prompt, ['我']) && !testEnglishWords(prompt, ['me', 'my', 'myself', 'i '])
+            !includesAny(prompt, ['我']) &&
+            !testEnglishWords(prompt, ['me', 'my', 'myself', 'i '])
 
         // 风景/物品等非人像
-        const nonPortraitZh = ['风景', '山水', '风景照', '风景画', '街景', '建筑', '城市', '夜景', '日出', '日落', '天空', '云彩', '海洋', '大海', '森林', '树木', '花草', '花卉', '花园', '公园', '室内', '房间', '客厅', '卧室', '厨房', '餐厅', '食物', '美食', '甜点', '蛋糕', '咖啡', '料理', '水果', '蔬菜', '动物', '物品', '家具', '装饰', '汽车', '单车', '工具', '海报', '图标', '风景图', '风景壁纸', '手机壁纸']
-        const nonPortraitEn = ['scenery', 'landscape', 'cityscape', 'building', 'sky', 'cloud', 'sunset', 'sunrise', 'forest', 'tree', 'flower', 'garden', 'park', 'room', 'interior', 'kitchen', 'food', 'dish', 'meal', 'cake', 'coffee', 'dessert', 'fruit', 'animal', 'object', 'tool', 'car', 'book', 'logo', 'wallpaper', 'background only', 'no person', 'no people', 'without person']
-        const portraitHintZh = ['人', '男人', '女人', '男孩', '女孩', '人像', '肖像', '全身', '头像', '自拍', '真人', '合影', '情侣']
-        const portraitHintEn = ['person', 'people', 'man', 'woman', 'boy', 'girl', 'portrait', 'selfie', 'face', 'human']
-        const hasPortraitHint = includesAny(prompt, portraitHintZh) || testEnglishWords(prompt, portraitHintEn)
-        const isNonPortraitOnly = (includesAny(prompt, nonPortraitZh) || testEnglishWords(prompt, nonPortraitEn)) && !hasPortraitHint
+        const nonPortraitZh = [
+            '风景',
+            '山水',
+            '风景照',
+            '风景画',
+            '街景',
+            '建筑',
+            '城市',
+            '夜景',
+            '日出',
+            '日落',
+            '天空',
+            '云彩',
+            '海洋',
+            '大海',
+            '森林',
+            '树木',
+            '花草',
+            '花卉',
+            '花园',
+            '公园',
+            '室内',
+            '房间',
+            '客厅',
+            '卧室',
+            '厨房',
+            '餐厅',
+            '食物',
+            '美食',
+            '甜点',
+            '蛋糕',
+            '咖啡',
+            '料理',
+            '水果',
+            '蔬菜',
+            '动物',
+            '物品',
+            '家具',
+            '装饰',
+            '汽车',
+            '单车',
+            '工具',
+            '海报',
+            '图标',
+            '风景图',
+            '风景壁纸',
+            '手机壁纸',
+        ]
+        const nonPortraitEn = [
+            'scenery',
+            'landscape',
+            'cityscape',
+            'building',
+            'sky',
+            'cloud',
+            'sunset',
+            'sunrise',
+            'forest',
+            'tree',
+            'flower',
+            'garden',
+            'park',
+            'room',
+            'interior',
+            'kitchen',
+            'food',
+            'dish',
+            'meal',
+            'cake',
+            'coffee',
+            'dessert',
+            'fruit',
+            'animal',
+            'object',
+            'tool',
+            'car',
+            'book',
+            'logo',
+            'wallpaper',
+            'background only',
+            'no person',
+            'no people',
+            'without person',
+        ]
+        const portraitHintZh = [
+            '人',
+            '男人',
+            '女人',
+            '男孩',
+            '女孩',
+            '人像',
+            '肖像',
+            '全身',
+            '头像',
+            '自拍',
+            '真人',
+            '合影',
+            '情侣',
+        ]
+        const portraitHintEn = [
+            'person',
+            'people',
+            'man',
+            'woman',
+            'boy',
+            'girl',
+            'portrait',
+            'selfie',
+            'face',
+            'human',
+        ]
+        const hasPortraitHint =
+            includesAny(prompt, portraitHintZh) || testEnglishWords(prompt, portraitHintEn)
+        const isNonPortraitOnly =
+            (includesAny(prompt, nonPortraitZh) || testEnglishWords(prompt, nonPortraitEn)) &&
+            !hasPortraitHint
 
         // v1.10.112: 选项 useAppearance: 'auto'(默认) | true | false
         // 兼容旧版 volc.useAppearanceImage: true/false/'force'
@@ -3624,7 +4602,8 @@ async function _generateImageInternal(prompt, options = {}) {
             refImages.push(referenceImage)
         }
 
-        const shouldLookupAppearance = !callerForbidsAppearance && !configDisabled && configAuto && !referenceImage
+        const shouldLookupAppearance =
+            !callerForbidsAppearance && !configDisabled && configAuto && !referenceImage
         let charAppearance = preloadedCharAppearance
         let userAppearance = preloadedUserAppearance
 
@@ -3668,10 +4647,16 @@ async function _generateImageInternal(prompt, options = {}) {
                     for (const m of preloadedMemberAppearances) {
                         refImages.push(m.appearanceImage)
                     }
-                    console.log('[AI Image] volcengine: 暗号 @us → 群聊合照, ref count:', refImages.length)
+                    console.log(
+                        '[AI Image] volcengine: 暗号 @us → 群聊合照, ref count:',
+                        refImages.length,
+                    )
                 } else if (charAppearance) {
                     refImages.push(charAppearance)
-                    console.log('[AI Image] volcengine: 暗号 @us → 双人合照, ref count:', refImages.length)
+                    console.log(
+                        '[AI Image] volcengine: 暗号 @us → 双人合照, ref count:',
+                        refImages.length,
+                    )
                 } else {
                     console.log('[AI Image] volcengine: 暗号 @us → 合照(无可用形象图)')
                 }
@@ -3679,23 +4664,28 @@ async function _generateImageInternal(prompt, options = {}) {
                 console.log('[AI Image] volcengine: 暗号 @scene → 纯文生图(无参考)')
             } else if (appearanceRefMode === 'member' && appearanceRefName) {
                 // v1.10.155: @角色名 → 按名字模糊匹配成员形象图
-                const target = preloadedMemberAppearances.find(m =>
-                    m.name === appearanceRefName ||
-                    m.name.includes(appearanceRefName) ||
-                    appearanceRefName.includes(m.name)
+                const target = preloadedMemberAppearances.find(
+                    (m) =>
+                        m.name === appearanceRefName ||
+                        m.name.includes(appearanceRefName) ||
+                        appearanceRefName.includes(m.name),
                 )
                 if (target) {
                     refImages.push(target.appearanceImage)
-                    console.log(`[AI Image] volcengine: 暗号 @${appearanceRefName} → 成员 ${target.name} 形象图`)
+                    console.log(
+                        `[AI Image] volcengine: 暗号 @${appearanceRefName} → 成员 ${target.name} 形象图`,
+                    )
                 } else {
-                    console.warn(`[AI Image] volcengine: 暗号 @${appearanceRefName} 未找到匹配成员(可用: ${preloadedMemberAppearances.map(m => m.name).join(', ')})`)
+                    console.warn(
+                        `[AI Image] volcengine: 暗号 @${appearanceRefName} 未找到匹配成员(可用: ${preloadedMemberAppearances.map((m) => m.name).join(', ')})`,
+                    )
                 }
             }
             // 暗号模式下,有参考图就用图生图模型,无参考图就纯文生图
             if (refImages.length > 0) useImageModel = true
         } else if (!referenceImage && !isNonPortraitOnly && shouldLookupAppearance) {
-        // v1.10.122: 智能选择参考图(无暗号时的兜底,严格按提示词主体判断)
-        // 严格按提示词主体判断,未明确提及就不附加,避免"一个男人"误用形象图
+            // v1.10.122: 智能选择参考图(无暗号时的兜底,严格按提示词主体判断)
+            // 严格按提示词主体判断,未明确提及就不附加,避免"一个男人"误用形象图
             if (isCouplePrompt) {
                 if (userAppearance) refImages.push(userAppearance)
                 if (charAppearance) refImages.push(charAppearance)
@@ -3713,11 +4703,14 @@ async function _generateImageInternal(prompt, options = {}) {
                 console.log('[AI Image] volcengine: default character ref (人像提示但主体未明示)')
             } else {
                 // v1.10.122: 非人像(风景/物品)且无形象图可用,走纯文生图
-                console.log('[AI Image] volcengine: no explicit subject, pure text2image (no appearance ref)')
+                console.log(
+                    '[AI Image] volcengine: no explicit subject, pure text2image (no appearance ref)',
+                )
             }
         }
         if (refImages.length > 0) {
-            const isExplicitPortrait = options.isCharacter === true || options.appearanceRef === true
+            const isExplicitPortrait =
+                options.isCharacter === true || options.appearanceRef === true
             const isForced = configForced
             if (isExplicitPortrait || isForced || (hasPortraitHint && !isNonPortraitOnly)) {
                 useImageModel = true
@@ -3728,8 +4721,8 @@ async function _generateImageInternal(prompt, options = {}) {
         }
 
         const chosenModel = useImageModel
-            ? (volc.image2imageModel || 'doubao-seedream-4-0-250828')
-            : (volc.text2imageModel || 'doubao-seedream-4-0-250828')
+            ? volc.image2imageModel || 'doubao-seedream-4-0-250828'
+            : volc.text2imageModel || 'doubao-seedream-4-0-250828'
 
         let chosenSize = volc.size || `${width}x${height}`
 
@@ -3749,12 +4742,20 @@ async function _generateImageInternal(prompt, options = {}) {
                 const scale = Math.sqrt(MIN_PIXELS / pixels)
                 // 火山引擎支持的常见尺寸,按接近度匹配
                 const supportedSizes = [
-                    '1024x1024', '864x1152', '1152x864', '1280x720', '720x1280',
-                    '1536x1536', '1920x1920', '2048x2048', '2560x1440', '1440x2560',
-                    '3072x3072'
+                    '1024x1024',
+                    '864x1152',
+                    '1152x864',
+                    '1280x720',
+                    '720x1280',
+                    '1536x1536',
+                    '1920x1920',
+                    '2048x2048',
+                    '2560x1440',
+                    '1440x2560',
+                    '3072x3072',
                 ]
-                const newW = Math.ceil(w * scale / 8) * 8  // 8 对齐
-                const newH = Math.ceil(h * scale / 8) * 8
+                const newW = Math.ceil((w * scale) / 8) * 8 // 8 对齐
+                const newH = Math.ceil((h * scale) / 8) * 8
                 // 找最接近的合法 size
                 let bestSize = null
                 let bestDiff = Infinity
@@ -3763,9 +4764,9 @@ async function _generateImageInternal(prompt, options = {}) {
                     if (!sm) continue
                     const sw = parseInt(sm[1], 10)
                     const sh = parseInt(sm[2], 10)
-                    if (sw * sh < MIN_PIXELS) continue  // 跳过不达标的
+                    if (sw * sh < MIN_PIXELS) continue // 跳过不达标的
                     // 算与新尺寸的接近度(同时考虑比例)
-                    const aspectDiff = Math.abs((sw / sh) - (newW / newH))
+                    const aspectDiff = Math.abs(sw / sh - newW / newH)
                     const sizeDiff = Math.abs(sw * sh - newW * newH)
                     const diff = aspectDiff * 1000000 + sizeDiff
                     if (diff < bestDiff) {
@@ -3774,11 +4775,15 @@ async function _generateImageInternal(prompt, options = {}) {
                     }
                 }
                 if (bestSize) {
-                    console.warn(`[AI Image] volcengine: size ${chosenSize}(${pixels}px) < ${MIN_PIXELS}, 自动调整为 ${bestSize}`)
+                    console.warn(
+                        `[AI Image] volcengine: size ${chosenSize}(${pixels}px) < ${MIN_PIXELS}, 自动调整为 ${bestSize}`,
+                    )
                     chosenSize = bestSize
                 } else {
                     // 兜底: 直接用 1920x1920
-                    console.warn(`[AI Image] volcengine: size ${chosenSize}(${pixels}px) < ${MIN_PIXELS}, 兜底使用 1920x1920`)
+                    console.warn(
+                        `[AI Image] volcengine: size ${chosenSize}(${pixels}px) < ${MIN_PIXELS}, 兜底使用 1920x1920`,
+                    )
                     chosenSize = '1920x1920'
                 }
             }
@@ -3793,7 +4798,8 @@ async function _generateImageInternal(prompt, options = {}) {
             ? '真实照片风格，高清细节，自然光线，专业摄影'
             : '动漫插画风格，精细线条，鲜艳色彩，二次元'
         const volcInlineNegative = stripSDWeights(negativeBoost)
-            .replace(/no\s+/g, '不要').replace(/,/g, '，')
+            .replace(/no\s+/g, '不要')
+            .replace(/,/g, '，')
         const refImageCount = refImages.length
         let mode = 'none'
         let promptPrefix = ''
@@ -3809,7 +4815,7 @@ async function _generateImageInternal(prompt, options = {}) {
         // (火山引擎的 negative_prompt 字段对 Seedream 4.0 实际不生效,所以直接拼进 prompt)
         // v1.10.250: 修复非人像场景强制生成人物问题 - 只有检测到人像提示词时才添加 QUALITY_POSITIVE_GUARD
         const styleHint = isRealisticStyle ? QUALITY_PROMPT_REALISTIC : QUALITY_PROMPT_ANIME
-        const portraitGuard = (hasPortraitHint || refImageCount > 0) ? QUALITY_POSITIVE_GUARD : ''
+        const portraitGuard = hasPortraitHint || refImageCount > 0 ? QUALITY_POSITIVE_GUARD : ''
         const finalPrompt = `${promptPrefix}${stripSDWeights(enhancedPrompt)}，${volcStyleHint}${styleHint}${portraitGuard}绝对禁止：${QUALITY_NEGATIVE}`
 
         const body = {
@@ -3820,7 +4826,7 @@ async function _generateImageInternal(prompt, options = {}) {
             // 之前用 url 模式, _persistImageUrl 需 fetch 跨域图, 经常 CORS/超时失败而 fallback 回临时 URL, 相册第二天就失效
             response_format: 'b64_json',
             watermark: false,
-            sequential_image_generation: 'disabled'
+            sequential_image_generation: 'disabled',
         }
         // v1.10.165: 仍然传 negative_prompt 字段,以防未来 4.5+ 启用
         body.negative_prompt = QUALITY_NEGATIVE
@@ -3846,17 +4852,20 @@ async function _generateImageInternal(prompt, options = {}) {
                 isCharOnly,
                 isNonPortraitOnly,
                 originalPrompt: prompt,
-                finalPrompt: finalPrompt.substring(0, 300)
+                finalPrompt: finalPrompt.substring(0, 300),
             })
-            const resp = await fetch('https://ark.cn-beijing.volces.com/api/v3/images/generations', {
-                method: 'POST',
-                signal: controller.signal,
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json'
+            const resp = await fetch(
+                'https://ark.cn-beijing.volces.com/api/v3/images/generations',
+                {
+                    method: 'POST',
+                    signal: controller.signal,
+                    headers: {
+                        Authorization: `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(body),
                 },
-                body: JSON.stringify(body)
-            })
+            )
 
             const text = await resp.text()
             if (!resp.ok) {
@@ -3875,33 +4884,44 @@ async function _generateImageInternal(prompt, options = {}) {
                 else if (resp.status === 403) msg = '权限不足或余额耗尽(403),请检查火山引擎控制台'
                 else if (resp.status === 429) msg = '请求过于频繁(429),请稍后再试'
                 // v1.10.117: 给"未开通模型"加清晰引导
-                else if (/not activated|model.*not.*exist|does not exist|model_not_found|NoModel|endpoint.*not.*found/i.test(errorDetail)) {
+                else if (
+                    /not activated|model.*not.*exist|does not exist|model_not_found|NoModel|endpoint.*not.*found/i.test(
+                        errorDetail,
+                    )
+                ) {
                     msg = `火山引擎模型未开通或不存在:「${chosenModel}」。请去火山方舟控制台 → 模型管理 开通该模型,或创建"在线推理"接入点后填 ep-xxx。${errorDetail}`
                 }
                 // v1.10.164: 专门处理 size 像素不足的错误,引导用户调整配置
                 else if (/image\s*size|size.*pixel|at least.*pixel/i.test(errorDetail)) {
                     msg = `火山引擎 ${resp.status}: size 像素不足。模型「${chosenModel}」要求 size 像素 ≥ 3,686,400 (约 1920×1920),当前配置为「${chosenSize}」。请到「生图配置」把输出尺寸改为 1920×1920 或更大。${errorDetail}`
-                }
-                else if (resp.status === 400 && useImageModel) msg += ' (图生图请求体可能不被当前模型接受,试试切到文生图模型)'
+                } else if (resp.status === 400 && useImageModel)
+                    msg += ' (图生图请求体可能不被当前模型接受,试试切到文生图模型)'
                 throw new Error(msg)
             }
 
             const data = JSON.parse(text)
-            let imageUrl = data?.data?.[0]?.url || data?.images?.[0]?.url || data?.data?.[0]?.b64_json
+            let imageUrl =
+                data?.data?.[0]?.url || data?.images?.[0]?.url || data?.data?.[0]?.b64_json
             if (!imageUrl) {
                 throw new Error('火山引擎未返回图片 URL: ' + text.substring(0, 200))
             }
             // v1.10.230: 火山 b64_json 可能返回裸 base64(无 data: 前缀), 补前缀以便 <img> 直接显示 + 让 _persistImageUrl 正确压缩
-            if (imageUrl && !/^(data:|https?:|blob:)/i.test(imageUrl) && /^[A-Za-z0-9+/=\s]+$/.test(imageUrl)) {
+            if (
+                imageUrl &&
+                !/^(data:|https?:|blob:)/i.test(imageUrl) &&
+                /^[A-Za-z0-9+/=\s]+$/.test(imageUrl)
+            ) {
                 imageUrl = 'data:image/png;base64,' + imageUrl.replace(/\s/g, '')
             }
             useLoggerStore().addLog('AI', '图片生成成功 (火山引擎)', {
                 model: chosenModel,
                 usedImageRef: useImageModel,
-                hasUrl: imageUrl.startsWith('http')
+                hasUrl: imageUrl.startsWith('http'),
             })
             if (imageUrl.startsWith('data:') || imageUrl.startsWith('http')) {
-                if (imageUrl.startsWith('data:')) return imageUrl
+                // v1.10.252: data: URL 也必须走 _persistImageUrl 压缩,
+                // 否则火山 b64_json 返回的 1-3MB data URL 会被 sanitizeMsgsForStorage 当作"过大图片"清理,
+                // 导致刷新后聊天记录里的图消失
                 return await _persistImageUrl(imageUrl)
             }
             return imageUrl
@@ -3932,23 +4952,42 @@ async function _generateImageInternal(prompt, options = {}) {
  * @param {Array} historicalMoments 历史朋友圈列表
  * @param {Object} userProfile 用户个人资料
  */
-export async function generateBatchInteractions(moment, charInfos, historicalMoments = [], userProfile = {}) {
+export async function generateBatchInteractions(
+    moment,
+    charInfos,
+    historicalMoments = [],
+    userProfile = {},
+) {
     // 1. 构建提示词
-    const historyStr = historicalMoments.length > 0
-        ? "【朋友圈热点背景（参考）】\n" + historicalMoments.map(m => `ID: ${m.id} | 作者: ${m.authorName} | 内容: ${m.content} | 互动: 点赞[${m.likes}], 评论[${m.comments}]`).join('\n')
-        : ""
+    const historyStr =
+        historicalMoments.length > 0
+            ? '【朋友圈热点背景（参考）】\n' +
+              historicalMoments
+                  .map(
+                      (m) =>
+                          `ID: ${m.id} | 作者: ${m.authorName} | 内容: ${m.content} | 互动: 点赞[${m.likes}], 评论[${m.comments}]`,
+                  )
+                  .join('\n')
+            : ''
 
     // 简化现有角色信息，减少Token
     // v1.10.121: 显式列出每个角色的 ID,避免 AI 凭空捏造 authorId 导致评论被兜底成"神秘好友"
-    const friendsList = charInfos.map((c, index) => {
-        const uName = c.userName || userProfile?.name || '用户'
-        const uPersona = c.userPersona ? ` | 用户身份建议: ${c.userPersona}` : ''
-        const chatSnippet = c.recentChats ? ` | 最近聊天: ${c.recentChats.substring(0, 300).replace(/\n/g, ' ')}` : ''
-        const emojiHint = c.emojis && c.emojis.length > 0 ? ` | 可用表情包(插入格式 [表情包:名字]): ${c.emojis.map(e => e.name).join(', ')}` : ''
-        return `${index + 1}. ID="${c.id}" | 名字: ${c.name} | 人设: ${c.persona.substring(0, 100)}...${uPersona}${emojiHint}${chatSnippet}`
-    }).join('\n')
+    const friendsList = charInfos
+        .map((c, index) => {
+            const uName = c.userName || userProfile?.name || '用户'
+            const uPersona = c.userPersona ? ` | 用户身份建议: ${c.userPersona}` : ''
+            const chatSnippet = c.recentChats
+                ? ` | 最近聊天: ${c.recentChats.substring(0, 300).replace(/\n/g, ' ')}`
+                : ''
+            const emojiHint =
+                c.emojis && c.emojis.length > 0
+                    ? ` | 可用表情包(插入格式 [表情包:名字]): ${c.emojis.map((e) => e.name).join(', ')}`
+                    : ''
+            return `${index + 1}. ID="${c.id}" | 名字: ${c.name} | 人设: ${c.persona.substring(0, 100)}...${uPersona}${emojiHint}${chatSnippet}`
+        })
+        .join('\n')
 
-    let userInformation = ""
+    let userInformation = ''
     if (userProfile.name) {
         userInformation = `\n【当前通用用户（你互动的对象）资料】\n名字: ${userProfile.name}\n`
         if (userProfile.signature) userInformation += `个性签名: ${userProfile.signature}\n`
@@ -3956,7 +4995,7 @@ export async function generateBatchInteractions(moment, charInfos, historicalMom
     }
 
     // 收集所有角色的 customPrompt（如果有）
-    const allCustomPrompts = charInfos.map(c => c.customPrompt).filter(Boolean)
+    const allCustomPrompts = charInfos.map((c) => c.customPrompt).filter(Boolean)
     const uniqueCustomPrompt = allCustomPrompts.length > 0 ? allCustomPrompts[0] : ''
 
     const systemPrompt = `你现在是"朋友圈拟真生态引擎"。
@@ -3994,16 +5033,13 @@ ${uniqueCustomPrompt ? `【自定义生成要求】\n${uniqueCustomPrompt}\n` : 
 
 不要输出 Markdown，不要补充解释。`
 
-
-
-
-
-
-
-
-
     try {
-        const result = await apiQueue.enqueue(_generateReplyInternal, [[{ role: 'system', content: systemPrompt }], { name: 'System' }, null, { skipVisualContext: true }])
+        const result = await apiQueue.enqueue(_generateReplyInternal, [
+            [{ role: 'system', content: systemPrompt }],
+            { name: 'System' },
+            null,
+            { skipVisualContext: true },
+        ])
         if (result.error) {
             console.error('[AiService] Batch interaction failed:', result.error)
             throw new Error(result.error)
@@ -4014,10 +5050,19 @@ ${uniqueCustomPrompt ? `【自定义生成要求】\n${uniqueCustomPrompt}\n` : 
         let jsonStr = rawContent.trim()
 
         // 清除 markdown 代码块
-        jsonStr = jsonStr.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+        jsonStr = jsonStr
+            .replace(/```json\s*/gi, '')
+            .replace(/```\s*/g, '')
+            .trim()
         // 清除协议标签
-        jsonStr = jsonStr.replace(/[\[【]\s*(?:INNER[-_ ]?VOICE|心声)\s*[\]】][\s\S]*?[\[【]\s*\/\s*(?:INNER[-_ ]?VOICE|心声)\s*[\]】]/gi, '')
-        jsonStr = jsonStr.replace(/[\[【]\s*(?:\/?\s*(?:INNER[-_ ]?VOICE|心声|OFFLINE|ONLINE|DONE|DONE_TOKEN|CARD|TIMER|MCP)[^\]]*)\s*[\]】]/gi, '')
+        jsonStr = jsonStr.replace(
+            /[\[【]\s*(?:INNER[-_ ]?VOICE|心声)\s*[\]】][\s\S]*?[\[【]\s*\/\s*(?:INNER[-_ ]?VOICE|心声)\s*[\]】]/gi,
+            '',
+        )
+        jsonStr = jsonStr.replace(
+            /[\[【]\s*(?:\/?\s*(?:INNER[-_ ]?VOICE|心声|OFFLINE|ONLINE|DONE|DONE_TOKEN|CARD|TIMER|MCP)[^\]]*)\s*[\]】]/gi,
+            '',
+        )
         jsonStr = jsonStr.trim()
 
         // v1.10.125: 全面加固解析逻辑
@@ -4030,24 +5075,42 @@ ${uniqueCustomPrompt ? `【自定义生成要求】\n${uniqueCustomPrompt}\n` : 
         let interactions = null
         const arrayStart = jsonStr.indexOf('[')
         if (arrayStart !== -1) {
-            let depth = 0, inStr = false, escaped = false, arrayEnd = -1
+            let depth = 0,
+                inStr = false,
+                escaped = false,
+                arrayEnd = -1
             for (let i = arrayStart; i < jsonStr.length; i++) {
                 const ch = jsonStr[i]
-                if (escaped) { escaped = false; continue }
-                if (ch === '\\') { escaped = true; continue }
-                if (ch === '"') { inStr = !inStr; continue }
+                if (escaped) {
+                    escaped = false
+                    continue
+                }
+                if (ch === '\\') {
+                    escaped = true
+                    continue
+                }
+                if (ch === '"') {
+                    inStr = !inStr
+                    continue
+                }
                 if (inStr) continue
                 if (ch === '[') depth++
                 else if (ch === ']') {
                     depth--
-                    if (depth === 0) { arrayEnd = i; break }
+                    if (depth === 0) {
+                        arrayEnd = i
+                        break
+                    }
                 }
             }
             if (arrayEnd > arrayStart) {
                 try {
                     interactions = JSON.parse(jsonStr.substring(arrayStart, arrayEnd + 1))
                 } catch (e) {
-                    console.warn('[aiService] Brace-counting parse failed, trying fallback...', e.message)
+                    console.warn(
+                        '[aiService] Brace-counting parse failed, trying fallback...',
+                        e.message,
+                    )
                 }
             }
         }
@@ -4056,24 +5119,43 @@ ${uniqueCustomPrompt ? `【自定义生成要求】\n${uniqueCustomPrompt}\n` : 
         if (!interactions || !Array.isArray(interactions)) {
             const objStart = jsonStr.indexOf('{')
             if (objStart !== -1) {
-                let depth = 0, inStr = false, escaped = false, objEnd = -1
+                let depth = 0,
+                    inStr = false,
+                    escaped = false,
+                    objEnd = -1
                 for (let i = objStart; i < jsonStr.length; i++) {
                     const ch = jsonStr[i]
-                    if (escaped) { escaped = false; continue }
-                    if (ch === '\\') { escaped = true; continue }
-                    if (ch === '"') { inStr = !inStr; continue }
+                    if (escaped) {
+                        escaped = false
+                        continue
+                    }
+                    if (ch === '\\') {
+                        escaped = true
+                        continue
+                    }
+                    if (ch === '"') {
+                        inStr = !inStr
+                        continue
+                    }
                     if (inStr) continue
                     if (ch === '{') depth++
                     else if (ch === '}') {
                         depth--
-                        if (depth === 0) { objEnd = i; break }
+                        if (depth === 0) {
+                            objEnd = i
+                            break
+                        }
                     }
                 }
                 if (objEnd > objStart) {
                     try {
                         const parsedObj = JSON.parse(jsonStr.substring(objStart, objEnd + 1))
                         // 从对象中提取数组字段
-                        const arrayField = parsedObj.interactions || parsedObj.data || parsedObj.list || parsedObj.results
+                        const arrayField =
+                            parsedObj.interactions ||
+                            parsedObj.data ||
+                            parsedObj.list ||
+                            parsedObj.results
                         if (Array.isArray(arrayField)) {
                             interactions = arrayField
                         } else if (Array.isArray(parsedObj)) {
@@ -4113,37 +5195,58 @@ ${uniqueCustomPrompt ? `【自定义生成要求】\n${uniqueCustomPrompt}\n` : 
         }
 
         if (!interactions || !Array.isArray(interactions) || interactions.length === 0) {
-            console.error('[aiService] Batch interactions 全部解析方法失败,原始内容:', rawContent.substring(0, 1000))
-            useLoggerStore().addLog('ERROR', 'Batch interactions 解析失败 (Raw)', { content: rawContent.substring(0, 1000) })
+            console.error(
+                '[aiService] Batch interactions 全部解析方法失败,原始内容:',
+                rawContent.substring(0, 1000),
+            )
+            useLoggerStore().addLog('ERROR', 'Batch interactions 解析失败 (Raw)', {
+                content: rawContent.substring(0, 1000),
+            })
             return []
         }
         const VALID_TYPES = new Set(['like', 'comment', 'reply'])
         const userName = userProfile.name || '我'
 
         return interactions
-            .filter(item => {
+            .filter((item) => {
                 // Pre-filter: Absolutely forbid any interaction where the author is the user
                 const authorId = String(item.authorId || '').toLowerCase()
                 const authorName = String(item.authorName || '')
-                if (authorId === 'user' || authorName === userName || authorName === 'User' || authorName === '用户') {
-                    console.warn(`[aiService] Filtered out AI-generated interaction from forbidden author(user): ${authorName} `);
+                if (
+                    authorId === 'user' ||
+                    authorName === userName ||
+                    authorName === 'User' ||
+                    authorName === '用户'
+                ) {
+                    console.warn(
+                        `[aiService] Filtered out AI-generated interaction from forbidden author(user): ${authorName} `,
+                    )
                     return false
                 }
                 // [FIX] type 字段白名单校验，非法类型记录日志并跳过
                 if (item.type && !VALID_TYPES.has(String(item.type).toLowerCase())) {
-                    console.warn(`[aiService] Filtered out interaction with invalid type: ${item.type} (author: ${authorName})`)
+                    console.warn(
+                        `[aiService] Filtered out interaction with invalid type: ${item.type} (author: ${authorName})`,
+                    )
                     return false
                 }
                 return true
             })
-            .map(item => ({
+            .map((item) => ({
                 ...item,
                 // [FIX] 标准化 type 为小写，防止大小写不一致导致分支遗漏
-                type: item.type ? String(item.type).toLowerCase() : (item.content ? 'comment' : 'like'),
+                type: item.type
+                    ? String(item.type).toLowerCase()
+                    : item.content
+                      ? 'comment'
+                      : 'like',
                 // Ensure ID is matched if it's an existing char
-                authorId: item.isVirtual ? `virtual-${Date.now()}-${Math.random().toString(36).substr(2, 5)}` : (item.authorId || charInfos.find(c => c.name === item.authorName)?.id || null)
+                authorId: item.isVirtual
+                    ? `virtual-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
+                    : item.authorId ||
+                      charInfos.find((c) => c.name === item.authorName)?.id ||
+                      null,
             }))
-
     } catch (e) {
         console.error('[aiService] Batch interactions failed', e)
         return []
@@ -4156,15 +5259,17 @@ ${uniqueCustomPrompt ? `【自定义生成要求】\n${uniqueCustomPrompt}\n` : 
  * @param {Object} moment { authorName, content, visualContext }
  * @param {String} historicalContext 可选的历史背景字符串
  */
-export async function generateMomentComment(charInfo, moment, historicalContext = "") {
+export async function generateMomentComment(charInfo, moment, historicalContext = '') {
     const uName = charInfo.userName || '用户'
-    const uPersona = charInfo.userPersona ? `\n用户在此角色剧本中的设定：${charInfo.userPersona}` : ''
+    const uPersona = charInfo.userPersona
+        ? `\n用户在此角色剧本中的设定：${charInfo.userPersona}`
+        : ''
 
     const systemPrompt = `你现在是【${charInfo.name}】。
 你的设定：${charInfo.persona}。${uPersona}
 ${charInfo.worldContext ? `当前世界背景：${charInfo.worldContext}` : ''}
 ${historicalContext ? `\n${historicalContext}` : ''}
-${charInfo.emojis && charInfo.emojis.length > 0 ? `\n可用表情包（格式 [表情包:名字]）：${charInfo.emojis.map(e => e.name).join(', ')}` : ''}
+${charInfo.emojis && charInfo.emojis.length > 0 ? `\n可用表情包（格式 [表情包:名字]）：${charInfo.emojis.map((e) => e.name).join(', ')}` : ''}
 
 【任务】
 请对【${moment.authorName}】发布的一条朋友圈进行评论。
@@ -4183,11 +5288,19 @@ ${charInfo.emojis && charInfo.emojis.length > 0 ? `\n可用表情包（格式 [�
 
     try {
         // Skip visual context to prevent AI from getting distracted by analyzing avatars instead of generating comments
-        const result = await apiQueue.enqueue(_generateReplyInternal, [messages, { name: charInfo.name }, null, { skipVisualContext: true }])
+        const result = await apiQueue.enqueue(_generateReplyInternal, [
+            messages,
+            { name: charInfo.name },
+            null,
+            { skipVisualContext: true },
+        ])
         if (result.error) return null
 
         // Cleanup response (sometimes AI adds quotes or prefixes)
-        let comment = result.content.replace(/^["'](.*)["']$/, '$1').replace(/^评论[：:]\s*/, '').trim()
+        let comment = result.content
+            .replace(/^["'](.*)["']$/, '$1')
+            .replace(/^评论[：:]\s*/, '')
+            .trim()
         return comment
     } catch (e) {
         console.error('[aiService] generateMomentComment failed', e)
@@ -4203,12 +5316,14 @@ ${charInfo.emojis && charInfo.emojis.length > 0 ? `\n可用表情包（格式 [�
  */
 export async function generateReplyToComment(charInfo, moment, targetComment) {
     const uName = charInfo.userName || '用户'
-    const uPersona = charInfo.userPersona ? `\n用户在此角色剧本中的身份设定：${charInfo.userPersona}` : ''
+    const uPersona = charInfo.userPersona
+        ? `\n用户在此角色剧本中的身份设定：${charInfo.userPersona}`
+        : ''
 
     const systemPrompt = `你现在是【${charInfo.name}】。
 你的设定：${charInfo.persona}。${uPersona}
 ${charInfo.worldContext ? `当前世界背景：${charInfo.worldContext}` : ''}
-${charInfo.emojis && charInfo.emojis.length > 0 ? `\n可用表情包（格式 [表情包:名字]）：${charInfo.emojis.map(e => e.name).join(', ')}` : ''}
+${charInfo.emojis && charInfo.emojis.length > 0 ? `\n可用表情包（格式 [表情包:名字]）：${charInfo.emojis.map((e) => e.name).join(', ')}` : ''}
 
 【任务】
 你在朋友圈看到了【${targetComment.authorName}】的评论，请针对这条评论进行回复。
@@ -4225,11 +5340,19 @@ ${charInfo.emojis && charInfo.emojis.length > 0 ? `\n可用表情包（格式 [�
     const messages = [{ role: 'system', content: systemPrompt }]
 
     try {
-        const result = await apiQueue.enqueue(_generateReplyInternal, [messages, { name: charInfo.name }, null, { skipVisualContext: true }])
+        const result = await apiQueue.enqueue(_generateReplyInternal, [
+            messages,
+            { name: charInfo.name },
+            null,
+            { skipVisualContext: true },
+        ])
         if (result.error) return null
 
         // Cleanup
-        let reply = result.content.replace(/^["'](.*)["']$/, '$1').replace(/^回复[：:]\s*/, '').trim()
+        let reply = result.content
+            .replace(/^["'](.*)["']$/, '$1')
+            .replace(/^回复[：:]\s*/, '')
+            .trim()
         return reply
     } catch (e) {
         console.error('[aiService] generateReplyToComment failed', e)
@@ -4243,15 +5366,21 @@ ${charInfo.emojis && charInfo.emojis.length > 0 ? `\n可用表情包（格式 [�
  * @param {Object} userProfile - User profile with name
  * @returns {Promise<Object>} { pinnedMoments: Array, backgroundUrl: String, bio: String }
  */
-export async function generateCompleteProfile(character, userProfile = {}, options = { includeMoments: true, includeSocial: true, includeArchive: true }) {
+export async function generateCompleteProfile(
+    character,
+    userProfile = {},
+    options = { includeMoments: true, includeSocial: true, includeArchive: true },
+) {
     const userName = userProfile.name || '我'
-    const uPersona = character.userPersona ? `\n我在玩家剧本中的身份设定：${character.userPersona}` : ''
-    const { includeMoments, includeSocial, includeArchive } = options;
+    const uPersona = character.userPersona
+        ? `\n我在玩家剧本中的身份设定：${character.userPersona}`
+        : ''
+    const { includeMoments, includeSocial, includeArchive } = options
 
-    const tasks = [];
-    if (includeSocial) tasks.push("社交门户 (签名与背景)");
-    if (includeArchive) tasks.push("灵魂档案 (底层规格与性格)");
-    if (includeMoments) tasks.push("置顶动态 (3条朋友圈)");
+    const tasks = []
+    if (includeSocial) tasks.push('社交门户 (签名与背景)')
+    if (includeArchive) tasks.push('灵魂档案 (底层规格与性格)')
+    if (includeMoments) tasks.push('置顶动态 (3条朋友圈)')
 
     const systemPrompt = `你现在是"角色主页架构师"。
 任务：为角色生成以下内容：${tasks.join('、')}。
@@ -4267,14 +5396,24 @@ export async function generateCompleteProfile(character, userProfile = {}, optio
 【输出格式】
 请严格返回以下 JSON 结构：
 {
-  ${includeSocial ? `"signature": "个性签名（20 字内）",
-  "backgroundPrompt": "英文背景图提示词",` : ''}
-  ${includeArchive ? `"bioFields": {
+  ${
+      includeSocial
+          ? `"signature": "个性签名（20 字内）",
+  "backgroundPrompt": "英文背景图提示词",`
+          : ''
+  }
+  ${
+      includeArchive
+          ? `"bioFields": {
     "occupation": "职业", "gender": "性别", "mbti": "人格代码", "birthday": "生日", "zodiac": "星座",
     "height": "身高", "weight": "体重", "body": "身材描述", "status": "情感/生活状态", "scent": "气味",
     "style": "穿着风格", "hobbies": ["爱好1", "爱好2"], "idealType": "理想型描述", "heartbeatMoment": "心动瞬间描述"
-  },` : ''}
-  ${includeMoments ? `"pinnedMoments": [
+  },`
+          : ''
+  }
+  ${
+      includeMoments
+          ? `"pinnedMoments": [
     {
       "comment": "展示角色生活和人设的不同侧面",
       "content": "动态文字内容",
@@ -4285,7 +5424,9 @@ export async function generateCompleteProfile(character, userProfile = {}, optio
         { "type": "comment", "authorName": "符合背景的路人名", "content": "..." }
       ]
     }
-  ]` : ''}
+  ]`
+          : ''
+  }
 }
 
 【重要规则】
@@ -4293,27 +5434,33 @@ export async function generateCompleteProfile(character, userProfile = {}, optio
 2. interactions 中的点赞和评论只能来自虚构路人或 NPC，严禁生成用户 ${userName} 本人的互动。
 3. 只输出 JSON，不要补充解释。`
 
-
-
     try {
-        const result = await apiQueue.enqueue(_generateReplyInternal, [[{ role: 'system', content: systemPrompt }], { name: 'System' }, null, { skipVisualContext: true }])
-        
+        const result = await apiQueue.enqueue(_generateReplyInternal, [
+            [{ role: 'system', content: systemPrompt }],
+            { name: 'System' },
+            null,
+            { skipVisualContext: true },
+        ])
+
         // 增强的 JSON 提取逻辑
         let jsonText = result.content || ''
-        
+
         // 1. 清理 Markdown 代码块
-        jsonText = jsonText.replace(/```json/gi, '').replace(/```/g, '').trim()
-        
+        jsonText = jsonText
+            .replace(/```json/gi, '')
+            .replace(/```/g, '')
+            .trim()
+
         // 2. 定位最外层的 JSON 对象
         const start = jsonText.indexOf('{')
         const end = jsonText.lastIndexOf('}')
-        
+
         if (start === -1 || end === -1 || end <= start) {
             throw new Error('Invalid JSON: no valid object found')
         }
-        
+
         jsonText = jsonText.substring(start, end + 1)
-        
+
         // 3. 预处理：修复常见的 AI 输出错误
         let data = null
         try {
@@ -4334,7 +5481,10 @@ export async function generateCompleteProfile(character, userProfile = {}, optio
                         const fixed2 = jsonText.replace(/\n/g, '\\n').replace(/\r/g, '\\r')
                         data = JSON.parse(fixed2)
                     } catch (e3) {
-                        console.error('[aiService] JSON parse failed, raw content:', jsonText.substring(0, 200))
+                        console.error(
+                            '[aiService] JSON parse failed, raw content:',
+                            jsonText.substring(0, 200),
+                        )
                         throw new Error('Invalid JSON: ' + parseError.message)
                     }
                 }
@@ -4343,10 +5493,10 @@ export async function generateCompleteProfile(character, userProfile = {}, optio
 
         let backgroundUrl = null
         if (includeSocial && data.backgroundPrompt) {
-            try { 
+            try {
                 console.log('[Profile Gen] Generating background image...')
-                backgroundUrl = await generateImage(data.backgroundPrompt) 
-            } catch (e) { 
+                backgroundUrl = await generateImage(data.backgroundPrompt)
+            } catch (e) {
                 console.warn('[Profile Gen] Background image generation failed:', e.message)
                 // 不中断整个流程，只是没有背景图
             }
@@ -4357,10 +5507,10 @@ export async function generateCompleteProfile(character, userProfile = {}, optio
             for (const mData of data.pinnedMoments.slice(0, 3)) {
                 let imgUrl = null
                 if (mData.imagePrompt) {
-                    try { 
+                    try {
                         console.log('[Profile Gen] Generating moment image...')
-                        imgUrl = await generateImage(mData.imagePrompt) 
-                    } catch (e) { 
+                        imgUrl = await generateImage(mData.imagePrompt)
+                    } catch (e) {
                         console.warn('[Profile Gen] Moment image generation failed:', e.message)
                         // 不中断整个流程，只是没有配图
                     }
@@ -4369,7 +5519,7 @@ export async function generateCompleteProfile(character, userProfile = {}, optio
                     content: mData.content,
                     mentions: mData.mentions || [],
                     images: imgUrl ? [imgUrl] : [],
-                    interactions: mData.interactions || []
+                    interactions: mData.interactions || [],
                 })
             }
         }
@@ -4378,7 +5528,7 @@ export async function generateCompleteProfile(character, userProfile = {}, optio
             signature: data.signature || null,
             backgroundUrl: backgroundUrl,
             bioFields: data.bioFields || null,
-            pinnedMoments: processedMoments.length > 0 ? processedMoments : null
+            pinnedMoments: processedMoments.length > 0 ? processedMoments : null,
         }
     } catch (e) {
         console.error('[aiService] Profile gen failed', e)
@@ -4391,9 +5541,14 @@ export async function generateCompleteProfile(character, userProfile = {}, optio
  * 2. Signature (Status Text)
  * 3. 3 "Pinned" Moments representing their core personality or backstory
  */
-export async function generateCharacterProfile(char, userProfile, config = {}, options = { includeMoments: true, includeSocial: true, includeArchive: true }) {
+export async function generateCharacterProfile(
+    char,
+    userProfile,
+    config = {},
+    options = { includeMoments: true, includeSocial: true, includeArchive: true },
+) {
     // Re-use the enhanced logic to maintain consistency
-    return generateCompleteProfile(char, userProfile, options);
+    return generateCompleteProfile(char, userProfile, options)
 }
 
 /**
@@ -4434,15 +5589,22 @@ JSON 示例：
 }
 直接输出 JSON，不要补充解释。`
 
-
     try {
-        const result = await apiQueue.enqueue(_generateReplyInternal, [[{ role: 'system', content: systemPrompt }], { name: 'PersonaManager' }, null, { skipVisualContext: true }])
+        const result = await apiQueue.enqueue(_generateReplyInternal, [
+            [{ role: 'system', content: systemPrompt }],
+            { name: 'PersonaManager' },
+            null,
+            { skipVisualContext: true },
+        ])
         if (result.error) throw new Error(result.error)
 
         // v1.10.125: 加固解析(剥离围栏 + _repairJsonStrings + 多层兜底)
         let personaJsonText = (result.content || '').trim()
         // 剥离 markdown 围栏
-        personaJsonText = personaJsonText.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+        personaJsonText = personaJsonText
+            .replace(/```json\s*/gi, '')
+            .replace(/```\s*/g, '')
+            .trim()
         const personaStart = personaJsonText.indexOf('{')
         const personaEnd = personaJsonText.lastIndexOf('}')
         if (personaStart === -1 || personaEnd === -1 || personaEnd <= personaStart) {
