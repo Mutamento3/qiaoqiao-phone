@@ -5639,69 +5639,21 @@ JSON 示例：
 }
 
 /**
- * OCR: 用当前配置的视觉模型识别图片上的文字 (用于表情包自动命名)
+ * OCR: 识别图片上的文字 (本地 Tesseract.js, 不消耗 API)
  * @param {string} base64Image - data URL 或 base64 字符串
  * @returns {Promise<string>} 识别到的文字 (已 trim, 限 30 字). 失败返回 ''
  */
 export async function recognizeImageText(base64Image) {
     try {
-        const settingsStore = useSettingsStore(getActivePinia())
-        const config = settingsStore.currentConfig || settingsStore.apiConfig
-        if (!config || !config.apiKey) {
-            console.warn('[aiService OCR] No API key configured')
-            return ''
-        }
-        const { baseUrl, apiKey, model } = config
-
-        // 构造 endpoint
-        let endpoint = baseUrl || ''
-        if (!endpoint) return ''
-        if (!endpoint.includes('/chat/completions')) {
-            if (endpoint.endsWith('/v1')) endpoint = `${endpoint}/chat/completions`
-            else if (endpoint.endsWith('/v1/')) endpoint = `${endpoint}chat/completions`
-            else endpoint = endpoint.endsWith('/')
-                ? `${endpoint}chat/completions`
-                : `${endpoint}/chat/completions`
-        }
-
         // 保证 data URL 前缀
         const dataUrl = base64Image.startsWith('data:')
             ? base64Image
             : `data:image/png;base64,${base64Image}`
-
-        const resp = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({
-                model: model || 'gpt-4o-mini',
-                messages: [{
-                    role: 'user',
-                    content: [
-                        { type: 'text', text: '识别这张表情包上的文字。只返回识别到的文字内容(不要解释、不要引号、不要标点)。如果没有文字就返回空。最多30字。' },
-                        { type: 'image_url', image_url: { url: dataUrl } },
-                    ],
-                }],
-                temperature: 0,
-                max_tokens: 60,
-            }),
-            signal: AbortSignal.timeout(20000),
-        })
-
-        if (!resp.ok) {
-            console.warn('[aiService OCR] HTTP', resp.status, await resp.text().catch(() => ''))
-            return ''
-        }
-        const data = await resp.json()
-        const text = data?.choices?.[0]?.message?.content || ''
-        // 清理: 去引号/换行/多余空白, 限 30 字
-        const cleaned = text.replace(/["'""''「」『』]/g, '').replace(/\s+/g, ' ').trim().slice(0, 30)
-        console.log('[aiService OCR] recognized:', cleaned)
-        return cleaned
+        const { recognizeTextLocal } = await import('./tesseractService')
+        const { text } = await recognizeTextLocal(dataUrl)
+        return text
     } catch (e) {
-        console.warn('[aiService OCR] failed:', e.message || e)
+        console.warn('[OCR] failed:', e.message || e)
         return ''
     }
 }

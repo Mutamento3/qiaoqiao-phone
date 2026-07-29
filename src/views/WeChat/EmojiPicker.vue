@@ -195,7 +195,7 @@
                         >
                             <i v-if="isOcrLoading" class="fa-solid fa-spinner fa-spin"></i>
                             <i v-else class="fa-solid fa-wand-magic-sparkles"></i>
-                            {{ isOcrLoading ? '识别中...' : '自动识别文字' }}
+                            {{ isOcrLoading ? '本地识别中...' : '本地识别文字' }}
                         </button>
                     </div>
 
@@ -397,7 +397,7 @@
                     >
                         <i v-if="isBatchOcrRunning" class="fa-solid fa-spinner fa-spin"></i>
                         <i v-else class="fa-solid fa-wand-magic-sparkles"></i>
-                        {{ isBatchOcrRunning ? '识别中...' : '全部识别' }}
+                        {{ isBatchOcrRunning ? '本地识别中...' : '全部本地识别' }}
                     </button>
                     <button
                         @click="batchUploadAll"
@@ -629,26 +629,24 @@ const handleFileChange = async (event) => {
     event.target.value = ''
 }
 
-// OCR: 用当前配置的视觉模型识别表情包文字, 自动填入名称框
+// OCR: 本地 Tesseract.js 识别, 不消耗 API
 const autoRecognizeName = async () => {
     if (isOcrLoading.value || !pendingFile.value) return
     isOcrLoading.value = true
     try {
-        // 读取文件 → base64
         const { compressImage } = await import('../../utils/imageUtils')
         const base64 = await compressImage(pendingFile.value, { maxWidth: 800, maxHeight: 800, quality: 0.85 })
-        // 调 OCR
         const { recognizeImageText } = await import('../../utils/aiService')
         const text = await recognizeImageText(base64)
         if (text) {
             customStickerName.value = text
-            showToast(`识别成功: ${text}`)
+            showToast(`本地识别: ${text}`)
         } else {
-            showToast('未识别到文字 (可能图片无文字或视觉模型不支持)')
+            showToast('未识别到文字 (本地 OCR)')
         }
     } catch (e) {
         console.error('[OCR] failed', e)
-        showToast('识别失败: ' + (e.message || '未知错误'))
+        showToast('本地识别失败: ' + (e.message || '未知错误'))
     } finally {
         isOcrLoading.value = false
     }
