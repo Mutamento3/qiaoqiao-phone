@@ -1261,14 +1261,13 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
             ].includes(msg.type)
             if (msg.image && !isCardType) {
                 // Sticker (表情包) 也走视觉通道,但不当作头像图片
-                // 加上明确的【表情包】前缀,避免 AI 把它当成头像素材
                 const isSticker = msg.type === 'sticker' || /^\[表情包[:：]/.test(msg.content || '')
+                // [TOKEN SAVER] 只对 base64 表情包省 token (base64 几十 KB~几 MB)
+                // 短链 URL (https://...) 表情包保留视觉, 因为内置表情包有很多同名不同图,
+                // AI 需要看图区分. base64 才省 (图床不可用时本地存储的大头)
+                const isStickerBase64 = isSticker && msg.image.startsWith('data:')
 
-                // [TOKEN SAVER] 表情包消息只发文字标签, 不发图片给 AI
-                // 原因: 表情包图大多是 base64 (图床不可用时), 一张几十 KB ~ 几 MB,
-                //       而且表情包的语义已经体现在名字里 (如"老子惹你没？"),
-                //       AI 看名字就够了, 不需要看图. 省 token 效果显著.
-                if (isSticker) {
+                if (isStickerBase64) {
                     const stickerName = msg.stickerName
                         || (msg.content && msg.content.replace(/^\[表情包[:：]\s*/, '').replace(/\]\s*$/, ''))
                         || '表情'
@@ -1286,7 +1285,10 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
 
                 if (isVisionEnabled) {
                     const imageId = msg.id || 'curr'
-                    const refText = `【图片ID: ${imageId}】如需更换头像，请使用: [更换头像:${imageId}]`
+                    // sticker 短链走视觉, 但不加"换头像"提示
+                    const refText = isSticker
+                        ? `【表情包: ${msg.stickerName || (msg.content && msg.content.replace(/^\[表情包[:：]\s*/, '').replace(/\]\s*$/, '')) || '表情'}】(图片ID: ${imageId})`
+                        : `【图片ID: ${imageId}】如需更换头像，请使用: [更换头像:${imageId}]`
 
                     // Resolve to B64 if remote
                     const imgUrl = msg.image.startsWith('http')

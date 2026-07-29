@@ -173,8 +173,8 @@
 
         </div>
 
-        <!-- Hidden Input -->
-        <input type="file" ref="fileInput" class="hidden" accept="image/*" @change="handleFileChange">
+        <!-- Hidden Input (支持多选) -->
+        <input type="file" ref="fileInput" class="hidden" accept="image/*" multiple @change="handleFileChange">
 
         <!-- Single Upload Modal (custom name + optional category) -->
         <div v-if="showUploadModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] animate-fade-in">
@@ -290,6 +290,124 @@
                         </button>
                     </div>
                     <div class="text-[10px] text-gray-400 text-center mt-2">图床国内不可用, 已自动改本地存储</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Batch OCR Modal (多选文件 + 逐个 OCR + 可编辑 + 批量上传) -->
+        <div v-if="showBatchOcrModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] animate-fade-in">
+            <div class="bg-white w-[92%] max-w-[400px] max-h-[88vh] rounded-lg shadow-xl overflow-hidden flex flex-col">
+                <!-- Header -->
+                <div class="p-3 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
+                    <span class="font-bold text-gray-700 text-sm">批量上传 ({{ batchOcrItems.length }}个)</span>
+                    <button
+                        @click="!isBatchUploading && !isBatchOcrRunning && _closeBatchOcrModal()"
+                        :disabled="isBatchUploading || isBatchOcrRunning"
+                        class="text-gray-400 hover:text-gray-600 disabled:opacity-30"
+                    >
+                        <i class="fa-solid fa-xmark text-xl"></i>
+                    </button>
+                </div>
+
+                <!-- Category + Prefix -->
+                <div class="p-3 border-b border-gray-200 flex-shrink-0">
+                    <div class="flex gap-2 items-center mb-2">
+                        <span class="text-xs text-gray-600 shrink-0">分类:</span>
+                        <input
+                            v-model="batchOcrCategory"
+                            type="text"
+                            placeholder="可选, 输入或选现有"
+                            class="flex-1 px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-orange-200"
+                        >
+                    </div>
+                    <label v-if="batchOcrCategory" class="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                        <input
+                            v-model="batchOcrUsePrefix"
+                            type="checkbox"
+                            class="w-3.5 h-3.5 rounded appearance-none bg-white border-2 border-gray-300 checked:bg-orange-500 checked:border-orange-500 relative cursor-pointer"
+                        >
+                        标签作为名字前缀 ({{ batchOcrCategory }}-名字)
+                    </label>
+                </div>
+
+                <!-- File List -->
+                <div class="flex-1 overflow-y-auto p-2 custom-scrollbar">
+                    <div
+                        v-for="(item, idx) in batchOcrItems"
+                        :key="idx"
+                        class="flex items-center gap-2 p-2 mb-1.5 border border-gray-100 rounded-lg hover:bg-gray-50"
+                    >
+                        <!-- 缩略图 -->
+                        <img :src="item.preview" class="w-12 h-12 object-contain border border-gray-200 rounded shrink-0">
+
+                        <!-- 名字输入 + 状态 -->
+                        <div class="flex-1 min-w-0">
+                            <input
+                                v-model="item.name"
+                                type="text"
+                                :placeholder="item.file.name?.split('.').slice(0,-1).join('.') || '名字'"
+                                maxlength="30"
+                                :disabled="item.status === 'done' || item.status === 'uploading'"
+                                class="w-full px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-orange-200 disabled:bg-gray-100"
+                            >
+                            <div class="text-[10px] mt-0.5" :class="{
+                                'text-gray-400': item.status === 'pending',
+                                'text-blue-500': item.status === 'ocr-ing',
+                                'text-green-600': item.status === 'ocr-done' || item.status === 'done',
+                                'text-red-500': item.status === 'ocr-fail' || item.status === 'fail',
+                                'text-orange-500': item.status === 'uploading',
+                            }">
+                                <span v-if="item.status === 'pending'">待识别</span>
+                                <span v-else-if="item.status === 'ocr-ing'"><i class="fa-solid fa-spinner fa-spin"></i> 识别中</span>
+                                <span v-else-if="item.status === 'ocr-done'">已识别</span>
+                                <span v-else-if="item.status === 'ocr-fail'">识别失败 (无文字?)</span>
+                                <span v-else-if="item.status === 'uploading'"><i class="fa-solid fa-spinner fa-spin"></i> 上传中</span>
+                                <span v-else-if="item.status === 'done'"><i class="fa-solid fa-check"></i> 已上传</span>
+                                <span v-else-if="item.status === 'fail'">上传失败</span>
+                            </div>
+                        </div>
+
+                        <!-- 单个 OCR 按钮 -->
+                        <button
+                            v-if="item.status === 'pending' || item.status === 'ocr-fail'"
+                            @click="ocrSingleItem(idx)"
+                            :disabled="item.status === 'ocr-ing' || isBatchOcrRunning"
+                            class="text-xs px-2 py-1 rounded bg-blue-50 text-blue-600 hover:bg-blue-100 disabled:opacity-40 shrink-0"
+                        >
+                            <i class="fa-solid fa-wand-magic-sparkles"></i>
+                        </button>
+
+                        <!-- 删除按钮 (未上传的) -->
+                        <button
+                            v-if="item.status !== 'done' && item.status !== 'uploading' && !isBatchUploading"
+                            @click="removeBatchItem(idx)"
+                            class="text-xs px-1.5 py-1 rounded text-gray-400 hover:text-red-500 shrink-0"
+                        >
+                            <i class="fa-solid fa-xmark"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Footer Actions -->
+                <div class="p-3 border-t border-gray-200 flex gap-2 flex-shrink-0">
+                    <button
+                        @click="ocrAllItems"
+                        :disabled="isBatchOcrRunning || isBatchUploading"
+                        class="flex-1 px-3 py-2 bg-blue-500 text-white rounded font-medium text-xs disabled:opacity-50 flex items-center justify-center gap-1"
+                    >
+                        <i v-if="isBatchOcrRunning" class="fa-solid fa-spinner fa-spin"></i>
+                        <i v-else class="fa-solid fa-wand-magic-sparkles"></i>
+                        {{ isBatchOcrRunning ? '识别中...' : '全部识别' }}
+                    </button>
+                    <button
+                        @click="batchUploadAll"
+                        :disabled="isBatchUploading || isBatchOcrRunning"
+                        class="flex-1 px-3 py-2 bg-orange-500 text-white rounded font-medium text-xs disabled:opacity-50 flex items-center justify-center gap-1"
+                    >
+                        <i v-if="isBatchUploading" class="fa-solid fa-spinner fa-spin"></i>
+                        <i v-else class="fa-solid fa-upload"></i>
+                        {{ isBatchUploading ? '上传中...' : '全部上传' }}
+                    </button>
                 </div>
             </div>
         </div>
@@ -474,7 +592,21 @@ const showToast = (msg) => {
 }
 
 const handleFileChange = async (event) => {
-    const file = event.target.files[0]
+    const files = Array.from(event.target.files || [])
+    if (files.length === 0) {
+        event.target.value = ''
+        return
+    }
+
+    // 多个文件 → 批量 OCR 弹窗
+    if (files.length > 1) {
+        startBatchOcrMode(files)
+        event.target.value = ''
+        return
+    }
+
+    // 单个文件 → 现有单文件弹窗
+    const file = files[0]
     if (file) {
         // Reset modal state
         pendingFile.value = file
@@ -519,6 +651,134 @@ const autoRecognizeName = async () => {
         showToast('识别失败: ' + (e.message || '未知错误'))
     } finally {
         isOcrLoading.value = false
+    }
+}
+
+// ============ 批量 OCR 上传 ============
+// 多选文件后进入此模式: 列表展示, 逐个 OCR, 可编辑名字, 批量上传
+const showBatchOcrModal = ref(false)
+const batchOcrItems = ref([])  // [{ file, preview, name, status: 'pending'|'ocr-ing'|'ocr-done'|'ocr-fail'|'uploading'|'done'|'fail' }]
+const batchOcrCategory = ref('')
+const batchOcrUsePrefix = ref(false)
+const isBatchOcrRunning = ref(false)  // 一键识别进行中
+const isBatchUploading = ref(false)
+
+const startBatchOcrMode = (files) => {
+    batchOcrItems.value = files.map(f => ({
+        file: f,
+        preview: URL.createObjectURL(f),
+        name: '',
+        status: 'pending',
+    }))
+    batchOcrCategory.value = ''
+    batchOcrUsePrefix.value = false
+    showBatchOcrModal.value = true
+}
+
+// 单个文件 OCR (按 index)
+const ocrSingleItem = async (idx) => {
+    const item = batchOcrItems.value[idx]
+    if (!item || item.status === 'ocr-ing' || item.status === 'done') return
+    item.status = 'ocr-ing'
+    try {
+        const { compressImage } = await import('../../utils/imageUtils')
+        const base64 = await compressImage(item.file, { maxWidth: 800, maxHeight: 800, quality: 0.85 })
+        const { recognizeImageText } = await import('../../utils/aiService')
+        const text = await recognizeImageText(base64)
+        if (text) {
+            item.name = text
+            item.status = 'ocr-done'
+        } else {
+            item.status = 'ocr-fail'
+        }
+    } catch (e) {
+        console.error('[BatchOCR] item', idx, e)
+        item.status = 'ocr-fail'
+    }
+}
+
+// 一键识别所有 pending 项 (顺序执行, 避免 API 限流)
+const ocrAllItems = async () => {
+    if (isBatchOcrRunning.value) return
+    isBatchOcrRunning.value = true
+    try {
+        for (let i = 0; i < batchOcrItems.value.length; i++) {
+            const item = batchOcrItems.value[i]
+            if (item.status === 'pending' || item.status === 'ocr-fail') {
+                await ocrSingleItem(i)
+            }
+        }
+        showToast('批量识别完成')
+    } finally {
+        isBatchOcrRunning.value = false
+    }
+}
+
+// 批量上传
+const batchUploadAll = async () => {
+    if (isBatchUploading.value) return
+    isBatchUploading.value = true
+    let successCount = 0
+    let failCount = 0
+    try {
+        for (let i = 0; i < batchOcrItems.value.length; i++) {
+            const item = batchOcrItems.value[i]
+            if (item.status === 'done' || item.status === 'uploading') continue
+            item.status = 'uploading'
+            try {
+                let name = item.name.trim()
+                if (!name) {
+                    // 无名字用文件名
+                    const fn = item.file.name || ''
+                    name = fn.split('.').slice(0, -1).join('.') || fn || `Custom_${Date.now()}`
+                }
+                // 标签前缀
+                if (batchOcrUsePrefix.value && batchOcrCategory.value) {
+                    name = `${batchOcrCategory.value}-${name}`
+                }
+                await stickerStore.uploadSticker(
+                    item.file,
+                    activeScope.value,
+                    name,
+                    batchOcrCategory.value.trim()
+                )
+                item.status = 'done'
+                successCount++
+            } catch (e) {
+                console.error('[BatchUpload] item', i, e)
+                item.status = 'fail'
+                failCount++
+            }
+        }
+        showToast(`上传完成: 成功 ${successCount}${failCount ? `, 失败 ${failCount}` : ''}`)
+        if (failCount === 0) {
+            _closeBatchOcrModal()
+        }
+    } finally {
+        isBatchUploading.value = false
+    }
+}
+
+const _closeBatchOcrModal = () => {
+    // 释放预览 URL
+    batchOcrItems.value.forEach(item => {
+        if (item.preview) {
+            try { URL.revokeObjectURL(item.preview) } catch (e) {}
+        }
+    })
+    showBatchOcrModal.value = false
+    batchOcrItems.value = []
+}
+
+// 批量列表里删除某项 (还没上传的才能删)
+const removeBatchItem = (idx) => {
+    const item = batchOcrItems.value[idx]
+    if (item?.preview) {
+        try { URL.revokeObjectURL(item.preview) } catch (e) {}
+    }
+    batchOcrItems.value.splice(idx, 1)
+    if (batchOcrItems.value.length === 0) {
+        _closeBatchOcrModal()
     }
 }
 
