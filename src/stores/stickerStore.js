@@ -119,7 +119,7 @@ export const useStickerStore = defineStore('sticker', () => {
     }
 
     // 带超时的 fetch, 防止单个图床卡死整个上传流程
-    async function fetchWithTimeout(url, options, timeoutMs = 15000) {
+    async function fetchWithTimeout(url, options, timeoutMs = 10000) {
         const controller = new AbortController()
         const timeout = setTimeout(() => controller.abort(), timeoutMs)
         try {
@@ -129,19 +129,44 @@ export const useStickerStore = defineStore('sticker', () => {
         }
     }
 
+    // base64 data URL → Blob (纯 JS, 避免 fetch data URL 在 WebView 的兼容问题)
+    function dataUrlToBlob(dataUrl) {
+        const parts = dataUrl.split(',')
+        const mimeMatch = parts[0].match(/:(.*?);/)
+        const mime = mimeMatch ? mimeMatch[1] : 'image/png'
+        const raw = atob(parts[1])
+        const arr = new Uint8Array(raw.length)
+        for (let i = 0; i < raw.length; i++) {
+            arr[i] = raw.charCodeAt(i)
+        }
+        return new Blob([arr], { type: mime })
+    }
+
     // 上传 base64 到图床, 返回短链 URL
     // 多图床轮询: 任一成功即返回, 全部失败返回 null (调用方 fallback 到 base64)
     // 顺序按国内可达性排序
     async function uploadToImageHost(base64Data) {
         try {
-            // base64 data URL → Blob → File
-            const res = await fetch(base64Data)
-            const blob = await res.blob()
+            // base64 data URL → Blob → File (纯 JS, 兼容 WebView)
+            const blob = dataUrlToBlob(base64Data)
             const file = new File([blob], 'sticker.png', { type: blob.type || 'image/png' })
 
-            // 图床列表 (按国内可达性排序, 优先尝试国内能直连的)
+            // 图床列表 (按国内可达性排序)
             const hosts = [
-                // 1. telegra.ph - Telegram 图床, 国内相对可访问, 无需 API key, 支持 CORS
+                // 1. 0x0.st - 简单免费图床, 国内相对可访问, 无需 API key, 支持 CORS
+                //    返回: 纯文本 URL (https://0x0.st/xxx.png)
+                async () => {
+                    const formData = new FormData()
+                    formData.append('file', file)
+                    const resp = await fetchWithTimeout('https://0x0.st', {
+                        method: 'POST',
+                        body: formData
+                    }, 10000)
+                    if (!resp.ok) return null
+                    const text = (await resp.text()).trim()
+                    return text.startsWith('http') ? text : null
+                },
+                // 2. telegra.ph - Telegram 图床, 国内相对可访问, 无需 API key, 支持 CORS
                 //    返回: [{"src":"/file/xxx.jpg"}]
                 async () => {
                     const formData = new FormData()
@@ -149,7 +174,7 @@ export const useStickerStore = defineStore('sticker', () => {
                     const resp = await fetchWithTimeout('https://telegra.ph/upload', {
                         method: 'POST',
                         body: formData
-                    }, 15000)
+                    }, 10000)
                     if (!resp.ok) return null
                     const data = await resp.json()
                     if (Array.isArray(data) && data[0]?.src) {
@@ -157,7 +182,7 @@ export const useStickerStore = defineStore('sticker', () => {
                     }
                     return null
                 },
-                // 2. catbox.moe - 备选, 国内可能需要代理, 无需 API key
+                // 3. catbox.moe - 备选, 国内需代理, 无需 API key
                 //    返回: 纯文本 https://files.catbox.moe/xxx.png
                 async () => {
                     const formData = new FormData()
@@ -166,10 +191,32 @@ export const useStickerStore = defineStore('sticker', () => {
                     const resp = await fetchWithTimeout('https://catbox.moe/user/api.php', {
                         method: 'POST',
                         body: formData
-                    }, 15000)
+                    }, 10000)
                     if (!resp.ok) return null
-                    const url = (await resp.text()).trim()
-                    return url.startsWith('https://') ? url : null
+                    const text = (await resp.text()).trim()
+                    // catbox 失败时可能返回 "Error: xxx", 而非 URL
+                    if (text.startsWith('https://')) {
+                        return text
+                    }
+                    console.warn('[StickerStore] catbox.moe returned non-URL:', text)
+                    return null
+                },
+                // 4. tmpfiles.org - 简单免费图床, 无需 API key
+                //    返回: {"status": "OK", "url": "https://tmpfiles.org/dl/xxx.png"}
+                async () => {
+                    const formData = new FormData()
+                    formData.append('file', file)
+                    formData.append('expires', '')
+                    const resp = await fetchWithTimeout('https://tmpfiles.org/api/v1/upload', {
+                        method: 'POST',
+                        body: formData
+                    }, 10000)
+                    if (!resp.ok) return null
+                    const data = await resp.json()
+                    if (data.status === 'OK' && data.data?.url) {
+                        return data.data.url
+                    }
+                    return null
                 }
             ]
 
