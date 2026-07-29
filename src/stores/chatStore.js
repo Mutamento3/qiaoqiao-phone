@@ -2646,7 +2646,7 @@ export const useChatStore = defineStore('chat', () => {
         const MAX_SUMMARY_SIZE = 50000
         const MAX_MEMORY_ENTRY_SIZE = 5000
         const MAX_MEMORY_ENTRIES = 30
-        const MAX_EMOJI_SIZE = 50 * 1024
+        const MAX_EMOJI_SIZE = 200 * 1024  // 从 50KB 提高到 200KB, 防止 300x300 表情包被过滤掉
         const MAX_BIO_TEXT_SIZE = 100000
 
         for (const key of Object.keys(meta)) {

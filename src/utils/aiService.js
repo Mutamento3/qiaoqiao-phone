@@ -486,7 +486,16 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
     const globalStickers = stickerStore.getStickers('global')
     // Attempt to get ID from char object (Chat object)
     const charId = char.id || char.uuid || char.charId
-    const charStickers = charId ? stickerStore.getStickers(charId, char.emojis || []) : []
+    // [BUG FIX] char.emojis 可能因为 sanitizeMetaForStorage 的 MAX_EMOJI_SIZE 过滤而变空
+    // 增加 fallback: 如果 char.emojis 为空, 直接从 stickerStore 按 scope 重新加载
+    let charStickers = charId ? stickerStore.getStickers(charId, char.emojis || []) : []
+    if (charId && charStickers.length === 0) {
+        const chatFromStore = chatStore?.chats?.[charId]
+        if (chatFromStore && chatFromStore.emojis && chatFromStore.emojis.length > 0) {
+            charStickers = stickerStore.getStickers(charId, chatFromStore.emojis)
+            console.warn('[aiService] char.emojis 为空, 从 chatStore 重新加载:', charStickers.length, '个')
+        }
+    }
     let memoryText = ''
 
     // v1.10.130: skipContext=true 时(如 summarizeHistory 按日期/轮次总结)跳过
