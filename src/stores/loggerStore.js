@@ -11,8 +11,10 @@ export const useLoggerStore = defineStore('logger', () => {
 
     // [BUG FIX] 敏感信息脱敏: 防止 apiKey/token/Authorization/cookie 等被持久化到 IndexedDB
     // (用户导出日志或 IndexedDB 被读取时会泄漏). 在 addLog 入口处统一脱敏.
-    const _SENSITIVE_JSON_RE = /(["'])(api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|password|passwd|pwd|secret|token|cookie)\1\s*:\s*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^,}\s]+)/gi
-    const _SENSITIVE_URL_PARAM_RE = /([?&](?:api[_-]?key|key|token|access[_-]?token|signature|sig)=)[^&\s"']+/gi
+    const _SENSITIVE_JSON_RE =
+        /(["'])(api[_-]?key|access[_-]?token|refresh[_-]?token|authorization|password|passwd|pwd|secret|token|cookie)\1\s*:\s*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^,}\s]+)/gi
+    const _SENSITIVE_URL_PARAM_RE =
+        /([?&](?:api[_-]?key|key|token|access[_-]?token|signature|sig)=)[^&\s"']+/gi
 
     const _redactString = (s) => {
         if (typeof s !== 'string') return s
@@ -28,7 +30,11 @@ export const useLoggerStore = defineStore('logger', () => {
             try {
                 const s = JSON.stringify(detail)
                 const sanitized = _redactString(s)
-                try { return JSON.parse(sanitized) } catch (_) { return sanitized }
+                try {
+                    return JSON.parse(sanitized)
+                } catch (_) {
+                    return sanitized
+                }
             } catch (e) {
                 return '[Un-serializable Object]'
             }
@@ -38,8 +44,8 @@ export const useLoggerStore = defineStore('logger', () => {
 
     // Configuration for localforage
     const logStorage = localforage.createInstance({
-        name: "qiaoqiao_logs"
-    });
+        name: 'qiaoqiao_logs',
+    })
 
     // Initial load from IndexedDB
     const loadLogs = async () => {
@@ -55,7 +61,7 @@ export const useLoggerStore = defineStore('logger', () => {
                         saved = JSON.parse(oldData)
                         localStorage.removeItem('system_logs')
                         await logStorage.setItem('system_logs_v2', saved)
-                    } catch (e) { }
+                    } catch (e) {}
                 }
             }
 
@@ -84,15 +90,17 @@ export const useLoggerStore = defineStore('logger', () => {
         // 已有写入排队? 跳过 - 写入执行时会读最新 logs.value, 自然包含本次变更
         if (_savePending) return
         _savePending = true
-        _saveChain = _saveChain.then(async () => {
-            _savePending = false
-            try {
-                const snapshot = JSON.parse(JSON.stringify(logs.value))
-                await logStorage.setItem('system_logs_v2', snapshot)
-            } catch (e) {
-                console.error('[LoggerStore] IndexedDB storage failed:', e)
-            }
-        }).catch(() => {})
+        _saveChain = _saveChain
+            .then(async () => {
+                _savePending = false
+                try {
+                    const snapshot = JSON.parse(JSON.stringify(logs.value))
+                    await logStorage.setItem('system_logs_v2', snapshot)
+                } catch (e) {
+                    console.error('[LoggerStore] IndexedDB storage failed:', e)
+                }
+            })
+            .catch(() => {})
         return _saveChain
     }
 
@@ -100,30 +108,25 @@ export const useLoggerStore = defineStore('logger', () => {
         // [BUG FIX] 先脱敏, 再截断 - 否则截断会破坏 JSON 结构使脱敏 regex 失效
         const sanitizedDetail = _redactDetail(detail)
 
-        // Dynamic truncation for individual log entries
-        const isCriticalAI = /网络请求|AI响应|Request|Response/i.test(title)
-        const isAIRelated = /AI|生成|Generation/i.test(title)
-
-        // [BUG FIX] 收紧截断上限: 200000×2000=400MB 会 OOM. 改为 50000/20000/2000.
-        let maxDetailLength
-        if (isCriticalAI) {
-            maxDetailLength = 50000
-        } else if (isAIRelated) {
-            maxDetailLength = 20000
-        } else {
-            maxDetailLength = 2000
-        }
+        // [FIX] 系统日志的核心用途就是排查问题, 截断会导致关键信息丢失.
+        // 移除按类型截断的逻辑, 仅保留一个超高的硬上限防止极端 OOM.
+        const maxDetailLength = 2000000 // 2MB per log entry, 足够容纳完整系统提示词+上下文
 
         // Truncate overly large details
         let truncatedDetail = sanitizedDetail
-        if (sanitizedDetail && typeof sanitizedDetail === 'string' && sanitizedDetail.length > maxDetailLength) {
+        if (
+            sanitizedDetail &&
+            typeof sanitizedDetail === 'string' &&
+            sanitizedDetail.length > maxDetailLength
+        ) {
             truncatedDetail = sanitizedDetail.substring(0, maxDetailLength) + '... (truncated)'
         } else if (sanitizedDetail && typeof sanitizedDetail === 'object') {
             try {
                 const detailStr = JSON.stringify(sanitizedDetail)
                 if (detailStr.length > maxDetailLength) {
                     // If too big, store as truncated string instead of trying to parse back
-                    truncatedDetail = detailStr.substring(0, maxDetailLength) + '... (truncated object string)'
+                    truncatedDetail =
+                        detailStr.substring(0, maxDetailLength) + '... (truncated object string)'
                 } else {
                     truncatedDetail = sanitizedDetail // Store as object (reactive proxy will be cleaned in saveLogs)
                 }
@@ -137,7 +140,7 @@ export const useLoggerStore = defineStore('logger', () => {
             time: new Date().toLocaleTimeString(),
             type: type.toUpperCase(),
             title,
-            detail: truncatedDetail
+            detail: truncatedDetail,
         }
 
         logs.value.push(entry)
@@ -154,7 +157,7 @@ export const useLoggerStore = defineStore('logger', () => {
             if (type === 'error') console.error(`[LOG] ${title}`, detail)
             else if (type === 'warn') console.warn(`[LOG] ${title}`, detail)
             else console.log(`[LOG] ${title}`, detail)
-        } catch (e) { }
+        } catch (e) {}
     }
 
     // Helper methods
@@ -183,7 +186,11 @@ export const useLoggerStore = defineStore('logger', () => {
 
     const lastContext = computed(() => {
         const reversed = [...logs.value].reverse()
-        return reversed.find(l => (l.type === 'AI' || l.type === 'DEBUG') && (l.title.includes('网络请求') || l.title.includes('Request')))
+        return reversed.find(
+            (l) =>
+                (l.type === 'AI' || l.type === 'DEBUG') &&
+                (l.title.includes('网络请求') || l.title.includes('Request')),
+        )
     })
 
     // Initialization
@@ -203,6 +210,6 @@ export const useLoggerStore = defineStore('logger', () => {
         success,
         clearLogs,
         exportLogs,
-        lastContext
+        lastContext,
     }
 })
