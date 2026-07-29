@@ -118,32 +118,73 @@ export const useStickerStore = defineStore('sticker', () => {
         }
     }
 
+    // 带超时的 fetch, 防止单个图床卡死整个上传流程
+    async function fetchWithTimeout(url, options, timeoutMs = 15000) {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), timeoutMs)
+        try {
+            return await fetch(url, { ...options, signal: controller.signal })
+        } finally {
+            clearTimeout(timeout)
+        }
+    }
+
     // 上传 base64 到图床, 返回短链 URL
-    // 失败时返回 null, 调用方 fallback 到 base64
+    // 多图床轮询: 任一成功即返回, 全部失败返回 null (调用方 fallback 到 base64)
+    // 顺序按国内可达性排序
     async function uploadToImageHost(base64Data) {
         try {
-            // base64 data URL → Blob
+            // base64 data URL → Blob → File
             const res = await fetch(base64Data)
             const blob = await res.blob()
             const file = new File([blob], 'sticker.png', { type: blob.type || 'image/png' })
 
-            // catbox.moe 免费公开图床, 无需 API key, 支持 CORS
-            const formData = new FormData()
-            formData.append('reqType', 'fileupload')
-            formData.append('fileToUpload', file)
+            // 图床列表 (按国内可达性排序, 优先尝试国内能直连的)
+            const hosts = [
+                // 1. telegra.ph - Telegram 图床, 国内相对可访问, 无需 API key, 支持 CORS
+                //    返回: [{"src":"/file/xxx.jpg"}]
+                async () => {
+                    const formData = new FormData()
+                    formData.append('file', file)
+                    const resp = await fetchWithTimeout('https://telegra.ph/upload', {
+                        method: 'POST',
+                        body: formData
+                    }, 15000)
+                    if (!resp.ok) return null
+                    const data = await resp.json()
+                    if (Array.isArray(data) && data[0]?.src) {
+                        return 'https://telegra.ph' + data[0].src
+                    }
+                    return null
+                },
+                // 2. catbox.moe - 备选, 国内可能需要代理, 无需 API key
+                //    返回: 纯文本 https://files.catbox.moe/xxx.png
+                async () => {
+                    const formData = new FormData()
+                    formData.append('reqType', 'fileupload')
+                    formData.append('fileToUpload', file)
+                    const resp = await fetchWithTimeout('https://catbox.moe/user/api.php', {
+                        method: 'POST',
+                        body: formData
+                    }, 15000)
+                    if (!resp.ok) return null
+                    const url = (await resp.text()).trim()
+                    return url.startsWith('https://') ? url : null
+                }
+            ]
 
-            const resp = await fetch('https://catbox.moe/user/api.php', {
-                method: 'POST',
-                body: formData
-            })
-            if (resp.ok) {
-                const url = (await resp.text()).trim()
-                if (url.startsWith('https://')) {
-                    console.log('[StickerStore] Uploaded to image host:', url)
-                    return url
+            for (let i = 0; i < hosts.length; i++) {
+                try {
+                    const url = await hosts[i]()
+                    if (url) {
+                        console.log(`[StickerStore] Uploaded to image host #${i + 1}:`, url)
+                        return url
+                    }
+                } catch (e) {
+                    console.warn(`[StickerStore] Image host #${i + 1} failed:`, e.message)
                 }
             }
-            console.warn('[StickerStore] Image host upload failed, response:', await resp.text())
+            console.warn('[StickerStore] All image hosts failed, falling back to base64')
             return null
         } catch (e) {
             console.warn('[StickerStore] Image host upload error:', e)
