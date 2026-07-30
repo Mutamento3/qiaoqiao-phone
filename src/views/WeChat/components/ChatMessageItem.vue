@@ -317,7 +317,7 @@
                                     <!-- 商品列表 -->
                                     <div class="space-y-2 max-h-[160px] overflow-y-auto scroll-hide">
                                         <div v-for="(item, idx) in (msg.items || [])" :key="idx" class="flex items-center gap-2.5 p-2 rounded-xl bg-gradient-to-r from-pink-50/60 to-orange-50/30 border border-pink-50/60">
-                                            <img :src="item.image" class="w-14 h-14 rounded-xl object-cover bg-white shadow-sm">
+                                            <img :src="item.image || '/broken-image.png'" class="w-14 h-14 rounded-xl object-cover bg-white shadow-sm">
                                             <div class="flex-1 min-w-0">
                                                 <h4 class="text-[13px] font-medium text-slate-700 line-clamp-2 leading-snug">{{ item.title }}</h4>
                                                 <p class="text-[11px] text-pink-400 mt-0.5">x{{ item.quantity }}</p>
@@ -398,7 +398,7 @@
                                 </div>
                                 <div class="mt-2 pt-2 border-t border-white/20">
                                     <div class="flex items-center gap-2">
-                                        <img :src="msg.claimantAvatar" class="w-4 h-4 rounded-full object-cover">
+                                        <img :src="msg.claimantAvatar || '/avatars/default.jpg'" class="w-4 h-4 rounded-full object-cover">
                                         <span class="text-white/80 text-xs">{{ msg.claimantName }} 领取了这份礼物</span>
                                     </div>
                                 </div>
@@ -929,7 +929,7 @@
 
                                 <!-- Middle: Image/Media -->
                                 <div v-if="weiboCardData.image" class="w-full h-32 bg-gray-100 relative">
-                                    <img :src="weiboCardData.image" class="w-full h-full object-cover">
+                                    <img :src="weiboCardData.image || '/broken-image.png'" class="w-full h-full object-cover">
                                     <div class="absolute inset-0 bg-black/5"></div>
                                 </div>
                                 <div v-else class="h-2 w-full"></div>
@@ -939,7 +939,7 @@
                                     class="px-3 py-2 bg-gray-50 flex items-center justify-between border-t border-gray-100">
                                     <div class="flex items-center gap-2">
                                         <div class="w-5 h-5 rounded-full overflow-hidden">
-                                            <img :src="weiboCardData.avatar" class="w-full h-full object-cover">
+                                            <img :src="weiboCardData.avatar || '/avatars/default.jpg'" class="w-full h-full object-cover">
                                         </div>
                                         <span class="text-xs text-gray-500 font-bold">@{{ weiboCardData.author }}</span>
                                     </div>
@@ -1152,7 +1152,7 @@
                                 <div class="flex items-center gap-5">
                                     <div class="relative group">
                                         <div class="absolute inset-0 bg-pink-400 rounded-full blur group-hover:blur-md transition-all"></div>
-                                        <img :src="chatData.userAvatar" class="w-14 h-14 rounded-full border-2 border-white relative z-10 object-cover">
+                                        <img :src="chatData.userAvatar || '/avatars/default.jpg'" class="w-14 h-14 rounded-full border-2 border-white relative z-10 object-cover">
                                         <div class="absolute -right-1 -bottom-1 w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center text-[10px] text-white shadow-lg ring-2 ring-white z-20">
                                             <i class="fa-solid fa-check"></i>
                                         </div>

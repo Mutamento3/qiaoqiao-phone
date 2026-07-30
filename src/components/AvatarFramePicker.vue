@@ -175,7 +175,7 @@ async function handleImport(e) {
               isDeleteMode ? 'shake-hover border-red-500/50 scale-95' : ''
             ]" @click="handleFrameClick(frame)">
             
-            <img :src="frame.url" class="w-full h-full object-cover transition-transform group-hover:scale-110" :title="frame.name">
+            <img :src="frame.url || '/broken-image.png'" class="w-full h-full object-cover transition-transform group-hover:scale-110" :title="frame.name">
 
             <!-- Selection Indicator -->
             <div v-if="modelValue?.id === frame.id && !isDeleteMode" class="absolute top-1.5 right-1.5 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center text-white text-[10px] shadow-lg animate-scale-in">

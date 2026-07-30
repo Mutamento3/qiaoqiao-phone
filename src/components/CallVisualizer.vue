@@ -593,7 +593,7 @@ watch(() => callStore.transcript.length, () => {
               </div>
               <!-- Virtual Avatar: If in 'Both' virtual mode OR camera is OFF -->
               <div v-else class="virtual-avatar-pip">
-                  <img :src="callStore.customCallAvatarUser || userAvatarFallback" class="pip-avatar-img">
+                  <img :src="callStore.customCallAvatarUser || userAvatarFallback || '/avatars/default.jpg'" class="pip-avatar-img">
                   <div class="pip-label">我</div>
               </div>
           </div>
@@ -601,7 +601,7 @@ watch(() => callStore.transcript.length, () => {
 
       <!-- Background for Voice or Incoming (Blurred Partner Avatar) -->
       <div v-if="callStore.type === 'voice' || status === 'incoming'" class="call-background">
-        <img :src="partner?.avatar" class="bg-image" alt="Background">
+        <img :src="partner?.avatar || '/avatars/default.jpg'" class="bg-image" alt="Background">
         <div class="bg-overlay"></div>
         <!-- Decorative cute elements -->
         <div class="cute-decor cute-decor-1">♡</div>
@@ -643,7 +643,7 @@ watch(() => callStore.transcript.length, () => {
                        <div class="sparkle sparkle-1">✦</div>
                        <div class="sparkle sparkle-2">✧</div>
                        <div class="sparkle sparkle-3">★</div>
-                       <img :src="partner?.avatar" class="avatar-cute" :class="{ 'speaking': callStore.isSpeaking }">
+                       <img :src="partner?.avatar || '/avatars/default.jpg'" class="avatar-cute" :class="{ 'speaking': callStore.isSpeaking }">
                    </div>
                    <!-- Status badge under avatar -->
                    <div v-if="status === 'active'" class="avatar-status-badge animate-fade-in">

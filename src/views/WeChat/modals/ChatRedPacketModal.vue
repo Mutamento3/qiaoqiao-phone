@@ -16,7 +16,7 @@
                     class="w-full h-full flex flex-col items-center relative overflow-hidden bg-[#CF3B32]">
                     <!-- Background Cover Image (If exists) -->
                     <div v-if="packet?.coverImage" class="absolute inset-0 z-0">
-                        <img :src="packet.coverImage" class="w-full h-full object-cover">
+                        <img :src="packet.coverImage || '/broken-image.png'" class="w-full h-full object-cover">
                         <div class="absolute inset-0 bg-black/20"></div>
                     </div>
 
@@ -120,7 +120,7 @@
                                 <div v-for="(claim, idx) in packet?.claims" :key="idx"
                                     class="flex items-center justify-between py-3 border-b border-gray-50 last:border-0">
                                     <div class="flex items-center gap-3">
-                                        <img :src="claim.avatar" class="w-10 h-10 rounded-lg bg-gray-100 object-cover">
+                                        <img :src="claim.avatar || '/avatars/default.jpg'" class="w-10 h-10 rounded-lg bg-gray-100 object-cover">
                                         <div class="flex flex-col">
                                             <span class="text-sm font-bold text-gray-800">{{ claim.name }}</span>
                                             <span class="text-[10px] text-gray-400">{{ formatTime(claim.timestamp)

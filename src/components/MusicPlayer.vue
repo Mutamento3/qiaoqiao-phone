@@ -264,7 +264,7 @@ const handleImageError = (e) => {
             <!-- Avatars Section (Listen Together Specific) -->
             <div v-if="musicStore.isListeningTogether" class="together-avatars">
                 <div class="avatar-group">
-                    <img :src="chatData.userAvatar" class="avatar user-avatar" @error="handleImageError">
+                    <img :src="chatData.userAvatar || '/avatars/default.jpg'" class="avatar user-avatar" @error="handleImageError">
                     <div class="connection-line">
                         <div class="beat-line"></div>
                     </div>
@@ -277,9 +277,9 @@ const handleImageError = (e) => {
             <!-- Avatars (Normal Mode) -->
             <div v-else class="avatars-section">
                 <div class="avatar-wrapper">
-                    <img :src="chatData.userAvatar" class="avatar" @error="handleImageError">
+                    <img :src="chatData.userAvatar || '/avatars/default.jpg'" class="avatar" @error="handleImageError">
                     <div class="heart-bubble"><i class="fa-solid fa-heart text-pink-500"></i></div>
-                    <img :src="chatData.charAvatar" class="avatar" @error="handleImageError">
+                    <img :src="chatData.charAvatar || '/avatars/default.jpg'" class="avatar" @error="handleImageError">
                 </div>
             </div>
 
@@ -406,7 +406,7 @@ const handleImageError = (e) => {
             <div class="floating-content" @click="musicStore.toggleMinimize">
                 <!-- Mini Avatars (Left) -->
                 <div class="floating-avatars-mini">
-                    <img :src="chatData.userAvatar" class="mini-avatar-v2">
+                    <img :src="chatData.userAvatar || '/avatars/default.jpg'" class="mini-avatar-v2">
                     <img :src="musicStore.togetherPartner?.avatar || chatData.charAvatar" class="mini-avatar-v2">
                 </div>
 

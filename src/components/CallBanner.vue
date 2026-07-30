@@ -21,7 +21,7 @@ const handleReject = () => {
     <div v-if="isIncoming" class="call-banner-container">
       <div class="call-banner">
         <div class="banner-content">
-          <img :src="partner?.avatar" class="avatar" alt="Partner Avatar">
+          <img :src="partner?.avatar || '/avatars/default.jpg'" class="avatar" alt="Partner Avatar">
           <div class="info">
             <div class="name">{{ partner?.name }}</div>
             <div class="status">邀请你进行{{ callStore.type === 'video' ? '视频' : '语音' }}通话...</div>

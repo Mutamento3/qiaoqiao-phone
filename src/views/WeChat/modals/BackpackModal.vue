@@ -57,7 +57,7 @@
                         <!-- Image -->
                         <div
                             class="w-16 h-16 mb-2 flex items-center justify-center p-1 bg-gray-50 rounded-xl group-hover:scale-110 transition-transform">
-                            <img :src="item.image" class="max-w-full max-h-full object-contain filter drop-shadow-md">
+                            <img :src="item.image || '/broken-image.png'" class="max-w-full max-h-full object-contain filter drop-shadow-md">
                         </div>
 
                         <!-- Info -->

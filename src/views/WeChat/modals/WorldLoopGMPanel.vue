@@ -90,7 +90,7 @@
                     <div class="grid grid-cols-1 gap-3">
                         <div v-for="char in participants" :key="char.id" 
                             class="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/5 hover:border-purple-500/30 hover:bg-white/10 transition-all group relative overflow-hidden">
-                            <img :src="char.avatar" class="w-12 h-12 rounded-xl object-cover shadow-lg border border-white/10">
+                            <img :src="char.avatar || '/avatars/default.jpg'" class="w-12 h-12 rounded-xl object-cover shadow-lg border border-white/10">
                             <div class="flex-1 min-w-0">
                                 <div class="text-[15px] font-black text-purple-50 italic">{{ char.name }}</div>
                                 <div class="text-[10px] text-purple-400/70 truncate leading-tight">{{ char.prompt }}</div>
@@ -204,7 +204,7 @@
                         <div v-for="char in participants" :key="char.id" class="bg-white/5 border border-white/5 rounded-2xl p-4 space-y-4">
                             <div class="flex items-center gap-4">
                                 <div class="relative group/avatar cursor-pointer shrink-0" @click="handleEditAvatar(char.id)">
-                                    <img :src="char.avatar" class="w-16 h-16 rounded-xl object-cover border border-white/10 group-hover/avatar:opacity-60 transition-opacity">
+                                    <img :src="char.avatar || '/avatars/default.jpg'" class="w-16 h-16 rounded-xl object-cover border border-white/10 group-hover/avatar:opacity-60 transition-opacity">
                                     <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity bg-black/40 rounded-xl">
                                         <i class="fa-solid fa-camera text-white"></i>
                                     </div>

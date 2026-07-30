@@ -672,7 +672,7 @@ const navigateToAuthor = () => {
         <!-- Avatar -->
         <div class="w-11 h-11 rounded-lg overflow-hidden shrink-0 mr-3 mt-1 bg-gray-100 cursor-pointer active:opacity-70 transition-opacity"
             @click="navigateToAuthor">
-            <img :src="author.avatar" class="w-full h-full object-cover">
+            <img :src="author.avatar || '/avatars/default.jpg'" class="w-full h-full object-cover">
         </div>
 
         <!-- Content -->
@@ -717,7 +717,7 @@ const navigateToAuthor = () => {
                     class="bg-gray-50 rounded-sm overflow-hidden flex items-center justify-center border border-gray-100 cursor-zoom-in active:scale-[0.98] transition-all relative z-10"
                     :class="(props.moment?.images || []).length === 1 ? '' : 'aspect-square'"
                     @click="handleImagePreview(idx)">
-                    <img :src="img" class="w-full h-full object-cover">
+                    <img :src="img || '/broken-image.png'" class="w-full h-full object-cover">
                 </div>
             </div>
 
@@ -725,7 +725,7 @@ const navigateToAuthor = () => {
             <div v-if="(props.moment?.stickers || []).length > 0" class="flex flex-wrap gap-2 mb-3">
                 <div v-for="(stk, idx) in (props.moment?.stickers || [])" :key="idx"
                     class="w-20 h-20 flex items-center justify-center">
-                    <img :src="stk" class="w-full h-full object-contain">
+                    <img :src="stk || '/broken-image.png'" class="w-full h-full object-contain">
                 </div>
             </div>
 
@@ -890,7 +890,7 @@ const navigateToAuthor = () => {
                     <div class="flex items-center gap-2 p-1.5 rounded hover:bg-blue-50 cursor-pointer transition-colors"
                         @click="handleCommentMentionSelect({ id: 'user', name: settingsStore.personalization.userProfile.name })">
                         <div class="w-6 h-6 rounded bg-gray-200 shrink-0">
-                            <img :src="currentUserAvatar" class="w-full h-full object-cover rounded">
+                            <img :src="currentUserAvatar || '/avatars/default.jpg'" class="w-full h-full object-cover rounded">
                         </div>
                         <span class="text-xs font-bold text-gray-700">{{ currentUserName }} (我自己)</span>
                     </div>
@@ -899,7 +899,7 @@ const navigateToAuthor = () => {
                         class="flex items-center gap-2 p-1.5 rounded hover:bg-gray-50 cursor-pointer transition-colors"
                         @click="handleCommentMentionSelect(chat)">
                         <div class="w-6 h-6 rounded bg-gray-200 shrink-0">
-                            <img :src="chat.avatar" class="w-full h-full object-cover rounded">
+                            <img :src="chat.avatar || '/avatars/default.jpg'" class="w-full h-full object-cover rounded">
                         </div>
                         <span class="text-xs font-bold text-gray-700">{{ chat.name }}</span>
                     </div>
@@ -958,7 +958,7 @@ const navigateToAuthor = () => {
                         class="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors border border-transparent hover:border-gray-100"
                         @click="confirmShare(chat)">
                         <div class="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-gray-200">
-                            <img :src="chat.avatar" class="w-full h-full object-cover">
+                            <img :src="chat.avatar || '/avatars/default.jpg'" class="w-full h-full object-cover">
                         </div>
                         <div class="flex flex-col">
                             <span class="font-bold text-gray-800 text-sm">{{ chat.name }}</span>

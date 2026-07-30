@@ -327,7 +327,7 @@ const viewingProfile = computed(() => {
         return {
             isMe: false,
             name: (/^\d{10,}$/.test(id) ? '神秘好友' : id),
-            avatar: '',
+            avatar: '/avatars/default.jpg',
             signature: '...',
             background: ''
         }
@@ -1087,7 +1087,7 @@ onMounted(() => {
                         <!-- Avatar (Left) -->
                         <div
                             class="w-[84px] h-[84px] rounded-xl overflow-hidden border-[3px] border-white shadow-sm bg-white mb-3 relative z-10">
-                            <img :src="viewingProfile.avatar" class="w-full h-full object-cover">
+                            <img :src="viewingProfile.avatar || '/avatars/default.jpg'" class="w-full h-full object-cover">
                         </div>
 
                         <!-- Name & Region -->
@@ -1157,7 +1157,7 @@ onMounted(() => {
                     <!-- v1.10.111: 没有头像时显示一个圆形默认图标,避免白底上完全看不到 -->
                     <div class="w-20 h-20 rounded-2xl overflow-hidden border-[4px] border-white shadow-lg bg-white relative active:scale-95 transition-all"
                         @click.stop="handleUserAvatarClick">
-                        <img v-if="viewingProfile.avatar" :src="viewingProfile.avatar"
+                        <img v-if="viewingProfile.avatar" :src="viewingProfile.avatar || '/avatars/default.jpg'"
                             class="w-full h-full object-cover">
                         <div v-else
                             class="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-400 to-purple-500">
@@ -1704,7 +1704,7 @@ onMounted(() => {
             <div class="flex-1 overflow-y-auto bg-[#f2f2f2]">
                 <!-- Cover / Info Header -->
                 <div class="relative h-[48vh] bg-gray-200">
-                    <img :src="currentProfileChar.avatar" class="w-full h-full object-cover">
+                    <img :src="currentProfileChar.avatar || '/avatars/default.jpg'" class="w-full h-full object-cover">
                     <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20"></div>
 
                     <div class="absolute bottom-10 left-6 right-6 text-white">
@@ -1882,7 +1882,7 @@ onMounted(() => {
                 <div class="flex items-center gap-3 p-3 rounded-xl hover:bg-blue-50 cursor-pointer transition-colors group"
                     @click="handleMentionSelect({ id: 'user', name: userProfile.name })">
                     <div class="w-10 h-10 rounded-lg overflow-hidden bg-gray-200">
-                        <img :src="userProfile.avatar" class="w-full h-full object-cover">
+                        <img :src="userProfile.avatar || '/avatars/default.jpg'" class="w-full h-full object-cover">
                     </div>
                     <div class="flex-1">
                         <div class="font-bold text-gray-800 text-sm">{{ userProfile.name }}</div>
