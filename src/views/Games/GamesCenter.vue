@@ -64,6 +64,27 @@
                     </div>
                 </div>
 
+                <!-- 娃娃机 -->
+                <div @click="openGame('claw-machine')"
+                    class="game-card bg-white rounded-2xl shadow-lg overflow-hidden active:scale-95 transition-transform">
+                    <div
+                        class="h-[120px] bg-gradient-to-br from-pink-400 to-purple-500 flex items-center justify-center relative overflow-hidden">
+                        <div class="absolute inset-0 opacity-20">
+                            <div class="absolute top-2 left-2 text-5xl">🧸</div>
+                            <div class="absolute bottom-2 right-2 text-3xl">🎁</div>
+                        </div>
+                        <div class="text-6xl relative z-10">🧸</div>
+                    </div>
+                    <div class="p-3">
+                        <h3 class="font-bold text-lg mb-1">娃娃机</h3>
+                        <p class="text-xs text-gray-500 mb-2">邀请好友一起抓娃娃</p>
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-pink-600 font-bold">✨ 新</span>
+                            <span class="text-xs text-gray-400">双人游玩</span>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 斗地主（即将推出） -->
                 <div class="game-card bg-white rounded-2xl shadow-lg overflow-hidden opacity-60">
                     <div
@@ -191,6 +212,8 @@ const categories = [
 const openGame = (gameId) => {
     if (gameId === 'mahjong') {
         router.push('/games/mahjong-lobby')
+    } else if (gameId === 'claw-machine') {
+        router.push('/games/claw-machine')
     } else {
         alert('该游戏即将推出，敬请期待！')
     }

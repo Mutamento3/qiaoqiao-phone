@@ -111,6 +111,11 @@ const router = createRouter({
             component: () => import('../views/Games/MahjongGame.vue')
         },
         {
+            path: '/games/claw-machine',
+            name: 'claw-machine',
+            component: () => import('../views/Games/ClawMachine.vue')
+        },
+        {
             path: '/wechat/profile/:charId',
             name: 'character-info',
             component: () => import('../views/WeChat/CharacterProfileView.vue')
