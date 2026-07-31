@@ -85,6 +85,27 @@
                     </div>
                 </div>
 
+                <!-- UNO -->
+                <div @click="openGame('uno')"
+                    class="game-card bg-white rounded-2xl shadow-lg overflow-hidden active:scale-95 transition-transform">
+                    <div
+                        class="h-[120px] bg-gradient-to-br from-emerald-400 to-green-500 flex items-center justify-center relative overflow-hidden">
+                        <div class="absolute inset-0 opacity-20">
+                            <div class="absolute top-2 left-2 text-5xl">🃏</div>
+                            <div class="absolute bottom-2 right-2 text-3xl">🎴</div>
+                        </div>
+                        <div class="text-6xl relative z-10">🃏</div>
+                    </div>
+                    <div class="p-3">
+                        <h3 class="font-bold text-lg mb-1">UNO</h3>
+                        <p class="text-xs text-gray-500 mb-2">配色出牌，先出完者胜</p>
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-emerald-600 font-bold">🔥 热门</span>
+                            <span class="text-xs text-gray-400">2-4 人对战</span>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 斗地主（即将推出） -->
                 <div class="game-card bg-white rounded-2xl shadow-lg overflow-hidden opacity-60">
                     <div
@@ -214,6 +235,8 @@ const openGame = (gameId) => {
         router.push('/games/mahjong-lobby')
     } else if (gameId === 'claw-machine') {
         router.push('/games/claw-machine')
+    } else if (gameId === 'uno') {
+        router.push('/games/uno-lobby')
     } else {
         alert('该游戏即将推出，敬请期待！')
     }

@@ -1,0 +1,127 @@
+// UNO 引擎：纯逻辑（牌堆生成 / 匹配规则 / 发牌 / 洗牌 / 颜色）
+// 不依赖 Vue / Pinia，便于在 store 与 AI 中复用。
+
+export const COLORS = ['red', 'yellow', 'green', 'blue']
+
+// 各颜色对应的展示信息（供 Vue 组件渲染卡面）
+export const COLOR_META = {
+    red: { name: '红', hex: '#ef4444' },
+    yellow: { name: '黄', hex: '#f59e0b' },
+    green: { name: '绿', hex: '#22c55e' },
+    blue: { name: '蓝', hex: '#3b82f6' },
+    wild: { name: '万能', hex: '#a855f7' }
+}
+
+const SYMBOLS = {
+    number: (v) => String(v),
+    skip: '⊘',
+    reverse: '⇄',
+    draw2: '+2',
+    wild: '★',
+    wild4: '+4'
+}
+
+const LABELS = {
+    number: (v) => String(v),
+    skip: '跳过',
+    reverse: '反转',
+    draw2: '+2',
+    wild: '变色',
+    wild4: '+4'
+}
+
+function makeCard(color, type, value, uid) {
+    return {
+        id: `c${uid}`,
+        color, // 'red'|'yellow'|'green'|'blue'|'wild'
+        type,  // 'number'|'skip'|'reverse'|'draw2'|'wild'|'wild4'
+        value, // 仅 number 有值
+        symbol: typeof SYMBOLS[type] === 'function' ? SYMBOLS[type](value) : SYMBOLS[type],
+        label: typeof LABELS[type] === 'function' ? LABELS[type](value) : LABELS[type]
+    }
+}
+
+// 生成标准 108 张 UNO 牌
+export function createDeck() {
+    const deck = []
+    let uid = 0
+    for (const color of COLORS) {
+        deck.push(makeCard(color, 'number', 0, uid++))
+        for (let v = 1; v <= 9; v++) {
+            deck.push(makeCard(color, 'number', v, uid++))
+            deck.push(makeCard(color, 'number', v, uid++))
+        }
+        for (const t of ['skip', 'reverse', 'draw2']) {
+            deck.push(makeCard(color, t, null, uid++))
+            deck.push(makeCard(color, t, null, uid++))
+        }
+    }
+    for (let i = 0; i < 4; i++) {
+        deck.push(makeCard('wild', 'wild', null, uid++))
+        deck.push(makeCard('wild', 'wild4', null, uid++))
+    }
+    return deck
+}
+
+// Fisher–Yates 洗牌（返回新数组）
+export function shuffle(deck) {
+    const a = deck.slice()
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1))
+        ;[a[i], a[j]] = [a[j], a[i]]
+    }
+    return a
+}
+
+// 判断 card 是否可打（基于当前生效颜色与弃牌堆顶牌）
+export function canPlay(card, topCard, currentColor) {
+    if (card.type === 'wild' || card.type === 'wild4') return true
+    if (card.color === currentColor) return true
+    if (!topCard) return false
+    if (card.type === 'number' && topCard.type === 'number' && card.value === topCard.value) return true
+    if (card.type !== 'number' && card.type === topCard.type) return true
+    return false
+}
+
+export function getPlayableCards(hand, topCard, currentColor) {
+    return hand.filter((c) => canPlay(c, topCard, currentColor))
+}
+
+// 发牌：每人 7 张；翻出第一张非万能牌作为初始弃牌堆顶
+// 返回 { hands: [[],...], deck, discard, currentColor, firstCard }
+export function dealInitial(deck, playerCount) {
+    const d = shuffle(deck)
+    const hands = Array.from({ length: playerCount }, () => [])
+    let idx = 0
+    for (let i = 0; i < 7; i++) {
+        for (let p = 0; p < playerCount; p++) {
+            hands[p].push(d[idx++])
+        }
+    }
+    const rest = d.slice(idx)
+    // 找到第一张非万能牌作为起手牌
+    let firstIndex = rest.findIndex((c) => c.type !== 'wild' && c.type !== 'wild4')
+    if (firstIndex === -1) firstIndex = 0
+    const firstCard = rest.splice(firstIndex, 1)[0]
+    const currentColor = firstCard.color === 'wild' ? COLORS[Math.floor(Math.random() * 4)] : firstCard.color
+    return {
+        hands,
+        deck: rest,
+        discard: [firstCard],
+        currentColor,
+        firstCard
+    }
+}
+
+export function topCardOf(state) {
+    return state.discard[state.discard.length - 1] || null
+}
+
+// 牌堆抽空时，把弃牌堆（除顶牌）洗回牌堆
+export function reshuffleIfEmpty(state) {
+    if (state.deck.length > 0) return
+    const top = state.discard.pop()
+    const rest = shuffle(state.discard)
+    state.discard = [top]
+    state.deck = rest
+}

@@ -116,6 +116,21 @@ const router = createRouter({
             component: () => import('../views/Games/ClawMachine.vue')
         },
         {
+            path: '/games/uno-lobby',
+            name: 'uno-lobby',
+            component: () => import('../views/Games/UnoLobby.vue')
+        },
+        {
+            path: '/games/uno-room',
+            name: 'uno-room',
+            component: () => import('../views/Games/UnoRoom.vue')
+        },
+        {
+            path: '/games/uno',
+            name: 'uno-game',
+            component: () => import('../views/Games/UnoGame.vue')
+        },
+        {
             path: '/wechat/profile/:charId',
             name: 'character-info',
             component: () => import('../views/WeChat/CharacterProfileView.vue')
