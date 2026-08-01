@@ -326,7 +326,7 @@ function humanPass() {
 
 function callUnoNow() {
     unoStore.callUno(0)
-    playSound('uno')
+    playSound('uno', { voiceEnabled: unoStore.voiceEnabled })
 }
 
 function backToLobby() {
@@ -339,9 +339,8 @@ function confirmBack() {
     router.push('/games/uno-lobby')
 }
 
-function playAgain() {
-    unoStore.startNewGame()
-    unoStore.startGame()
+async function playAgain() {
+    await unoStore.startNewGame()
     drewThisTurn.value = false
     scheduleAI()
 }
@@ -406,7 +405,7 @@ watch(() => unoStore.lastAction, (action) => {
     } else if (type === 'draw') {
         playSound('draw')
     } else if (type === 'uno') {
-        playSound('uno')
+        playSound('uno', { voiceEnabled: unoStore.voiceEnabled })
     } else if (type === 'win') {
         playSound('win')
     } else if (type === 'lose') {

@@ -62,3 +62,27 @@
   - 构建通过，ESLint 0 error。未 push（同 MVP-1，待 web 自测）。
 - **社交平台近况零额外调用注入（1.10.241 / commit a7af1d91，本地未推）**：新增 `src/utils/socialContext.js`——调用 LLM 前本地检索/压缩/差量社交内容（论坛/朋友圈/微博/情侣空间/日历），注入同一次调用的 prompt。四招：本地预检索(近期N=5)+压缩(id+摘要)+差量(SEEN 按 charId:source 记已展示id)+事件驱动(关键词或新增才注入)。`buildSocialContext(userText,charId,{getters})` 主入口；`aiService.generateReply` 系统提示段在能力菜单后追加，守卫 `!isCall && !isSimpleTask && !skipProcessing`。验证 7 断言全过。
 - **本地反射层（0 token 规则拦截简单意图）可后续加**。
+
+## 娃娃机系统（2026-07-31，本地未推）
+- 6个新文件 + 2个修改文件，完整功能，构建通过，ESLint 0 error。
+- **文件结构**：`src/utils/clawMachine/`（clawMachinesData.js / backgroundRemoval.js / ClawMachineEngine.js / ClawMachineAI.js）+ `src/stores/clawMachineStore.js` + `src/views/Games/ClawMachine.vue`。
+- **6种娃娃机**：毛绒乐园/手办殿堂/盲盒世界/积木王国/公仔家族/玩具总动员，每种6玩偶（5内置SVG程序生成 + 1自定义上传白底图Canvas抠像）。
+- **经济系统**：独立游戏币体系，充值从 `walletStore.decreaseBalance` 扣人民币→加游戏币（localStorage key=`claw_machine_data`），投币消耗1-2币/次。
+- **AI 接入关键**：`ClawMachineAI.js` 调 `generateReply` 时**不设 skipContext/isSimpleTask**——让 aiService 自动注入角色人设/用户人设/记忆/最近20轮聊天记录。AI操作过程用前端模拟（`simulateAIOperation`），仅开场白/结果反应/用户聊天3个节点调API（受3次/分钟限流约束）。
+- **展馆**：抓到的玩偶自动入馆，支持 mouse+touch 拖拽自由摆放，可删除/清空。
+- **抢夺操控权**：每次抓完后双方选择下一轮谁操控（user↔ai 切换）。
+
+## UNO 游戏（2026-08-01，v1.10.269，已 push）
+- **复用麻将架构模式**（做新桌游都适用）：大厅→房间→对局 三段式路由 + Pinia store 持有 `currentRoom.players[]`（座次 east/south/west/north，人固定 south 即 index 0）+ `gameState`（绝不走 query 参数）+ 邀请流（chatStore.chats 单聊 → 双 tab 弹窗 npc/联系人 → push 玩家 → addMessage 系统消息通知角色）+ CSS 渲染牌面 + 翡翠绿视觉。
+- **核心文件**：`src/utils/uno/unoEngine.js`（108张标准牌/洗牌/canPlay 匹配/发牌/抽牌堆空回收）、`src/utils/uno/UnoAI.js`（chooseCard 晚出wild/优先同色功能牌、chooseColor 取最多色）、`src/stores/unoStore.js`（回合推进含 direction 顺逆、mustSkip、pendingDraw 叠加、忘喊UNO罚+2、finishGame 结算）、`UnoLobby.vue`/`UnoRoom.vue`/`UnoGame.vue`、`GamesCenter.vue` 入口 + `router/index.js` 三路由。
+- **AI 驱动**：`UnoGame.vue` 用 `setTimeout` 850ms 链 + `watch(currentPlayerIndex/phase)` 重排，纯前端、不调 LLM（省公益站 3次/分 配额）。
+- **验证手段**：先做无头模拟脚本 `test-uno.mjs`（500 局跑通无死循环/无牌堆耗尽崩溃）再写 UI；`npm run build` + `npm run lint` 0 error。模拟脚本用完即删。
+
+## UNO 游戏（v1.10.270 重构后，已 push）
+- **复用麻将架构模式**：大厅→房间→对局三段式 + 用户经济/积分/段位/欢乐豆/排行榜持久化 + 充值 + 创建房间 + AI 局内聊天 + 结算分享。
+- **5 种玩法**：经典（standard UNO）/ 叠加（+2/+4 可叠）/ 抢出（同牌可抢出）/ 七零（7 换手、0 传递）/ 极限（全开启）。规则开关存 `gameState.rules`。
+- **2-8 人**：用户固定 index 0（南），其余按东南/东/东北/北/西北/西/西南动态入座；座位常量 `POSITION_NAMES`/`SEAT_LABELS` 在 `unoEngine.js` 导出。
+- **AI 性格控牌**：`UnoAI.chooseCard(hand, topCard, currentColor, context)` 接收 `relationships`（lover/friend/neutral/rival/enemy）和 `personas`，恋人/好友会避免用 skip/+2/+4 坑用户且用户快赢时放水，对手会针对用户；还有 aggressive/gentle/tricky/calm 性格修正。`inferRelationship` 从 persona/userPersona 文本推断关系。
+- **局内聊天**：`unoStore.sendGameChat(text)` 用 batch prompt 调 `generateReply`，所有在场 AI 角色按人设回复，显示气泡 + 聊天记录；`favor:user` 会让该 AI 下一回合偏向帮用户。
+- **音效**：`src/utils/uno/unoSounds.js` 用 Web Audio API 合成全部音效，无需额外音频文件；出牌/抽牌/跳过/反转/+2/+4/UNO/胜负/聊天。
+- **坑注意**：`buildAIPlayer` 是 async（要从 chatStore 拿角色人设），所以 `addContact/addNPC` 用 `.then()` 异步插入玩家；界面用响应式会自动更新。结算弹窗头像必须用 `isImageAvatar` 判断，否则路径字符串会直接显示成文字。

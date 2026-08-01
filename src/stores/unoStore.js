@@ -53,6 +53,7 @@ export const useUnoStore = defineStore('uno', () => {
 
     const soundEnabled = ref(true)
     const bgmEnabled = ref(true)
+    const voiceEnabled = ref(true)
     const sfxVolume = ref(0.8)
     const bgmVolume = ref(0.5)
     const lastAction = ref(null)
@@ -146,6 +147,11 @@ export const useUnoStore = defineStore('uno', () => {
 
     function toggleBGM() {
         bgmEnabled.value = !bgmEnabled.value
+    }
+
+    function toggleVoice() {
+        voiceEnabled.value = !voiceEnabled.value
+        saveData()
     }
 
     // ===== 房间创建 =====
@@ -806,6 +812,7 @@ ${charContexts.map((c) => `### ${c.name}
                 playerStats: playerStats.value,
                 soundEnabled: soundEnabled.value,
                 bgmEnabled: bgmEnabled.value,
+                voiceEnabled: voiceEnabled.value,
                 sfxVolume: sfxVolume.value,
                 bgmVolume: bgmVolume.value
             }
@@ -829,6 +836,7 @@ ${charContexts.map((c) => `### ${c.name}
             if (d.playerStats !== undefined) playerStats.value = d.playerStats
             if (d.soundEnabled !== undefined) soundEnabled.value = d.soundEnabled
             if (d.bgmEnabled !== undefined) bgmEnabled.value = d.bgmEnabled
+            if (d.voiceEnabled !== undefined) voiceEnabled.value = d.voiceEnabled
             if (d.sfxVolume !== undefined) sfxVolume.value = d.sfxVolume
             if (d.bgmVolume !== undefined) bgmVolume.value = d.bgmVolume
         } catch (e) {
@@ -844,15 +852,19 @@ ${charContexts.map((c) => `### ${c.name}
         aiInfluences.value = {}
     }
 
-    function startNewGame() {
-        const cfg = currentRoom.value || { ruleMode: 'classic', baseStake: 100, totalRounds: 8, maxPlayers: 4 }
-        const oldPlayers = currentRoom.value?.players || []
-        const ruleMode = cfg.ruleMode || 'classic'
-        const baseStake = cfg.baseStake ?? 100
-        const totalRounds = cfg.totalRounds ?? 8
-        const maxPlayers = cfg.maxPlayers ?? 4
-        returnToLobby()
-        createRoom({ mode: 'custom', ruleMode, baseStake, totalRounds, maxPlayers, aiCount: Math.min(oldPlayers.length - 1, maxPlayers - 1) })
+    async function startNewGame() {
+        if (!currentRoom.value) {
+            // 兜底：没有房间时按默认配置创建并开一局
+            await createRoom({ mode: 'quick', ruleMode: 'classic', baseStake: 100, totalRounds: 8, maxPlayers: 4, aiCount: 3 })
+            startGame()
+            return
+        }
+        // 保留当前房间与玩家，仅重置牌局状态开始下一回合/再一局
+        gameChatMessages.value = []
+        activeReplies.value = {}
+        aiInfluences.value = {}
+        currentRoom.value.currentRound = (currentRoom.value.currentRound || 1) + 1
+        startGame()
     }
 
     loadData()
@@ -860,13 +872,13 @@ ${charContexts.map((c) => `### ${c.name}
     return {
         beans, score, rank, wins, losses, winStreak, winRate, rankInfo, leaderboard,
         currentRoom, gameState, gameChatMessages, activeReplies, aiInfluences, lastAction,
-        soundEnabled, bgmEnabled, sfxVolume, bgmVolume,
+        soundEnabled, bgmEnabled, voiceEnabled, sfxVolume, bgmVolume,
         getNPCs, createRoom, addAIPlayers, addContact, addNPC, removePlayer,
         startGame, startNextRound, playCard, drawOne, callUno, passTurn, aiStep, checkJumpIn,
         finishGame, returnToLobby, startNewGame,
         sendGameChat, triggerEndGameChat,
         rechargeBeans, deductBeans, addBeans, updateScore,
-        toggleSound, toggleBGM, saveData, loadData,
+        toggleSound, toggleBGM, toggleVoice, saveData, loadData,
         describeCard, playerName, playerById
     }
 })

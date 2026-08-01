@@ -284,10 +284,61 @@
                                 <div class="w-6 h-6 rounded-full bg-white absolute top-1 transition-all" :class="unoStore.bgmEnabled ? 'left-7' : 'left-1'"></div>
                             </button>
                         </div>
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <div class="font-bold text-gray-700">语音 UNO</div>
+                                <div class="text-xs text-gray-400">喊 UNO 时使用人声喊出</div>
+                            </div>
+                            <button @click="unoStore.toggleVoice()" class="w-14 h-8 rounded-full relative transition-colors" :class="unoStore.voiceEnabled ? 'bg-green-500' : 'bg-gray-300'">
+                                <div class="w-6 h-6 rounded-full bg-white absolute top-1 transition-all" :class="unoStore.voiceEnabled ? 'left-7' : 'left-1'"></div>
+                            </button>
+                        </div>
                     </div>
                     <div class="p-6 bg-gray-50 flex gap-2">
                         <button @click="showSettings = false" class="w-full py-4 bg-emerald-600 text-white font-black rounded-2xl active:scale-95 transition-all">保存返回</button>
                     </div>
+                </div>
+            </div>
+        </Transition>
+
+        <!-- 快速开始配置弹窗 -->
+        <Transition name="fade">
+            <div v-if="showQuickStart" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100]" @click="showQuickStart = false">
+                <div class="bg-white rounded-[24px] w-full max-w-[360px] m-4 p-6 shadow-2xl" @click.stop>
+                    <div class="flex justify-between items-center mb-5">
+                        <h2 class="text-xl font-black text-gray-800 flex items-center gap-2"><i class="fa-solid fa-bolt text-emerald-500"></i> 快速开始</h2>
+                        <button @click="showQuickStart = false" class="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+                    </div>
+
+                    <div class="space-y-5 mb-6">
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-3">玩法模式</label>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button v-for="(label, key) in ruleLabels" :key="key" @click="quickConfig.ruleMode = key"
+                                    class="py-3 rounded-xl border-2 transition-all text-sm font-bold"
+                                    :class="quickConfig.ruleMode === key ? 'border-emerald-500 bg-emerald-50 text-emerald-600' : 'border-gray-200 bg-gray-50 text-gray-700'">
+                                    {{ label }}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-bold text-gray-700 mb-3">玩家人数（含自己）</label>
+                            <div class="grid grid-cols-4 gap-2">
+                                <button v-for="n in [2,3,4,5,6,7,8]" :key="n" @click="quickConfig.maxPlayers = n"
+                                    class="py-3 rounded-xl border-2 transition-all font-bold"
+                                    :class="quickConfig.maxPlayers === n ? 'border-purple-500 bg-purple-50 text-purple-600' : 'border-gray-200 bg-gray-50 text-gray-700'">
+                                    {{ n }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button @click="beginQuickGame"
+                        class="w-full py-4 bg-gradient-to-r from-emerald-500 to-green-500 text-white font-black rounded-2xl shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-play"></i>
+                        <span>立即开局</span>
+                    </button>
                 </div>
             </div>
         </Transition>
@@ -315,7 +366,13 @@ const showRecharge = ref(false)
 const showCreateRoom = ref(false)
 const showRanking = ref(false)
 const showSettings = ref(false)
+const showQuickStart = ref(false)
 const toastMsg = ref('')
+
+const quickConfig = ref({
+    ruleMode: 'classic',
+    maxPlayers: 4
+})
 
 const ruleLabels = {
     classic: '经典',
@@ -361,8 +418,28 @@ function quickStart() {
         showRecharge.value = true
         return
     }
-    unoStore.createRoom({ mode: 'quick', aiCount: 3, ruleMode: 'classic' })
-    router.push('/games/uno-room')
+    showQuickStart.value = true
+}
+
+async function beginQuickGame() {
+    showQuickStart.value = false
+    if (unoStore.beans < 100) {
+        showToast('欢乐豆不足，请先充值！')
+        showRecharge.value = true
+        return
+    }
+    const cfg = quickConfig.value
+    const aiCount = Math.min(cfg.maxPlayers - 1, 7)
+    await unoStore.createRoom({
+        mode: 'quick',
+        ruleMode: cfg.ruleMode,
+        baseStake: 100,
+        totalRounds: 8,
+        maxPlayers: cfg.maxPlayers,
+        aiCount
+    })
+    unoStore.startGame()
+    router.push('/games/uno')
 }
 
 function returnToGame() {
