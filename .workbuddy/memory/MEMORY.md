@@ -86,3 +86,9 @@
 - **局内聊天**：`unoStore.sendGameChat(text)` 用 batch prompt 调 `generateReply`，所有在场 AI 角色按人设回复，显示气泡 + 聊天记录；`favor:user` 会让该 AI 下一回合偏向帮用户。
 - **音效**：`src/utils/uno/unoSounds.js` 用 Web Audio API 合成全部音效，无需额外音频文件；出牌/抽牌/跳过/反转/+2/+4/UNO/胜负/聊天。
 - **坑注意**：`buildAIPlayer` 是 async（要从 chatStore 拿角色人设），所以 `addContact/addNPC` 用 `.then()` 异步插入玩家；界面用响应式会自动更新。结算弹窗头像必须用 `isImageAvatar` 判断，否则路径字符串会直接显示成文字。
+
+## UNO 再来一局卡死 + 快速开始 + 大喊 UNO 音效（v1.10.271，已 push）
+- **再来一局卡死根因**：原 `startNewGame()` 先 `returnToLobby()` 清空房间，再异步 `createRoom()` 重建；`UnoGame.playAgain()` 没 await 就又调用 `startGame()`，导致玩家列表不足两人、`gameState.hands` 为空，界面只剩弃牌堆/抽牌堆。
+- **修复**：`startNewGame()` 改为保留当前房间与玩家，仅清空聊天记录/影响并重置牌局状态，然后 `startGame()`；`playAgain` 改为 `await unoStore.startNewGame()`。
+- **快速开始流程**：大厅「快速开始」改为弹出轻量面板选玩法模式 + 2-8 人，确认后立即 `createRoom → startGame → router.push('/games/uno')`，不再停在房间等待页。
+- **大喊 UNO 音效**：`unoSounds.js` 新增 `speakUNO()` 用 `window.speechSynthesis` 喊出“UNO!”（pitch 1.5 / rate 1.4），配合 Web Audio 电子音 + 模拟人声呼喊；`unoStore` 增加 `voiceEnabled` 持久化开关，设置弹窗可关。
