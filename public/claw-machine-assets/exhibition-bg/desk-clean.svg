@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1200" width="800" height="1200">
+  <defs>
+    <!-- 柔和墙面渐变 -->
+    <linearGradient id="wall" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#e2e8f0"/>
+    </linearGradient>
+    <!-- 桌面木纹 -->
+    <linearGradient id="wood" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#faf3e8"/>
+      <stop offset="100%" stop-color="#e8dcc8"/>
+    </linearGradient>
+    <!-- 桌面边缘阴影 -->
+    <linearGradient id="edgeShadow" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#000" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+    </linearGradient>
+    <!-- 柔和顶光 -->
+    <radialGradient id="spot" cx="50%" cy="30%" r="60%">
+      <stop offset="0%" stop-color="#fff" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- 墙面 -->
+  <rect width="800" height="1200" fill="url(#wall)"/>
+
+  <!-- 桌面：干净矩形，略带圆角 -->
+  <rect x="30" y="340" width="740" height="760" rx="24" ry="24" fill="url(#wood)"/>
+  <!-- 桌面边缘高光 -->
+  <rect x="30" y="340" width="740" height="16" rx="12" ry="12" fill="#fff" opacity="0.45"/>
+  <!-- 桌面底部阴影 -->
+  <rect x="30" y="1060" width="740" height="40" rx="20" ry="20" fill="#000" opacity="0.04"/>
+  <!-- 桌面远深阴影 -->
+  <rect x="30" y="340" width="740" height="260" fill="url(#edgeShadow)"/>
+
+  <!-- 顶光 -->
+  <ellipse cx="400" cy="360" rx="320" ry="200" fill="url(#spot)"/>
+
+  <!-- 极淡木纹线条 -->
+  <g stroke="#d8c8b4" stroke-width="1.5" opacity="0.25" fill="none">
+    <path d="M60 420 Q400 430 740 420"/>
+    <path d="M60 500 Q400 510 740 500"/>
+    <path d="M60 580 Q400 590 740 580"/>
+    <path d="M60 660 Q400 670 740 660"/>
+    <path d="M60 740 Q400 750 740 740"/>
+    <path d="M60 820 Q400 830 740 820"/>
+    <path d="M60 900 Q400 910 740 900"/>
+    <path d="M60 980 Q400 990 740 980"/>
+  </g>
+</svg>

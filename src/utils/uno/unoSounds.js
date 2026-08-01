@@ -91,6 +91,7 @@ function playByName(fileName, volumeMult = 1) {
     const flags = readFlags()
     if (!flags.soundEnabled) return
     if (!fileName) return
+    unlock() // 确保音频上下文已解锁，提高自动播放成功率
     const el = new Audio(BASE + fileName)
     el.volume = Math.min(1, Math.max(0, flags.sfxVolume * volumeMult))
     el.preload = 'auto'
@@ -103,8 +104,27 @@ export function playSound(name, opts = {}) {
     if (name === 'uno') {
         const flags = readFlags()
         if (!flags.soundEnabled) return
-        if (flags.voiceEnabled) playByName(FILE_MAP.uno, 1)
-        else { // 无语音时回退合成提示音
+        if (flags.voiceEnabled) {
+            // 先解锁音频上下文，提高自动播放成功率
+            unlock()
+            // 尝试播放真实人声文件
+            const el = new Audio(BASE + FILE_MAP.uno)
+            el.volume = Math.min(1, Math.max(0, flags.sfxVolume))
+            el.preload = 'auto'
+            const p = el.play()
+            // 若被浏览器自动播放策略拦截，用系统语音合成兜底，确保 AI 喊 UNO 也能听见
+            if (p && p.catch) {
+                p.catch(() => {
+                    if ('speechSynthesis' in window) {
+                        const u = new SpeechSynthesisUtterance('UNO')
+                        u.lang = 'en-US'
+                        u.rate = 1.15
+                        u.pitch = 1.1
+                        window.speechSynthesis.speak(u)
+                    }
+                })
+            }
+        } else { // 无语音时回退合成提示音
             unlock()
             tone(900, 0.12, 'square', 0.2)
             setTimeout(() => tone(1300, 0.18, 'square', 0.25), 80)

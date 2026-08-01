@@ -48,6 +48,7 @@ export function chooseCard(hand, topCard, currentColor, context = {}) {
     const nextIsUser = context.nextIsUser || false
     const nextIdx = context.nextPlayerIndex ?? -1
     const nextHandLen = context.handsLengths?.[nextIdx] ?? 99
+    const dumpMode = context.dump || false
 
     // 计分手：越高的分越想打
     const scoreCard = (card) => {
@@ -60,6 +61,12 @@ export function chooseCard(hand, topCard, currentColor, context = {}) {
 
         // 基础：优先与当前颜色一致（保持颜色主动权）
         if (card.color === currentColor) score += 15
+
+        // 同色连出模式：尽量把同色牌一次性甩出去，万能牌更不想现在用（留到收尾）
+        if (dumpMode) {
+            if (card.color === currentColor && card.type === 'number') score += 20
+            if (isWild) score -= 15
+        }
 
         // 基础：功能牌优先
         if (card.type === 'skip' || card.type === 'reverse' || card.type === 'draw2') score += 8

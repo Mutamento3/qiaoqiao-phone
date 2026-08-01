@@ -596,7 +596,12 @@ async function _generateReplyInternal(messages, char, signal, options = {}) {
     // logger 在后面 (line 613) 才声明, 这里不能用 logger.addLog
     // 改为: logger 在声明后统一打日志 (见 World Book Logic 之后)
 
-    const config = settingsStore.currentConfig || settingsStore.apiConfig
+    // 游戏中心等模块可通过 options.overrideConfig 指定独立渠道（如 flash 极速版）。
+    // 仅当传入的 overrideConfig 带有有效 baseUrl 时才覆盖全局配置，否则回落到全局配置。
+    const overrideConfig = options.overrideConfig
+    const config = (overrideConfig && overrideConfig.baseUrl)
+        ? overrideConfig
+        : (settingsStore.currentConfig || settingsStore.apiConfig)
     // Mismatch fix: Store uses 'baseUrl', Service expected 'apiUrl'
     const { baseUrl, apiKey, model, temperature, maxTokens } = config || {}
     // v1.10.99: 调用方可通过 options.overrideMaxTokens 覆盖配置中的 maxTokens,

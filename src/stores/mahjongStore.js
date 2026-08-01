@@ -1,9 +1,10 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useSettingsStore } from './settingsStore.js'
 import mahjongEngine from '../utils/mahjong/MahjongEngine.js'
 import mahjongAI from '../utils/mahjong/MahjongAI.js'
 import { generateReply } from '../utils/aiService.js'
+import { loadGameChat, saveGameChat, clearGameChat } from '../utils/gameChatMemory.js'
 
 export const useMahjongStore = defineStore('mahjong', () => {
     // 状态
@@ -18,6 +19,7 @@ export const useMahjongStore = defineStore('mahjong', () => {
     const gameState = ref(null)
     const chatMessages = ref([])
     const gameChatMessages = ref([]) // 局内聊天记录
+    const settingsStore = useSettingsStore()
     const activeReplies = ref({}) // 实时气泡 { playerIndex: text }
     const aiInfluences = ref({}) // AI 耍赖干预 { playerIndex: { targetTile, type } }
     const unreadChatCount = ref(0)
@@ -836,7 +838,12 @@ ${charContexts.map((c, i) => `### 角色 ${i + 1}: 【${c.name}】(${c.position}
         ]
 
         try {
-            const res = await generateReply(msgs, { name: 'MahjongManager' })
+            const res = await generateReply(
+                msgs,
+                { name: 'MahjongManager' },
+                null,
+                { overrideConfig: settingsStore.gameCenterConfig }
+            )
             if (res && res.content) {
                 let jsonArr = []
                 // 强大的 JSON 提取逻辑
@@ -980,35 +987,47 @@ ${charContexts.map((c, i) => `### 角色 ${i + 1}: 【${c.name}】(${c.position}
 
     const loadData = () => {
         const s = localStorage.getItem('mahjong_stats')
-        if (!s) return
-
-        try {
-            const d = JSON.parse(s)
-            if (d.beans !== undefined) beans.value = d.beans
-            if (d.score !== undefined) score.value = d.score
-            if (d.wins !== undefined) wins.value = d.wins
-            if (d.losses !== undefined) losses.value = d.losses
-            if (d.winStreak !== undefined) winStreak.value = d.winStreak
-            if (d.rank !== undefined) rank.value = d.rank
-            if (d.playerStats !== undefined) playerStats.value = d.playerStats
-            if (d.tablecloth !== undefined) tablecloth.value = d.tablecloth
-            // 不覆盖tileBacks，确保使用最新的默认配置
-        } catch (e) {
-            console.error('Failed to load mahjong stats:', e)
+        if (s) {
+            try {
+                const d = JSON.parse(s)
+                if (d.beans !== undefined) beans.value = d.beans
+                if (d.score !== undefined) score.value = d.score
+                if (d.wins !== undefined) wins.value = d.wins
+                if (d.losses !== undefined) losses.value = d.losses
+                if (d.winStreak !== undefined) winStreak.value = d.winStreak
+                if (d.rank !== undefined) rank.value = d.rank
+                if (d.playerStats !== undefined) playerStats.value = d.playerStats
+                if (d.tablecloth !== undefined) tablecloth.value = d.tablecloth
+                // 不覆盖tileBacks，确保使用最新的默认配置
+            } catch (e) {
+                console.error('Failed to load mahjong stats:', e)
+            }
         }
+        // 加载并恢复局内聊天（按记忆设置裁剪/清空）
+        gameChatMessages.value = loadGameChat('mahjong', settingsStore.gameChatMemory.value)
     }
+
+    // 局内聊天自动持久化（按记忆设置裁剪/清空）
+    watch(
+        () => gameChatMessages.value.length,
+        () => saveGameChat('mahjong', gameChatMessages.value, settingsStore.gameChatMemory.value),
+    )
 
     const exitRoom = () => {
         currentRoom.value = null
         gameState.value = null
-        gameChatMessages.value = []
+        if (!settingsStore.gameChatMemory.value.enabled) {
+            // 仅保留当局：退出即清空聊天与历史
+            gameChatMessages.value = []
+            clearGameChat('mahjong')
+        }
         activeReplies.value = {}
     }
 
     // 房间模式：自动分享结算卡片到所有房间内玩家的聊天（不触发AI回复）
     const autoShareResultToChat = async (result, winner, fan, isZiMo, winTypeName) => {
-        if (!currentRoom.value || currentRoom.value.mode === 'quick') return
-        
+        if (!currentRoom.value) return
+
         const { useChatStore } = await import('./chatStore.js')
         const chatStore = useChatStore()
         const players = currentRoom.value.players || []
@@ -1073,24 +1092,35 @@ ${charContexts.map((c, i) => `### 角色 ${i + 1}: 【${c.name}】(${c.position}
 </div>
 `.trim()
 
-        // 向所有房间内的非用户玩家发送结算卡片（不触发AI回复）
+        // 向收件人发送结算卡片（不触发AI回复）
         // [BUG FIX] 原代码 players.forEach + 同步回调里调 chatStore.addMessage (async),
         // 多个 addMessage 并发执行, 内部 await saveChats 会竞争 (last-writer-wins),
         // 部分 chat 的卡片消息可能未落盘就丢失. 改用 for...of 串行 await, 保证顺序落盘.
         // (这里不并发是为了避免 saveChats 竞态; 卡片消息量小, 串行开销可接受)
+        // 收件人 = 用户自己(始终一份, 保证可见) + 每个真实角色(房间模式/映射到本体角色)。
+        // 快速模式(ai_bot 临时机器人)没有对应聊天, 跳过; 但用户自己那份始终能收到。
         const timestamp = Date.now()
+        const recipientIds = []
         for (const player of players) {
-            if (player.id !== 'user') {
-                try {
-                    await chatStore.addMessage(player.id, {
-                        role: 'user',
-                        content: `[CARD]${htmlContent}[/CARD]`,
-                        timestamp: timestamp,
-                        skipAI: true // 标记不触发AI回复
-                    })
-                } catch (e) {
-                    console.error('[MahjongStore] autoShareResultToChat addMessage failed for', player.id, e)
-                }
+            if (player.id === 'user') {
+                recipientIds.push('user')
+            } else if (chatStore.chats[player.id]) {
+                recipientIds.push(player.id)
+            }
+        }
+        for (const cid of recipientIds) {
+            try {
+                let targetChat = chatStore.chats[cid]
+                if (!targetChat && cid === 'user') targetChat = chatStore.ensureUserSelfChat()
+                if (!targetChat) continue
+                await chatStore.addMessage(targetChat.id, {
+                    role: 'user',
+                    content: `[CARD]${htmlContent}[/CARD]`,
+                    timestamp: timestamp,
+                    skipAI: true // 标记不触发AI回复
+                })
+            } catch (e) {
+                console.error('[MahjongStore] autoShareResultToChat addMessage failed for', cid, e)
             }
         }
     }

@@ -7,20 +7,21 @@ export const SEAT_LABELS = ['南', '东南', '东', '东北', '北', '西北', '
 export const POSITION_NAMES = ['south', 'se', 'east', 'ne', 'north', 'nw', 'west', 'sw']
 
 export const RULE_MODES = {
-    classic: { name: '经典', stacking: false, jumpIn: false, sevenO: false },
-    stacking: { name: '叠加', stacking: true, jumpIn: false, sevenO: false },
-    jumpin: { name: '抢出', stacking: false, jumpIn: true, sevenO: false },
-    seveno: { name: '七零', stacking: false, jumpIn: false, sevenO: true },
-    extreme: { name: '极限', stacking: true, jumpIn: true, sevenO: true }
+    classic: { name: '经典', stacking: false, jumpIn: false, sevenO: false, dump: false },
+    stacking: { name: '叠加', stacking: true, jumpIn: false, sevenO: false, dump: false },
+    jumpin: { name: '抢出', stacking: false, jumpIn: true, sevenO: false, dump: false },
+    seveno: { name: '七零', stacking: false, jumpIn: false, sevenO: true, dump: false },
+    extreme: { name: '极限', stacking: true, jumpIn: true, sevenO: true, dump: false },
+    dump: { name: '同色连出', stacking: false, jumpIn: false, sevenO: false, dump: true }
 }
 
 // 各颜色对应的展示信息（供 Vue 组件渲染卡面）
 export const COLOR_META = {
-    red: { name: '红', hex: '#ef4444' },
-    yellow: { name: '黄', hex: '#f59e0b' },
-    green: { name: '绿', hex: '#22c55e' },
-    blue: { name: '蓝', hex: '#3b82f6' },
-    wild: { name: '万能', hex: '#a855f7' }
+    red: { name: '红', hex: '#fb7185' },
+    yellow: { name: '黄', hex: '#fbbf24' },
+    green: { name: '绿', hex: '#4ade80' },
+    blue: { name: '蓝', hex: '#60a5fa' },
+    wild: { name: '万能', hex: '#c084fc' }
 }
 
 const SYMBOLS = {

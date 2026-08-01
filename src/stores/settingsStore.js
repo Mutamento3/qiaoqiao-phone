@@ -30,6 +30,41 @@ export const useSettingsStore = defineStore('settings', () => {
     const currentConfig = computed(() => apiConfigs.value[currentConfigIndex.value] || apiConfigs.value[0])
     const apiConfig = computed(() => currentConfig.value)
 
+    // --- 1.5 游戏中心独立 API 配置（极速版 flash 渠道） ---
+    // 游戏中心内所有 AI 调用（麻将/娃娃机/UNO 等）默认走这个独立渠道，
+    // 模型用 flash，回复更快；未配置（baseUrl 为空）时回落到全局 API 配置。
+    const gameCenterApiConfig = ref({
+        enabled: true,
+        baseUrl: '',
+        apiKey: '',
+        temperature: 0.7,
+        model: 'gemini-2.0-flash'
+    })
+
+    // --- 1.6 游戏聊天记忆天数设置 ---
+    // enabled: 是否保留游戏聊天（false=仅保留当局，退出即清空）
+    // mode: 'all' 永久保留 | 'custom' 仅保留最近 days 天
+    // days: 自定义保留天数（mode==='custom' 时生效）
+    const gameChatMemory = ref({
+        enabled: true,
+        mode: 'all',
+        days: 30,
+    })
+    const gameCenterConfig = computed(() => {
+        const c = gameCenterApiConfig.value
+        if (!c.enabled || !c.baseUrl || !c.baseUrl.trim()) return null
+        const baseUrl = c.baseUrl.trim()
+        const provider = /googleapis\.com|gemini/i.test(baseUrl) ? 'gemini' : 'openai'
+        return {
+            baseUrl,
+            apiKey: c.apiKey || '',
+            model: c.model && c.model.trim() ? c.model.trim() : 'gemini-2.0-flash',
+            temperature: typeof c.temperature === 'number' ? c.temperature : 0.7,
+            maxTokens: 2048,
+            provider
+        }
+    })
+
     // --- 2. Personalization State ---
     const personalization = ref({
         wallpaper: '',
@@ -462,6 +497,8 @@ export const useSettingsStore = defineStore('settings', () => {
                 const dataToSave = {
                     apiConfigs: JSON.parse(JSON.stringify(toRaw(apiConfigs.value))),
                     currentConfigIndex: toRaw(currentConfigIndex.value),
+                    gameCenterApiConfig: JSON.parse(JSON.stringify(toRaw(gameCenterApiConfig.value))),
+                    gameChatMemory: JSON.parse(JSON.stringify(toRaw(gameChatMemory.value))),
                     personalization: JSON.parse(JSON.stringify(toRaw(personalization.value))),
                     voice: JSON.parse(JSON.stringify(toRaw(voice.value))),
                     weather: JSON.parse(JSON.stringify(toRaw(weather.value))),
@@ -513,6 +550,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
             if (data.apiConfigs) apiConfigs.value = data.apiConfigs
             if (data.currentConfigIndex !== undefined) currentConfigIndex.value = data.currentConfigIndex
+            if (data.gameCenterApiConfig) gameCenterApiConfig.value = data.gameCenterApiConfig
+            if (data.gameChatMemory) gameChatMemory.value = { enabled: true, mode: 'all', days: 30, ...data.gameChatMemory }
 
             if (data.personalization) {
                 const defaultIconsMap = { ...personalization.value.icons.map }
@@ -739,6 +778,21 @@ export const useSettingsStore = defineStore('settings', () => {
             return true
         }
         return false
+    }
+
+    // 游戏中心独立 API 配置（极速版 flash 渠道）
+    function setGameCenterApiConfig(cfg) {
+        if (!cfg) return
+        Object.assign(gameCenterApiConfig.value, cfg)
+        saveToStorage()
+        useLoggerStore().sys(`更新游戏中心 API 配置: ${gameCenterApiConfig.value.enabled ? '已启用' : '已停用'}`)
+    }
+
+    // 游戏聊天记忆天数设置
+    function setGameChatMemory(cfg) {
+        if (!cfg) return
+        gameChatMemory.value = { enabled: true, mode: 'all', days: 30, ...gameChatMemory.value, ...cfg }
+        saveToStorage()
     }
 
     // Personalization Actions
@@ -1290,6 +1344,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
     return {
         apiConfigs, currentConfigIndex, currentConfig, apiConfig,
+        gameCenterApiConfig, gameCenterConfig, setGameCenterApiConfig,
+        gameChatMemory, setGameChatMemory,
         personalization, voice, weather, compressQuality, drawing,
         isOfflineMode, offlineMode,
         updateConfig, createConfig, deleteConfig,

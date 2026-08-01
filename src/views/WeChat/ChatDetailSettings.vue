@@ -2902,7 +2902,9 @@ const handleBgUpload = async (e) => {
 
 const showResetConfirm = ref(false)
 const showClearConfirm = ref(false)
-const clearIncludeMemory = ref(false)
+// 默认勾选"清空记忆管理库"：清空聊天记录理应让 AI 上下文彻底干净，
+// 从开场白重新来过，而不是仍记得被删掉的旧剧情。用户可手动取消以保留记忆库。
+const clearIncludeMemory = ref(true)
 const showDeleteConfirm = ref(false)
 
 const confirmReset = () => {

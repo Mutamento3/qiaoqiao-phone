@@ -2368,11 +2368,23 @@ const sendGameEndNotification = () => {
         hour: '2-digit',
         minute: '2-digit'
     })
+    const notifyContent = `麻将对局结束 [TIMESTAMP:${formattedTime}]`
+
+    // 用户自己始终收到一份，保证在快速模式(无真实角色)也能看到系统提醒
+    try {
+        let selfChat = chatStore.chats['user']
+        if (!selfChat && chatStore.ensureUserSelfChat) selfChat = chatStore.ensureUserSelfChat()
+        if (selfChat) chatStore.addMessage(selfChat.id, { role: 'system', content: notifyContent, timestamp })
+    } catch (e) {
+        console.error('[MahjongGame] 系统提醒发给自己失败', e)
+    }
+
+    // 真实角色（房间模式/映射到本体角色）；ai_bot 临时机器人无聊天，跳过
     players.forEach(player => {
-        if (player.id !== 'user') {
+        if (player.id !== 'user' && chatStore.chats[player.id]) {
             chatStore.addMessage(player.id, {
                 role: 'system',
-                content: `麻将对局结束 [TIMESTAMP:${formattedTime}]`,
+                content: notifyContent,
                 timestamp: timestamp
             })
         }

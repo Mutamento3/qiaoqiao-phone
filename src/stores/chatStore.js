@@ -473,6 +473,22 @@ export const useChatStore = defineStore('chat', () => {
         return chats.value[chatId]
     }
 
+    // 返回/创建用户自己的聊天（id 固定为 'user'），用于接收系统自动分享的
+    // 游戏结算卡片、对局提醒等，保证用户在快速模式（无真实角色）也能看到。
+    function ensureUserSelfChat() {
+        if (chats.value['user']) return chats.value['user']
+        const sStore = useSettingsStore()
+        const userName = sStore.personalization?.userProfile?.name || '我'
+        const userAvatar = sStore.personalization?.userProfile?.avatar || getRandomAvatar()
+        return createChat(userName, {
+            id: 'user',
+            avatar: userAvatar,
+            remark: '我',
+            prompt: '这是用户自己的游戏战绩与系统记录，无需 AI 回复。',
+            tags: ['self', 'system']
+        })
+    }
+
     function createGroupChat(options = {}) {
         const chatId =
             options.id || 'g-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5)
@@ -7223,7 +7239,10 @@ export const useChatStore = defineStore('chat', () => {
 
     async function clearAllChats() {
         Object.keys(chats.value).forEach((key) => {
-            chats.value[key].msgs = []
+            const chat = chats.value[key]
+            chat.msgs = []
+            // 同步清空自动记忆日志，避免批量清空后旧剧情仍残留在上下文
+            chat.memoryLog = []
         })
         // [BUG FIX] force-flush: 否则清空后立刻关标签页会丢失清理结果.
         await saveChats(true)
@@ -7231,13 +7250,19 @@ export const useChatStore = defineStore('chat', () => {
 
     async function clearHistory(chatId, options = {}) {
         if (chats.value[chatId]) {
-            chats.value[chatId].msgs = []
+            const chat = chats.value[chatId]
+            chat.msgs = []
+            // [BUG FIX] 清空聊天记录时必须同时清空自动记忆日志(memoryLog)。
+            // memoryLog 由每次 AI 回复自动从"心声/剧情"写入，会被 retrieveRelevantMemories
+            // 注入上下文。如果只清 msgs 而不清 memoryLog，用户删掉的对话记录仍会作为
+            // "记忆"出现在 AI 上下文里，导致 AI 一直在演绎被删除的历史。
+            chat.memoryLog = []
             // Keep in chat list so user can continue chatting
             // chats.value[chatId].inChatList = false
 
             if (options.includeMemory) {
-                chats.value[chatId].memory = []
-                chats.value[chatId].summary = ''
+                chat.memory = []
+                chat.summary = ''
             }
             // [BUG FIX] force-flush: 清空历史是破坏性操作, 必须立即落盘.
             await saveChats(true)
@@ -8283,6 +8308,7 @@ export const useChatStore = defineStore('chat', () => {
         addMessage,
         updateMessage,
         createChat,
+        ensureUserSelfChat,
         deleteChat,
         deleteMessage,
         deleteMessages,

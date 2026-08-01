@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useSettingsStore } from './settingsStore.js'
 import { useWalletStore } from './walletStore.js'
+import { loadGameChat, saveGameChat, clearGameChat } from '../utils/gameChatMemory.js'
 import {
     createDeck,
     dealInitial,
@@ -16,7 +17,7 @@ import {
     SEAT_LABELS,
     POSITION_NAMES
 } from '../utils/uno/unoEngine.js'
-import { chooseCard, chooseColor, shouldCallUno, shouldJumpIn, inferRelationship } from '../utils/uno/UnoAI.js'
+import { chooseCard, chooseColor, shouldJumpIn, inferRelationship } from '../utils/uno/UnoAI.js'
 import { generateReply } from '../utils/aiService.js'
 
 // UNO 内置 NPC 对手（快速开始用；通讯录角色可在房间内邀请替换）
@@ -48,6 +49,7 @@ export const useUnoStore = defineStore('uno', () => {
     const gameState = ref(null)
     const gameChatMessages = ref([])
     const activeReplies = ref({}) // { playerIndex: text }
+    const settingsStore = useSettingsStore()
     const aiInfluences = ref({}) // AI 受聊天影响 { playerIndex: { type:'favor'|'hinder', targetPlayerIndex } }
     const playerStats = ref([]) // 遇到的 AI 排行榜数据
 
@@ -304,11 +306,15 @@ export const useUnoStore = defineStore('uno', () => {
         const dealt = dealInitial(deck, playerCount)
         currentRoom.value.status = 'playing'
 
+        // 摇骰子决定先手：点数 1-6 映射座位 (点数-1) % 人数，避免每次都是玩家先出
+        const diceValue = 1 + Math.floor(Math.random() * 6)
+        const firstPlayer = (diceValue - 1) % playerCount
+
         gameState.value = {
             deck: dealt.deck,
             discard: dealt.discard,
             hands: dealt.hands,
-            currentPlayerIndex: 0,
+            currentPlayerIndex: firstPlayer,
             direction: 1,
             currentColor: dealt.currentColor,
             pendingDraw: 0,
@@ -316,11 +322,14 @@ export const useUnoStore = defineStore('uno', () => {
             unoCalled: players.map(() => false),
             phase: 'playing',
             pendingWild: null,
+            dumpActive: false,
             winnerIndex: null,
             roundResult: null,
             rules: currentRoom.value.rules,
             ruleMode: currentRoom.value.ruleMode,
-            log: [`游戏开始 · ${currentRoom.value.rules.name}模式 · 起始牌：${describeCard(dealt.firstCard)}`],
+            diceValue,
+            firstPlayer,
+            log: [`🎲 摇骰子：${players[firstPlayer]?.name || '玩家'} 先出（点数 ${diceValue}）· ${currentRoom.value.rules.name}模式 · 起始牌：${describeCard(dealt.firstCard)}`],
             playerNames: players.map((p) => p.name)
         }
     }
@@ -352,8 +361,9 @@ export const useUnoStore = defineStore('uno', () => {
             s.currentColor = card.color
         }
 
+        const now = Date.now()
+        let calledUno = false
         s.log.unshift(`${playerName(index)} 打出 ${describeCard(card)}`)
-        lastAction.value = { type: 'play', playerIndex: index, card, color: s.currentColor, time: Date.now() }
 
         // 七零规则
         applySevenZero(s, card, index)
@@ -374,7 +384,10 @@ export const useUnoStore = defineStore('uno', () => {
         if (hand.length === 1) {
             const isAI = currentRoom.value.players[index]?.isAI
             if (isAI) {
-                s.unoCalled[index] = shouldCallUno(buildAIContext(index))
+                // AI 出倒数第二张时必定喊 UNO，给玩家明确预警，避免突然结束
+                calledUno = true
+                s.unoCalled[index] = true
+                s.log.unshift(`🎉 ${playerName(index)} 喊了 UNO！`)
             } else if (!s.unoCalled[index]) {
                 drawCards(s, index, 2)
                 s.log.unshift(`⚠️ ${playerName(index)} 没喊UNO，被罚抽2张`)
@@ -382,13 +395,38 @@ export const useUnoStore = defineStore('uno', () => {
             }
         }
 
+        // 出牌动作事件：放在 UNO 判定之后，确保 calledUno 已确定
+        lastAction.value = { type: 'play', playerIndex: index, card, cardId: card.id, color: s.currentColor, calledUno, time: now }
+
         if (hand.length === 0) {
             finishGame(index)
             return true
         }
 
+        // 同色连出（dump）模式：出完一张后，若本家仍有可继续打出的同色/万能牌，
+        // 则保持回合，等待玩家继续出牌或点“结束出牌”；否则正常推进回合。
+        if (s.rules?.dump) {
+            const remaining = getPlayableCards(s.hands[index], topCardOf(s), s.currentColor)
+            if (remaining.length > 0) {
+                s.dumpActive = true
+                s.log.unshift(`${playerName(index)} 同色连出：还可以继续出牌`)
+                return true
+            }
+        }
+
+        s.dumpActive = false
         advanceTurn()
         return true
+    }
+
+    // 结束“同色连出”回合，正式推进到下家（结算累积的 skip/+2/+4 效果）
+    function stopDump(index) {
+        const s = gameState.value
+        if (!s || s.phase === 'finished') return
+        if (s.currentPlayerIndex !== index) return
+        if (!s.dumpActive) return
+        s.dumpActive = false
+        advanceTurn()
     }
 
     function drawOne(index) {
@@ -399,7 +437,7 @@ export const useUnoStore = defineStore('uno', () => {
         const card = s.deck.pop()
         s.hands[index].push(card)
         s.log.unshift(`${playerName(index)} 抽了 1 张牌`)
-        lastAction.value = { type: 'draw', playerIndex: index, time: Date.now() }
+        lastAction.value = { type: 'draw', playerIndex: index, card, time: Date.now() }
         return card
     }
 
@@ -422,6 +460,7 @@ export const useUnoStore = defineStore('uno', () => {
 
     function advanceTurn() {
         const s = gameState.value
+        s.dumpActive = false
         let idx = s.currentPlayerIndex
         if (s.mustSkip) {
             s.mustSkip = false
@@ -543,6 +582,7 @@ export const useUnoStore = defineStore('uno', () => {
             nextPlayerIndex: next,
             nextIsUser: next === 0,
             userIndex: 0,
+            dump: s?.rules?.dump || false,
             relationships: Object.fromEntries(players.map((p, i) => [i, p.relationship || 'neutral'])),
             personas: Object.fromEntries(players.map((p, i) => [i, p.persona || ''])),
             playerNames: players.map((p) => p.name)
@@ -564,6 +604,15 @@ export const useUnoStore = defineStore('uno', () => {
         const influence = aiInfluences.value[idx]
         if (influence?.type === 'favor') {
             context.nextIsUser = true
+        }
+
+        // 同色连出（dump）模式：若 AI 已经无牌可继续出，直接结束连出回合
+        if (s.dumpActive) {
+            const canContinue = getPlayableCards(hand, top, s.currentColor)
+            if (canContinue.length === 0) {
+                stopDump(idx)
+                return
+            }
         }
 
         const card = chooseCard(hand, top, s.currentColor, context)
@@ -696,7 +745,12 @@ ${charContexts.map((c, i) => `### 角色 ${i + 1}: 【${c.name}】(${c.position}
                     content: m.role === 'user' ? `${userName}: ${m.content}` : `${m.sender}: ${m.content}`
                 }))
             ]
-            const res = await generateReply(msgs, { name: 'UnoManager' })
+            const res = await generateReply(
+                msgs,
+                { name: 'UnoManager' },
+                null,
+                { overrideConfig: settingsStore.gameCenterConfig }
+            )
             if (!res?.content) return
             await processAIChatReply(res.content, charContexts)
         } catch (err) {
@@ -743,7 +797,12 @@ ${charContexts.map((c) => `### ${c.name}
 `.trim()
 
         try {
-            const res = await generateReply([{ role: 'system', content: prompt }], { name: 'UnoManager' })
+            const res = await generateReply(
+                [{ role: 'system', content: prompt }],
+                { name: 'UnoManager' },
+                null,
+                { overrideConfig: settingsStore.gameCenterConfig }
+            )
             if (res?.content) await processAIChatReply(res.content, charContexts)
         } catch (e) {
             console.error('UNO 结算对话失败', e)
@@ -824,30 +883,43 @@ ${charContexts.map((c) => `### ${c.name}
 
     function loadData() {
         const s = localStorage.getItem('uno_stats')
-        if (!s) return
-        try {
-            const d = JSON.parse(s)
-            if (d.beans !== undefined) beans.value = d.beans
-            if (d.score !== undefined) score.value = d.score
-            if (d.wins !== undefined) wins.value = d.wins
-            if (d.losses !== undefined) losses.value = d.losses
-            if (d.winStreak !== undefined) winStreak.value = d.winStreak
-            if (d.rank !== undefined) rank.value = d.rank
-            if (d.playerStats !== undefined) playerStats.value = d.playerStats
-            if (d.soundEnabled !== undefined) soundEnabled.value = d.soundEnabled
-            if (d.bgmEnabled !== undefined) bgmEnabled.value = d.bgmEnabled
-            if (d.voiceEnabled !== undefined) voiceEnabled.value = d.voiceEnabled
-            if (d.sfxVolume !== undefined) sfxVolume.value = d.sfxVolume
-            if (d.bgmVolume !== undefined) bgmVolume.value = d.bgmVolume
-        } catch (e) {
-            console.error('Failed to load UNO stats:', e)
+        if (s) {
+            try {
+                const d = JSON.parse(s)
+                if (d.beans !== undefined) beans.value = d.beans
+                if (d.score !== undefined) score.value = d.score
+                if (d.wins !== undefined) wins.value = d.wins
+                if (d.losses !== undefined) losses.value = d.losses
+                if (d.winStreak !== undefined) winStreak.value = d.winStreak
+                if (d.rank !== undefined) rank.value = d.rank
+                if (d.playerStats !== undefined) playerStats.value = d.playerStats
+                if (d.soundEnabled !== undefined) soundEnabled.value = d.soundEnabled
+                if (d.bgmEnabled !== undefined) bgmEnabled.value = d.bgmEnabled
+                if (d.voiceEnabled !== undefined) voiceEnabled.value = d.voiceEnabled
+                if (d.sfxVolume !== undefined) sfxVolume.value = d.sfxVolume
+                if (d.bgmVolume !== undefined) bgmVolume.value = d.bgmVolume
+            } catch (e) {
+                console.error('Failed to load UNO stats:', e)
+            }
         }
+        // 加载并恢复局内聊天（按记忆设置裁剪/清空）
+        gameChatMessages.value = loadGameChat('uno', settingsStore.gameChatMemory.value)
     }
+
+    // 局内聊天自动持久化（按记忆设置裁剪/清空）
+    watch(
+        () => gameChatMessages.value.length,
+        () => saveGameChat('uno', gameChatMessages.value, settingsStore.gameChatMemory.value),
+    )
 
     function returnToLobby() {
         currentRoom.value = null
         gameState.value = null
-        gameChatMessages.value = []
+        if (!settingsStore.gameChatMemory.value.enabled) {
+            // 仅保留当局：退出即清空聊天与历史
+            gameChatMessages.value = []
+            clearGameChat('uno')
+        }
         activeReplies.value = {}
         aiInfluences.value = {}
     }
@@ -860,7 +932,11 @@ ${charContexts.map((c) => `### ${c.name}
             return
         }
         // 保留当前房间与玩家，仅重置牌局状态开始下一回合/再一局
-        gameChatMessages.value = []
+        // 启用了记忆时不清空聊天（永久留存）；未启用时才清空当局
+        if (!settingsStore.gameChatMemory.value.enabled) {
+            gameChatMessages.value = []
+            clearGameChat('uno')
+        }
         activeReplies.value = {}
         aiInfluences.value = {}
         currentRoom.value.currentRound = (currentRoom.value.currentRound || 1) + 1
@@ -874,7 +950,7 @@ ${charContexts.map((c) => `### ${c.name}
         currentRoom, gameState, gameChatMessages, activeReplies, aiInfluences, lastAction,
         soundEnabled, bgmEnabled, voiceEnabled, sfxVolume, bgmVolume,
         getNPCs, createRoom, addAIPlayers, addContact, addNPC, removePlayer,
-        startGame, startNextRound, playCard, drawOne, callUno, passTurn, aiStep, checkJumpIn,
+        startGame, startNextRound, playCard, drawOne, callUno, passTurn, stopDump, aiStep, checkJumpIn,
         finishGame, returnToLobby, startNewGame,
         sendGameChat, triggerEndGameChat,
         rechargeBeans, deductBeans, addBeans, updateScore,

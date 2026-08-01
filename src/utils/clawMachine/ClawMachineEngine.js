@@ -4,45 +4,74 @@
  */
 
 /**
+ * 默认机台格挡参数
+ */
+const DEFAULT_LAYOUT = {
+    xMin: 28,
+    xMax: 72,
+    backY: 34,
+    frontY: 48,
+    cols: 4,
+    clawTopY: 2,
+    clawDropY: 58,
+    clawHookOffset: 8,
+}
+
+function resolveMachineLayout(machine) {
+    if (!machine || !machine.layout) return DEFAULT_LAYOUT
+    return { ...DEFAULT_LAYOUT, ...machine.layout }
+}
+
+/**
  * 生成娃娃机内部玩偶布局
- * 使用 2 行网格排列，前排大、后排小，避免重叠乱放
+ * 根据每个机台的格挡参数摆放，前排大、后排小，避免重叠乱放
+ * @param {Object} machine - 娃娃机对象（含 layout 配置）
  * @param {Array} dolls - 玩偶数组（来自 clawMachinesData.getMachineDolls）
- * @param {number} count - 布局玩偶数量（默认 12）
+ * @param {number} count - 布局玩偶数量（默认 10）
  * @returns {Array} 布局数组 [{ id, dollId, name, image, x, y, rotation, scale, zIndex }]
  */
-export function generateDollLayout(dolls, count = 12) {
+export function generateDollLayout(machine, dolls, count = 10) {
     const layout = []
-    const usableDolls = dolls.filter(d => d.image) // 排除没贴图的
+    // dolls 这里已经按真实库存展开（每只代表一只），selectMachine 会负责展开并洗牌
+    const usableDolls = dolls.filter(d => d.image)
     if (usableDolls.length === 0) return layout
 
-    // 玻璃罩内部有效区域（百分比坐标）
-    // 背景图顶部被裁剪 22% 后，玻璃罩底部约在容器 80% 处
-    const AREA = {
-        xMin: 26,
-        xMax: 74,
-        backY: 64, // 后排 y 基准
-        frontY: 74, // 前排 y 基准
-    }
+    const cfg = resolveMachineLayout(machine)
 
-    // 每行固定 6 列，均匀分布
-    const COLS = 6
-    const xStep = (AREA.xMax - AREA.xMin) / (COLS - 1)
+    // 列数与间距：确保娃娃不溢出玻璃柜、彼此隔离
+    const COLS = cfg.cols || 4
+    const rows = 2
+    const xPadding = 9   // 左右留白（百分比），避免贴边溢出
+    const xGap = 4       // 列间距（百分比）
 
-    for (let i = 0; i < count; i++) {
-        const doll = usableDolls[i % usableDolls.length]
-        const isFront = i < 6 // 前排 6 个，后排 6 个
-        const col = i % 6
+    const xMin = cfg.xMin + xPadding
+    const xMax = cfg.xMax - xPadding
+    const xStep = (xMax - xMin - (COLS - 1) * xGap) / (COLS - 1)
 
-        // 基础列位置
-        const baseX = AREA.xMin + col * xStep
-        const baseY = isFront ? AREA.frontY : AREA.backY
+    // 最多摆满 2 行，也不超过传入的玩偶池数量（不重复造娃，抓空才真实）
+    const maxSlots = COLS * rows
+    const targetCount = Math.min(count, maxSlots, usableDolls.length)
 
-        // 轻微随机抖动，避免呆板
-        const x = baseX + (Math.random() - 0.5) * 3
-        const y = baseY + (Math.random() - 0.5) * 2.5
+    // 前排 / 后排各一半，前排填充完毕再填后排
+    const halfCount = Math.ceil(targetCount / 2)
 
-        // 透视：前排大、后排小
-        const scale = isFront ? 0.95 + Math.random() * 0.2 : 0.72 + Math.random() * 0.12
+    for (let i = 0; i < targetCount; i++) {
+        const doll = usableDolls[i]
+        const isFront = i < halfCount
+        const col = i % COLS
+
+        // 基础列位置：整齐网格，带 gap
+        const baseX = xMin + col * (xStep + xGap)
+        const baseY = isFront ? cfg.frontY : cfg.backY
+
+        // 极轻微随机抖动，保持整齐不呆板
+        const x = baseX + (Math.random() - 0.5) * 1.2
+        const y = baseY + (Math.random() - 0.5) * 1.0
+
+        // 透视：前排大、后排小；尺寸收敛，避免溢出玻璃柜
+        const scale = isFront
+            ? 1.05 + (Math.random() - 0.5) * 0.05
+            : 0.88 + (Math.random() - 0.5) * 0.04
 
         layout.push({
             layoutId: `layout-${i}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -51,7 +80,7 @@ export function generateDollLayout(dolls, count = 12) {
             image: doll.image,
             x,
             y,
-            rotation: (Math.random() - 0.5) * 12, // -6 ~ +6 度
+            rotation: (Math.random() - 0.5) * 5, // -2.5 ~ +2.5 度
             scale,
             zIndex: 0,
         })
@@ -138,7 +167,6 @@ export function findNearestDoll(layout, clawX, clawY) {
 
     // 对齐度：爪子与玩偶的距离
     // 距离=0 时 alignment=1，距离>=15% 容器宽度时 alignment=0
-    // 列间距约 9.6%，15% 半径保证对准列即可抓到，稍偏也有机会
     const catchRadius = 15
     const alignment = Math.max(0, 1 - minDist / catchRadius)
 
@@ -222,7 +250,7 @@ export function resolveGrab(config) {
     const {
         layout = [],
         clawX = 50,
-        clawY = 70,
+        clawY = 58,
         mode = 'self',
         baseRate = 0.3,
         aiSkill = 0.5,
@@ -249,5 +277,65 @@ export function resolveGrab(config) {
         doll: success ? nearest.doll : null,
         probability,
         alignment: nearest.alignment,
+    }
+}
+
+/**
+ * 根据娃娃机和玩偶初始化库存
+ * @param {Object} machine
+ * @param {Array} dolls
+ * @param {number} stockPerDoll - 每个玩偶初始库存
+ * @returns {Object} { dollId: count }
+ */
+export function initStock(machine, dolls, stockPerDoll = 2) {
+    const stock = {}
+    dolls.forEach(d => {
+        if (d.image) stock[d.id] = stockPerDoll
+    })
+    return stock
+}
+
+/**
+ * 根据库存生成可用玩偶池（用于布局）
+ * @param {Array} dolls
+ * @param {Object} stock
+ * @returns {Array}
+ */
+export function getAvailableDolls(dolls, stock) {
+    return dolls.filter(d => d.image && (stock[d.id] || 0) > 0)
+}
+
+/**
+ * 减少库存
+ * @param {Object} stock
+ * @param {string} dollId
+ */
+export function deductStock(stock, dollId) {
+    if (stock[dollId] > 0) stock[dollId]--
+}
+
+/**
+ * 补货（每日 0 点）
+ * @param {Object} stock
+ * @param {Array} dolls
+ * @param {number} stockPerDoll
+ */
+export function restock(stock, dolls, stockPerDoll = 2) {
+    dolls.forEach(d => {
+        if (d.image) stock[d.id] = stockPerDoll
+    })
+}
+
+/**
+ * 获取机台爪子相关参数
+ * @param {Object} machine
+ * @returns {Object} { clawTopY, clawDropY, clawHookOffset }
+ */
+export function getClawParams(machine) {
+    const cfg = resolveMachineLayout(machine)
+    return {
+        clawTopY: cfg.clawTopY,
+        clawDropY: cfg.clawDropY,
+        clawHookOffset: cfg.clawHookOffset,
     }
 }

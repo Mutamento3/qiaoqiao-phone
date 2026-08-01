@@ -145,8 +145,23 @@ export function getLastNTurns(msgs, turnCount) {
             }
         }
     }
-    if (roundStartIndices.length === 0) return []
-    const startIdx = roundStartIndices[Math.max(0, roundStartIndices.length - turnCount)]
+    // 始终保留最后一条用户消息（正在等待回复的「当前轮」）。
+    // 否则新聊天的第一条、或任意一次"刚发完还没收到回复"的最新消息，
+    // 因为没有后续 AI 回复而不被计入 roundStartIndices，会被整段切掉，
+    // 导致 AI 收不到用户刚说的话、只能凭记忆/系统提示自顾自展开剧情。
+    let lastUserIdx = -1
+    for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i] && msgs[i].role === 'user') {
+            lastUserIdx = i
+            break
+        }
+    }
+    if (roundStartIndices.length === 0) {
+        return lastUserIdx >= 0 ? msgs.slice(lastUserIdx) : []
+    }
+    let startIdx = roundStartIndices[Math.max(0, roundStartIndices.length - turnCount)]
+    // 不要让轮次截取把"当前未回复的用户消息"切掉
+    if (lastUserIdx >= 0) startIdx = Math.min(startIdx, lastUserIdx)
     return msgs.slice(startIdx)
 }
 
