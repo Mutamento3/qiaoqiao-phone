@@ -234,6 +234,25 @@
                 </h3>
                 <textarea v-model="localData.openingLine" class="setting-input h-20" placeholder="自定义开场AI说的第一句话..."
                     :class="settingsStore.personalization.theme === 'dark' ? 'bg-white/5 border-white/10 text-white' : ''"></textarea>
+                <div class="flex items-center gap-2 mt-2 flex-wrap">
+                    <span class="text-xs font-medium"
+                        :class="settingsStore.personalization.theme === 'dark' ? 'text-gray-400' : 'text-gray-600'">显示模式</span>
+                    <div class="inline-flex rounded-lg overflow-hidden border"
+                        :class="settingsStore.personalization.theme === 'dark' ? 'border-white/10' : 'border-gray-200'">
+                        <button type="button" @click="localData.openingMode = 'online'"
+                            class="px-3 py-1.5 text-[11px] font-bold transition-colors"
+                            :class="localData.openingMode === 'online'
+                                ? 'bg-sky-500 text-white'
+                                : (settingsStore.personalization.theme === 'dark' ? 'bg-white/5 text-gray-400 hover:bg-white/10' : 'bg-gray-50 text-gray-500 hover:bg-gray-100')">线上</button>
+                        <button type="button" @click="localData.openingMode = 'offline'"
+                            class="px-3 py-1.5 text-[11px] font-bold transition-colors border-l"
+                            :class="localData.openingMode === 'offline'
+                                ? 'bg-indigo-500 text-white border-indigo-500'
+                                : (settingsStore.personalization.theme === 'dark' ? 'bg-white/5 text-gray-400 hover:bg-white/10 border-white/10' : 'bg-gray-50 text-gray-500 hover:bg-gray-100 border-gray-200')">线下</button>
+                    </div>
+                    <span class="text-[10px]"
+                        :class="settingsStore.personalization.theme === 'dark' ? 'text-gray-500' : 'text-gray-400'">开场白自动显示在对应聊天盒</span>
+                </div>
                 <div class="text-xs mt-1"
                     :class="settingsStore.personalization.theme === 'dark' ? 'text-gray-500' : 'text-gray-500'">
                     留空则使用默认好友申请卡片</div>
@@ -2312,6 +2331,7 @@ const localData = ref({
     wechatId: '', // Add ID field
     prompt: '',
     openingLine: '',
+    openingMode: 'online', // 开场白显示模式: 'online'(线上盒) | 'offline'(线下盒)
     timeAware: false,
     timeSyncMode: 'system',
     virtualTime: '',
@@ -3079,6 +3099,7 @@ const handleExportCard = async () => {
                 gender: localData.value.gender,
                 wechatId: localData.value.wechatId,
                 openingLine: localData.value.openingLine,
+                openingMode: localData.value.openingMode || 'online',
 
                 // Persona & Prompt
                 prompt: localData.value.prompt,

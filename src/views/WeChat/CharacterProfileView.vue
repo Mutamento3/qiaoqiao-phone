@@ -255,6 +255,12 @@
               <i class="fa-solid fa-wand-magic-sparkles text-xs" :class="{ 'animate-spin': isSummarizingMemories }"></i>
               {{ isSummarizingMemories ? '总结中...' : `总结选中 (${selectedMemories.length})` }}
             </button>
+            <button @click="batchDeleteMemories"
+              :disabled="selectedMemories.length === 0"
+              class="px-4 py-1.5 bg-red-500 text-white text-[11px] font-bold rounded-lg shadow-sm disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 transition-all flex items-center gap-1.5">
+              <i class="fa-solid fa-trash text-xs"></i>
+              删除选中 ({{ selectedMemories.length }})
+            </button>
           </div>
 
           <div class="p-4 overflow-y-auto max-h-[60vh] space-y-2 text-xs">
@@ -271,10 +277,14 @@
               class="p-2.5 rounded-xl leading-relaxed break-words transition-all relative group"
               :class="memoryManageMode ? 'bg-gray-50/80 hover:bg-purple-50 cursor-pointer' : 'bg-gray-50/80 text-gray-700'"
               @click="memoryManageMode ? toggleMemorySelect(i) : null">
-              <div v-if="memoryManageMode" class="absolute top-3 left-3">
+              <div v-if="memoryManageMode" class="absolute top-2 left-3">
                 <input type="checkbox" :checked="selectedMemories.includes(i)" @change="toggleMemorySelect(i)" @click.stop class="w-4 h-4 rounded border-gray-300 text-purple-500 focus:ring-purple-400">
               </div>
-              <div :class="[memoryManageMode ? 'pl-8' : '', !memoryManageMode ? 'text-gray-700' : '']">{{ log }}</div>
+              <button v-if="memoryManageMode" @click.stop="deleteMemoryAt(i)"
+                class="absolute top-2 right-2 text-red-400 hover:text-red-600 transition-colors p-1" title="删除这条记忆">
+                <i class="fa-solid fa-trash text-xs"></i>
+              </button>
+              <div :class="[memoryManageMode ? 'pl-8 pr-9' : '', !memoryManageMode ? 'text-gray-700' : '']">{{ log }}</div>
             </div>
           </div>
           <div v-if="Object.keys(memoryFacts).length > 0" class="px-4 pb-4 border-t border-gray-100 pt-3">
@@ -395,6 +405,38 @@ const rebuildMemory = () => {
   rebuildMemoryLog(charId)
   chatStore.triggerToast('记忆同步工作已完成', 'success')
   chatStore.saveChats()
+}
+
+// 记忆日志单条删除：memoryLogs 是 chat.memoryLog 的最后 limit 条，需映射回真实索引
+const deleteMemoryAt = (i) => {
+  const chat = chatStore.chats[charId]
+  if (!chat || !chat.memoryLog) return
+  const actualIndex = chat.memoryLog.length - memoryLogs.value.length + i
+  if (actualIndex >= 0 && actualIndex < chat.memoryLog.length) {
+    chat.memoryLog.splice(actualIndex, 1)
+    chatStore.saveChats()
+    // 同步清理选择（移除刚删的，并下移后续索引）
+    selectedMemories.value = selectedMemories.value
+      .filter(idx => idx !== i)
+      .map(idx => idx > i ? idx - 1 : idx)
+    memorySelectAll.value = selectedMemories.value.length === memoryLogs.value.length
+    chatStore.triggerToast('已删除该条记忆', 'success')
+  }
+}
+
+// 记忆日志批量删除：选中项按真实索引降序 splice，避免错位
+const batchDeleteMemories = () => {
+  const chat = chatStore.chats[charId]
+  if (!chat || !chat.memoryLog || selectedMemories.value.length === 0) return
+  const actualIndices = selectedMemories.value
+    .map(i => chat.memoryLog.length - memoryLogs.value.length + i)
+    .filter(idx => idx >= 0 && idx < chat.memoryLog.length)
+    .sort((a, b) => b - a)
+  actualIndices.forEach(idx => chat.memoryLog.splice(idx, 1))
+  selectedMemories.value = []
+  memorySelectAll.value = false
+  chatStore.saveChats()
+  chatStore.triggerToast(`已删除 ${actualIndices.length} 条记忆`, 'success')
 }
 
 const character = computed(() => {

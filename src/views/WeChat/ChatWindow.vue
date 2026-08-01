@@ -387,7 +387,9 @@ const checkNewChat = () => {
         if (chatData.value?.openingLine && chatData.value.msgs?.length === 0 && !chatData.value.loopId) {
             chatStore.addMessage(chatData.value.id, {
                 role: 'ai',
-                content: chatData.value.openingLine
+                content: chatData.value.openingLine,
+                // 开场白线上/线下：显式指定 mode，使其只出现在对应聊天盒
+                mode: chatData.value.openingMode || 'online'
             })
         }
     } catch (error) {
