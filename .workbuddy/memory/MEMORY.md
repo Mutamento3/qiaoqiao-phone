@@ -93,3 +93,8 @@
 - **修复**：`startNewGame()` 改为保留当前房间与玩家，仅清空聊天记录/影响并重置牌局状态，然后 `startGame()`；`playAgain` 改为 `await unoStore.startNewGame()`。
 - **快速开始流程**：大厅「快速开始」改为弹出轻量面板选玩法模式 + 2-8 人，确认后立即 `createRoom → startGame → router.push('/games/uno')`，不再停在房间等待页。
 - **大喊 UNO 音效**：`unoSounds.js` 新增 `speakUNO()` 用 `window.speechSynthesis` 喊出“UNO!”（pitch 1.5 / rate 1.4），配合 Web Audio 电子音 + 模拟人声呼喊；`unoStore` 增加 `voiceEnabled` 持久化开关，设置弹窗可关。
+
+## 踩坑：UNO 退出后 BGM 持续响（v1.10.273 已修）
+- 根因：`UnoGame` 根 div `@click="onRootClick"` 每次点击都 `startBGM()`；点「确认返回」的 click 冒泡到该根节点，在 `onUnmounted` 的 `stopBGM()` 之后又 `startBGM()` 重建播放，组件已卸载再无 stop。原生 WebView 里 `audio.pause()` 对 loop 音频还可能不立即生效。
+- 修法：`stopBGM` 彻底销毁元素（pause+src空+load+置null）；退出动作 `confirmBack` 同步 `isLeaving=true` + `stopBGM()`，`onRootClick` 在 isLeaving 时 return。
+- 通用教训：根节点全局 click 副作用 + 触发路由跳转的按钮 = 冒泡重启副作用陷阱；退出类副作用要在退出动作里主动停，别只依赖 onUnmounted 时序。
