@@ -1,7 +1,18 @@
-// UNO 引擎：纯逻辑（牌堆生成 / 匹配规则 / 发牌 / 洗牌 / 颜色）
+// UNO 引擎：纯逻辑（牌堆生成 / 匹配规则 / 发牌 / 洗牌 / 颜色 / 多种规则变体）
 // 不依赖 Vue / Pinia，便于在 store 与 AI 中复用。
 
 export const COLORS = ['red', 'yellow', 'green', 'blue']
+// 座位标签，最多 8 人：0 固定是用户，其余按环形分布
+export const SEAT_LABELS = ['南', '东南', '东', '东北', '北', '西北', '西', '西南']
+export const POSITION_NAMES = ['south', 'se', 'east', 'ne', 'north', 'nw', 'west', 'sw']
+
+export const RULE_MODES = {
+    classic: { name: '经典', stacking: false, jumpIn: false, sevenO: false },
+    stacking: { name: '叠加', stacking: true, jumpIn: false, sevenO: false },
+    jumpin: { name: '抢出', stacking: false, jumpIn: true, sevenO: false },
+    seveno: { name: '七零', stacking: false, jumpIn: false, sevenO: true },
+    extreme: { name: '极限', stacking: true, jumpIn: true, sevenO: true }
+}
 
 // 各颜色对应的展示信息（供 Vue 组件渲染卡面）
 export const COLOR_META = {
@@ -83,6 +94,14 @@ export function canPlay(card, topCard, currentColor) {
     return false
 }
 
+// 判断抢出（jump-in）：与顶牌完全相同（颜色、类型、数字都相同）
+export function canJumpIn(card, topCard) {
+    if (!topCard || card.type !== topCard.type) return false
+    if (card.color !== topCard.color) return false
+    if (card.type === 'number' && card.value !== topCard.value) return false
+    return true
+}
+
 export function getPlayableCards(hand, topCard, currentColor) {
     return hand.filter((c) => canPlay(c, topCard, currentColor))
 }
@@ -124,4 +143,36 @@ export function reshuffleIfEmpty(state) {
     const rest = shuffle(state.discard)
     state.discard = [top]
     state.deck = rest
+}
+
+// 描述牌（供日志）
+export function describeCard(card) {
+    if (!card) return ''
+    if (card.type === 'wild') return '变色'
+    if (card.type === 'wild4') return '+4'
+    const colorName = COLOR_META[card.color]?.name || ''
+    return `${colorName}${card.label}`
+}
+
+// 特殊规则：7/0 交换/传递手牌
+export function applySevenZero(state, card, playerIndex) {
+    if (!state.rules?.sevenO) return
+    if (card.type !== 'number') return
+    const n = state.hands.length
+    if (card.value === 7) {
+        // 7：与当前 direction 的下家交换手牌
+        const target = (playerIndex + state.direction + n) % n
+        const tmp = state.hands[playerIndex]
+        state.hands[playerIndex] = state.hands[target]
+        state.hands[target] = tmp
+        state.log.unshift(`🔄 ${state.playerNames?.[playerIndex] || ''} 与 ${state.playerNames?.[target] || ''} 交换手牌`)
+    } else if (card.value === 0) {
+        // 0：所有人按 direction 传递手牌
+        const handsCopy = state.hands.slice()
+        for (let i = 0; i < n; i++) {
+            const from = (i - state.direction + n) % n
+            state.hands[i] = handsCopy[from]
+        }
+        state.log.unshift(`🔄 所有人按顺序传递手牌`)
+    }
 }
