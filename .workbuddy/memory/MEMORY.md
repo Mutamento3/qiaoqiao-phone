@@ -84,8 +84,9 @@
 - **2-8 人**：用户固定 index 0（南），其余按东南/东/东北/北/西北/西/西南动态入座；座位常量 `POSITION_NAMES`/`SEAT_LABELS` 在 `unoEngine.js` 导出。
 - **AI 性格控牌**：`UnoAI.chooseCard(hand, topCard, currentColor, context)` 接收 `relationships`（lover/friend/neutral/rival/enemy）和 `personas`，恋人/好友会避免用 skip/+2/+4 坑用户且用户快赢时放水，对手会针对用户；还有 aggressive/gentle/tricky/calm 性格修正。`inferRelationship` 从 persona/userPersona 文本推断关系。
 - **局内聊天**：`unoStore.sendGameChat(text)` 用 batch prompt 调 `generateReply`，所有在场 AI 角色按人设回复，显示气泡 + 聊天记录；`favor:user` 会让该 AI 下一回合偏向帮用户。
-- **音效**：`src/utils/uno/unoSounds.js` 用 Web Audio API 合成全部音效，无需额外音频文件；出牌/抽牌/跳过/反转/+2/+4/UNO/胜负/聊天。
+- **音效**：`src/utils/uno/unoSounds.js` 优先播放真实文件 `public/sounds/uno/*.mp3`（绝对路径 `/sounds/uno/`，兼容 PWA+原生 WebView）：win/lose/bgm/人声UNO/四色人声/加2/加4/反转/禁止牌；play/draw/shuffle/chat 无文件，保留 Web Audio 合成兜底。新增 `playColorVoice(color)`、`startBGM()`、`stopBGM()`，通过 `useUnoStore()` 读 soundEnabled/bgmEnabled/voiceEnabled/sfxVolume/bgmVolume 联动大厅设置。AI 出万能牌也会喊对应颜色人声（play lastAction 带 color 字段）。注：「人声-加10」mp3 因 UNO 无此牌暂未接线。
 - **坑注意**：`buildAIPlayer` 是 async（要从 chatStore 拿角色人设），所以 `addContact/addNPC` 用 `.then()` 异步插入玩家；界面用响应式会自动更新。结算弹窗头像必须用 `isImageAvatar` 判断，否则路径字符串会直接显示成文字。
+- **横屏**：App 根布局是 `h-[100dvh] w-full` 满屏无手机框，所以游戏按视口宽高比自适应即可。UNO 用 `forceLandscape`+`isLandscape`(resize/orientationchange 监听)+ 顶部旋转按钮手动切换，`uno-land` 样式让对手区换行居中、手牌放大、聊天更宽。电脑预览：浏览器窗口拉宽即自动横；或点旋转图标强制横屏；或 F12→Ctrl+Shift+M→旋转。
 
 ## UNO 再来一局卡死 + 快速开始 + 大喊 UNO 音效（v1.10.271，已 push）
 - **再来一局卡死根因**：原 `startNewGame()` 先 `returnToLobby()` 清空房间，再异步 `createRoom()` 重建；`UnoGame.playAgain()` 没 await 就又调用 `startGame()`，导致玩家列表不足两人、`gameState.hands` 为空，界面只剩弃牌堆/抽牌堆。
