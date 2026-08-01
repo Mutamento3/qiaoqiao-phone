@@ -353,7 +353,7 @@ export const useUnoStore = defineStore('uno', () => {
         }
 
         s.log.unshift(`${playerName(index)} 打出 ${describeCard(card)}`)
-        lastAction.value = { type: 'play', playerIndex: index, card, time: Date.now() }
+        lastAction.value = { type: 'play', playerIndex: index, card, color: s.currentColor, time: Date.now() }
 
         // 七零规则
         applySevenZero(s, card, index)

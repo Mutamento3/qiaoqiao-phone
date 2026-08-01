@@ -1,5 +1,5 @@
 <template>
-    <div class="uno-game w-full h-full flex flex-col bg-[#064e3b] relative overflow-hidden" @click="unlockAudio">
+    <div class="uno-game w-full h-full flex flex-col bg-[#064e3b] relative overflow-hidden" :class="{ 'uno-land': effectiveLandscape }" @click="onRootClick">
         <!-- 顶部栏 -->
         <div class="h-[50px] bg-gradient-to-r from-emerald-700 to-green-700 flex items-center justify-between px-3 text-white shadow-lg z-20 flex-shrink-0">
             <button @click="backToLobby" class="w-9 h-9 flex items-center justify-center">
@@ -11,13 +11,16 @@
                 <span class="text-emerald-100"><i class="fa-solid fa-rotate" :class="gs?.direction === 1 ? 'fa-flip-horizontal' : ''"></i> {{ gs?.direction === 1 ? '顺' : '逆' }}</span>
             </div>
             <div class="flex items-center gap-1">
+                <button @click.stop="toggleLandscape" class="w-9 h-9 flex items-center justify-center" :title="effectiveLandscape ? '切换竖屏' : '切换横屏'">
+                    <i class="fa-solid fa-rotate text-lg" :class="effectiveLandscape ? 'text-yellow-300' : 'text-emerald-100'"></i>
+                </button>
                 <span class="text-[11px] text-emerald-100">色</span>
                 <span class="w-4 h-4 rounded-full border-2 border-white shadow" :style="colorChipStyle"></span>
             </div>
         </div>
 
         <!-- 对手区（横向滚动，适配 1~7 人） -->
-        <div class="flex justify-start items-start px-2 pt-2 gap-2 z-10 flex-shrink-0 overflow-x-auto pb-2">
+        <div class="opponents-row flex justify-start items-start px-2 pt-2 gap-2 z-10 flex-shrink-0 overflow-x-auto pb-2">
             <div v-for="opp in opponents" :key="opp.id"
                 class="flex flex-col items-center rounded-2xl px-2 py-2 transition-all min-w-[70px] relative"
                 :class="opp.isTurn ? 'bg-white/15 ring-2 ring-yellow-300' : 'bg-white/5'">
@@ -44,7 +47,7 @@
         </div>
 
         <!-- 中央牌堆 -->
-        <div class="flex-1 flex items-center justify-center gap-6 relative z-10">
+        <div class="center-pile flex-1 flex items-center justify-center gap-6 relative z-10">
             <div class="flex flex-col items-center">
                 <div class="uno-card rounded-xl border-[3px] border-white shadow-2xl relative overflow-hidden"
                     :style="cardBg(topCard)" :class="cardTextClass(topCard)">
@@ -95,7 +98,7 @@
                     </button>
                 </div>
             </div>
-            <div class="flex overflow-x-auto gap-1.5 pb-2 justify-center">
+            <div class="hand-row flex overflow-x-auto gap-1.5 pb-2 justify-center">
                 <div v-for="card in humanHand" :key="card.id" @click="onHumanCardClick(card)"
                     class="uno-card rounded-xl border-[3px] border-white shadow-md relative overflow-hidden flex-shrink-0 transition-transform duration-150"
                     :class="[
@@ -155,7 +158,7 @@
 
         <!-- 聊天面板（底部抽屉） -->
         <Transition name="slide-up">
-            <div v-if="showChat" class="fixed inset-x-0 bottom-0 z-[70] flex flex-col max-h-[60vh]" @click.stop>
+            <div v-if="showChat" class="chat-drawer fixed inset-x-0 bottom-0 z-[70] flex flex-col max-h-[60vh]" @click.stop>
                 <div class="bg-black/40 absolute inset-0 -z-10" @click="showChat = false"></div>
                 <div class="bg-white rounded-t-[24px] flex flex-col shadow-[0_-10px_40px_rgba(0,0,0,0.3)]">
                     <div class="p-4 border-b border-gray-100 flex justify-between items-center">
@@ -199,7 +202,7 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUnoStore } from '../../stores/unoStore.js'
 import { getPlayableCards, COLOR_META, topCardOf } from '../../utils/uno/unoEngine.js'
-import { playSound, unlockAudio } from '../../utils/uno/unoSounds.js'
+import { playSound, unlockAudio, playColorVoice, startBGM, stopBGM } from '../../utils/uno/unoSounds.js'
 
 const router = useRouter()
 const unoStore = useUnoStore()
@@ -212,6 +215,18 @@ const showChat = ref(false)
 const chatInput = ref('')
 const chatScroll = ref(null)
 const chatReadCount = ref(0)
+
+// 横屏支持：默认跟随设备朝向，桌面预览可手动切换
+const forceLandscape = ref(false)
+const isLandscape = ref(false)
+function checkOrientation() {
+    if (typeof window === 'undefined') return
+    isLandscape.value = window.innerWidth > window.innerHeight
+}
+const effectiveLandscape = computed(() => forceLandscape.value || isLandscape.value)
+function toggleLandscape() {
+    forceLandscape.value = !forceLandscape.value
+}
 
 const room = computed(() => unoStore.currentRoom)
 const gs = computed(() => unoStore.gameState)
@@ -303,7 +318,10 @@ function playNow(cardId, color) {
 function chooseColor(color) {
     const cardId = pickingColor.value
     pickingColor.value = null
-    if (cardId) playNow(cardId, color)
+    if (cardId) {
+        playNow(cardId, color)
+        playColorVoice(color)
+    }
 }
 
 function cancelColor() {
@@ -402,10 +420,12 @@ watch(() => unoStore.lastAction, (action) => {
         else if (card.type === 'draw2') playSound('draw2')
         else if (card.type === 'wild4') playSound('wild4')
         else playSound('play')
+        // 万能牌（含 +4）选色后喊对应颜色人声
+        if ((card.type === 'wild' || card.type === 'wild4') && action.color) playColorVoice(action.color)
     } else if (type === 'draw') {
         playSound('draw')
     } else if (type === 'uno') {
-        playSound('uno', { voiceEnabled: unoStore.voiceEnabled })
+        playSound('uno')
     } else if (type === 'win') {
         playSound('win')
     } else if (type === 'lose') {
@@ -414,6 +434,12 @@ watch(() => unoStore.lastAction, (action) => {
         playSound('chat')
     }
 }, { deep: true })
+
+// 背景音乐开关随 store 变化
+watch(() => unoStore.bgmEnabled, (on) => {
+    if (on) startBGM()
+    else stopBGM()
+})
 
 // 新聊天自动滚动
 watch(gameChatMessages, () => {
@@ -426,6 +452,9 @@ watch(gameChatMessages, () => {
 }, { deep: true })
 
 onMounted(() => {
+    checkOrientation()
+    window.addEventListener('resize', checkOrientation)
+    window.addEventListener('orientationchange', checkOrientation)
     if (!room.value) {
         router.replace('/games/uno-lobby')
         return
@@ -434,11 +463,23 @@ onMounted(() => {
         unoStore.startGame()
         playSound('shuffle')
     }
-    nextTick(() => scheduleAI())
+    nextTick(() => {
+        scheduleAI()
+        // 首次交互前浏览器会拦截自动播放，这里尝试启动 BGM，后续点击会补启
+        startBGM()
+    })
 })
+
+function onRootClick() {
+    unlockAudio()
+    startBGM()
+}
 
 onUnmounted(() => {
     if (aiTimer.value) clearTimeout(aiTimer.value)
+    window.removeEventListener('resize', checkOrientation)
+    window.removeEventListener('orientationchange', checkOrientation)
+    stopBGM()
 })
 </script>
 
@@ -455,4 +496,14 @@ onUnmounted(() => {
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 .slide-up-enter-active, .slide-up-leave-active { transition: transform 0.3s ease; }
 .slide-up-enter-from, .slide-up-leave-to { transform: translateY(100%); }
+
+/* ===== 横屏布局：利用更宽的视口，对手区换行居中、手牌更大、聊天面板更宽 ===== */
+.uno-land { max-width: none; }
+.uno-land .opponents-row { flex-wrap: wrap; justify-content: center; overflow: visible; }
+.uno-land .uno-card { width: 64px; height: 94px; }
+.uno-land .uno-back { width: 86px !important; height: 124px !important; }
+.uno-land .center-pile { gap: 3rem; }
+.uno-land .hand-row { justify-content: center; }
+.uno-land .hand-row .uno-card { width: 68px; height: 100px; }
+.uno-land .chat-drawer { max-width: 460px; margin: 0 auto; }
 </style>
