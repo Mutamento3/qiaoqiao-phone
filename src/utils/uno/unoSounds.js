@@ -145,7 +145,14 @@ export function startBGM() {
     }
 }
 export function stopBGM() {
-    if (bgmEl) { bgmEl.pause(); try { bgmEl.currentTime = 0 } catch (e) {} }
+    if (!bgmEl) return
+    try { bgmEl.pause() } catch (e) {}
+    try { bgmEl.currentTime = 0 } catch (e) {}
+    // 彻底销毁元素，避免原生 WebView 中 loop 音频 pause 后仍残留播放，
+    // 也避免后续 startBGM 误 resume 已停的实例。
+    try { bgmEl.src = '' } catch (e) {}
+    try { bgmEl.load() } catch (e) {}
+    bgmEl = null
 }
 export function setBgmVolume(v) {
     if (bgmEl) bgmEl.volume = Math.min(1, Math.max(0, v))

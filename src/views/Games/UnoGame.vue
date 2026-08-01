@@ -209,6 +209,8 @@ const unoStore = useUnoStore()
 
 const pickingColor = ref(null)
 const drewThisTurn = ref(false)
+// 标记正在离开对局（确认返回大厅），阻止退出过程中 click 冒泡重新启动 BGM
+const isLeaving = ref(false)
 const aiTimer = ref(null)
 const showConfirm = ref(false)
 const showChat = ref(false)
@@ -352,6 +354,8 @@ function backToLobby() {
 }
 
 function confirmBack() {
+    isLeaving.value = true
+    stopBGM()
     showConfirm.value = false
     unoStore.returnToLobby()
     router.push('/games/uno-lobby')
@@ -471,6 +475,8 @@ onMounted(() => {
 })
 
 function onRootClick() {
+    // 正在离开（退出确认已触发）时不补启 BGM，避免 click 冒泡重新 start 已停的音乐
+    if (isLeaving.value) return
     unlockAudio()
     startBGM()
 }
