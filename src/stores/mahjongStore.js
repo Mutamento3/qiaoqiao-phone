@@ -1102,9 +1102,8 @@ ${charContexts.map((c, i) => `### 角色 ${i + 1}: 【${c.name}】(${c.position}
         const timestamp = Date.now()
         const recipientIds = []
         for (const player of players) {
-            if (player.id === 'user') {
-                recipientIds.push('user')
-            } else if (chatStore.chats[player.id]) {
+            // 仅发给"真实角色对手"（房间模式）；用户自己不再收到、ai_bot 临时机器人无聊天跳过
+            if (player.id !== 'user' && chatStore.chats[player.id]) {
                 recipientIds.push(player.id)
             }
         }

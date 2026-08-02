@@ -129,6 +129,7 @@ export function countTurns(msgs) {
  */
 export function getLastNTurns(msgs, turnCount) {
     if (!msgs || !msgs.length || turnCount <= 0) return []
+
     // 找出所有「已完成的轮」的起始 user 索引
     const roundStartIndices = []
     for (let i = 0; i < msgs.length; i++) {
@@ -145,24 +146,41 @@ export function getLastNTurns(msgs, turnCount) {
             }
         }
     }
-    // 始终保留最后一条用户消息（正在等待回复的「当前轮」）。
-    // 否则新聊天的第一条、或任意一次"刚发完还没收到回复"的最新消息，
-    // 因为没有后续 AI 回复而不被计入 roundStartIndices，会被整段切掉，
-    // 导致 AI 收不到用户刚说的话、只能凭记忆/系统提示自顾自展开剧情。
-    let lastUserIdx = -1
+
+    // 最后一个 AI 回复的索引 → 其后连续未回复的 user 消息属于"当前待回复轮"，必须全部保留。
+    // 否则用户一次性发了多行/多条（多个气泡）但 AI 还没回，只剩最后一条进上下文，前面的全丢。
+    let lastAiIdx = -1
     for (let i = msgs.length - 1; i >= 0; i--) {
-        if (msgs[i] && msgs[i].role === 'user') {
-            lastUserIdx = i
-            break
-        }
+        if (msgs[i] && isAIResponse(msgs[i])) { lastAiIdx = i; break }
     }
-    if (roundStartIndices.length === 0) {
-        return lastUserIdx >= 0 ? msgs.slice(lastUserIdx) : []
+    let pendingUserStart = -1
+    for (let i = lastAiIdx + 1; i < msgs.length; i++) {
+        if (msgs[i] && msgs[i].role === 'user') { pendingUserStart = i; break }
     }
-    let startIdx = roundStartIndices[Math.max(0, roundStartIndices.length - turnCount)]
-    // 不要让轮次截取把"当前未回复的用户消息"切掉
-    if (lastUserIdx >= 0) startIdx = Math.min(startIdx, lastUserIdx)
-    return msgs.slice(startIdx)
+
+    let startIdx
+    if (roundStartIndices.length > 0) {
+        startIdx = roundStartIndices[Math.max(0, roundStartIndices.length - turnCount)]
+    } else if (pendingUserStart >= 0) {
+        startIdx = pendingUserStart
+    } else {
+        // 既无完整轮也无待回复 user：兜底保留最后一条，避免空数组让 AI 收不到任何上下文
+        startIdx = Math.max(0, msgs.length - 1)
+    }
+
+    // 不要把"当前待回复用户消息"切掉：从 pendingUserStart 起保留（含其前的所有连续 user）
+    if (pendingUserStart >= 0) startIdx = Math.min(startIdx, pendingUserStart)
+
+    let result = msgs.slice(startIdx)
+
+    // 保留开场白：若首条消息是 AI（即开场白），且被轮次截取挡在了 startIdx 之前，
+    // 则把这一条（仅这一条，不拉入中间全部）补到切片最前面，让 AI 能看到自己说过的话。
+    // 否则新聊天 [开场白, 用户首句] 里开场白会被切掉，AI 不知道自己刚发了什么。
+    if (msgs[0] && msgs[0].role === 'ai' && 0 < startIdx) {
+        result = [msgs[0], ...result]
+    }
+
+    return result
 }
 
 /**

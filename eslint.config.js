@@ -13,7 +13,9 @@ export default [
   {
     // 不扫构建产物 / 原生壳 / 函数 / 脚本 / 静态资源
     ignores: [
-      'dist/**',
+      '**/dist/**',
+      '**/dist_*/**',
+      '**/old_dist*/**',
       'node_modules/**',
       'android-native/**',
       'functions/**',

@@ -667,7 +667,7 @@
 
             <!-- 结算界面 -->
             <Transition name="fade">
-                <div v-if="mahjongStore.gameState?.roundResult"
+                <div v-if="mahjongStore.gameState?.roundResult && !showFinalSettlement"
                     class="fixed inset-0 z-[100] flex items-center justify-center px-4 transition-all duration-500"
                     :class="showScoreCard ? 'bg-black/60 backdrop-blur-sm' : 'pointer-events-none'"
                     @click="showScoreCard = !showScoreCard">
@@ -2359,8 +2359,11 @@ const startNewGame = () => {
 // 游戏结束时发送系统提示
 const sendGameEndNotification = () => {
     const chatStore = useChatStore()
-    // 向所有房间内的玩家发送游戏结束通知
     const players = mahjongStore.currentRoom?.players || []
+    // 仅当房间内有"真实角色对手"时才发通知（房间模式）；
+    // 快速随机模式对手是 ai_bot 临时机器人，没有对应聊天，不发送、也不给用户自己发、不创建"我"
+    const hasRealOpponent = players.some(p => p.id !== 'user' && chatStore.chats[p.id])
+    if (!hasRealOpponent) return
     const timestamp = Date.now()
     const formattedTime = new Date(timestamp).toLocaleString('zh-CN', {
         month: '2-digit',
@@ -2370,22 +2373,13 @@ const sendGameEndNotification = () => {
     })
     const notifyContent = `麻将对局结束 [TIMESTAMP:${formattedTime}]`
 
-    // 用户自己始终收到一份，保证在快速模式(无真实角色)也能看到系统提醒
-    try {
-        let selfChat = chatStore.chats['user']
-        if (!selfChat && chatStore.ensureUserSelfChat) selfChat = chatStore.ensureUserSelfChat()
-        if (selfChat) chatStore.addMessage(selfChat.id, { role: 'system', content: notifyContent, timestamp })
-    } catch (e) {
-        console.error('[MahjongGame] 系统提醒发给自己失败', e)
-    }
-
     // 真实角色（房间模式/映射到本体角色）；ai_bot 临时机器人无聊天，跳过
     players.forEach(player => {
         if (player.id !== 'user' && chatStore.chats[player.id]) {
             chatStore.addMessage(player.id, {
                 role: 'system',
                 content: notifyContent,
-                timestamp: timestamp
+                timestamp
             })
         }
     })
