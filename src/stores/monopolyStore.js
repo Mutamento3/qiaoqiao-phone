@@ -47,7 +47,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
     )
 
     const currentPlayer = computed(() => {
-        if (!gameState.value) return null
+        if (!gameState.value || !Array.isArray(gameState.value.players)) return null
         return gameState.value.players[gameState.value.currentTurn] || null
     })
 
@@ -86,6 +86,8 @@ export const useMonopolyStore = defineStore('monopoly', () => {
     }
 
     function clearState() {
+        currentRoom.value = null
+        gameState.value = null
         try { localStorage.removeItem(STORAGE_KEY) } catch (e) { /* ignore */ }
         if (!useSettingsStore().gameChatMemory.enabled) clearGameChat('monopoly')
     }
@@ -177,6 +179,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         gameState.value = {
             phase: 'rolling',
             currentTurn: 0,
+            players,
             dice: [1, 1],
             pendingMove: null,
             round: 1,
@@ -212,7 +215,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
     }
 
     function activePlayers() {
-        return gameState.value ? gameState.value.players.filter(p => !p.bankrupt) : []
+        return (gameState.value && Array.isArray(gameState.value.players)) ? gameState.value.players.filter(p => !p.bankrupt) : []
     }
 
     function ownerOf(tileId) {
@@ -240,7 +243,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
 
     // ---------- 租金 ----------
     function computeRent(tile, owner, diceSum) {
-        if (!tile || !owner || !gameState.value) return 0
+        if (!tile || !owner || !gameState.value || !Array.isArray(gameState.value.players)) return 0
         if (tile.type === 'station') {
             const n = gameState.value.players.filter(p => p.properties.includes(tile.id)).length
             // 持有数按 owner 统计

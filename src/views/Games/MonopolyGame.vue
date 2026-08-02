@@ -14,158 +14,161 @@
             </button>
         </div>
 
-        <!-- 棋盘 -->
-        <div class="flex-1 flex items-center justify-center p-2 overflow-hidden">
-            <div ref="boardEl" class="mono-board relative w-full max-w-[460px] aspect-square bg-white rounded-2xl shadow-xl"
-                style="display:grid;grid-template-columns:repeat(11,1fr);grid-template-rows:repeat(11,1fr);gap:1px;padding:1px;">
-                <!-- 格子 -->
-                <template v-for="tile in BOARD" :key="tile.id">
-                    <div class="tile" :class="['t-' + tile.type, { owned: !!tileOwner(tile.id), sel: selectedTile === tile.id }]"
-                        :style="gridStyle(tile.id)"
-                        @click="selectedTile = (selectedTile === tile.id ? null : tile.id)">
-                        <!-- 颜色条 -->
-                        <div v-if="tile.type === 'property' && GROUPS[tile.group]" class="tile-bar"
-                            :style="{ background: GROUPS[tile.group].color }"></div>
-                        <div v-else-if="tile.type === 'station'" class="tile-bar" :style="{ background: GROUPS.station.color }"></div>
-                        <div v-else-if="tile.type === 'utility'" class="tile-bar" :style="{ background: GROUPS.utility.color }"></div>
+        <!-- 主内容区：可滚动，避免小屏被截断 -->
+        <div class="flex-1 min-h-0 overflow-y-auto">
+            <!-- 棋盘 -->
+            <div class="flex justify-center p-2">
+                <div ref="boardEl" class="mono-board relative w-full max-w-[460px] aspect-square bg-white rounded-2xl shadow-xl"
+                    style="display:grid;grid-template-columns:repeat(11,1fr);grid-template-rows:repeat(11,1fr);gap:1px;padding:1px;">
+                    <!-- 格子 -->
+                    <template v-for="tile in BOARD" :key="tile.id">
+                        <div class="tile" :class="['t-' + tile.type, { owned: !!tileOwner(tile.id), sel: selectedTile === tile.id }]"
+                            :style="gridStyle(tile.id)"
+                            @click="selectedTile = (selectedTile === tile.id ? null : tile.id)">
+                            <!-- 颜色条 -->
+                            <div v-if="tile.type === 'property' && GROUPS[tile.group]" class="tile-bar"
+                                :style="{ background: GROUPS[tile.group].color }"></div>
+                            <div v-else-if="tile.type === 'station'" class="tile-bar" :style="{ background: GROUPS.station.color }"></div>
+                            <div v-else-if="tile.type === 'utility'" class="tile-bar" :style="{ background: GROUPS.utility.color }"></div>
 
-                        <!-- 图标 / 名称 -->
-                        <div class="tile-body">
-                            <template v-if="tile.type === 'property' || tile.type === 'station' || tile.type === 'utility'">
-                                <div class="tile-name">{{ tile.name }}</div>
-                                <div v-if="tile.type !== 'station' && tile.type !== 'utility'" class="tile-price">¥{{ tile.price }}</div>
-                                <div v-else class="tile-price">¥{{ tile.price }}</div>
-                            </template>
-                            <template v-else>
-                                <div class="tile-icon">{{ tileIcon(tile) }}</div>
-                                <div class="tile-name sm">{{ tile.name }}</div>
-                            </template>
-                        </div>
+                            <!-- 图标 / 名称 -->
+                            <div class="tile-body">
+                                <template v-if="tile.type === 'property' || tile.type === 'station' || tile.type === 'utility'">
+                                    <div class="tile-name">{{ tile.name }}</div>
+                                    <div v-if="tile.type !== 'station' && tile.type !== 'utility'" class="tile-price">¥{{ tile.price }}</div>
+                                    <div v-else class="tile-price">¥{{ tile.price }}</div>
+                                </template>
+                                <template v-else>
+                                    <div class="tile-icon">{{ tileIcon(tile) }}</div>
+                                    <div class="tile-name sm">{{ tile.name }}</div>
+                                </template>
+                            </div>
 
-                        <!-- 房/旅馆标记 -->
-                        <div v-if="houseCount(tile.id) > 0" class="tile-house">
-                            {{ houseCount(tile.id) >= 5 ? '🏨' : '🏠'.repeat(Math.min(houseCount(tile.id), 4)) }}
+                            <!-- 房/旅馆标记 -->
+                            <div v-if="houseCount(tile.id) > 0" class="tile-house">
+                                {{ houseCount(tile.id) >= 5 ? '🏨' : '🏠'.repeat(Math.min(houseCount(tile.id), 4)) }}
+                            </div>
+                            <!-- 地主标记 -->
+                            <div v-if="tileOwner(tile.id)" class="tile-owner" :style="{ background: tileOwner(tile.id)?.color }"></div>
                         </div>
-                        <!-- 地主标记 -->
-                        <div v-if="tileOwner(tile.id)" class="tile-owner" :style="{ background: tileOwner(tile.id)?.color }"></div>
+                    </template>
+
+                    <!-- 玩家棋子 -->
+                    <div v-for="(p, idx) in players" :key="'tok' + p.id"
+                        class="token" :style="tokenStyle(p, idx)"
+                        :class="{ active: p.id === currentPlayer?.id }">
+                        <span v-if="isImg(p.avatar)"><img :src="p.avatar" /></span>
+                        <span v-else>{{ p.avatar }}</span>
+                        <i v-if="p.bankrupt" class="tok-dead">💀</i>
                     </div>
-                </template>
+                </div>
+            </div>
 
-                <!-- 中央控制区 -->
-                <div class="center-panel" style="grid-column:2/11;grid-row:2/11;">
-                    <div class="cp-turn">
+            <!-- 中央信息面板（从棋盘里移出来，避免挤占棋盘空间） -->
+            <div class="info-panel mx-3 mb-2 p-3 rounded-2xl bg-white/85 border border-amber-200 shadow-sm">
+                <div class="flex items-center justify-between gap-3">
+                    <div class="cp-turn flex-1 min-w-0">
                         <div class="cp-avatar" :style="{ background: currentPlayer?.color }">
                             <img v-if="isImg(currentPlayer?.avatar)" :src="currentPlayer?.avatar" />
                             <span v-else>{{ currentPlayer?.avatar || '👤' }}</span>
                         </div>
-                        <div class="cp-info">
-                            <div class="cp-name">{{ currentPlayer?.name || '—' }} <span v-if="currentPlayer?.isUser" class="cp-you">你</span></div>
-                            <div class="cp-sub">
+                        <div class="cp-info min-w-0">
+                            <div class="cp-name truncate">{{ currentPlayer?.name || '—' }} <span v-if="currentPlayer?.isUser" class="cp-you">你</span></div>
+                            <div class="cp-sub truncate">
                                 <span v-if="currentPlayer?.inJail" class="text-red-500 font-bold">🔒 蹲监狱</span>
                                 <span v-else>轮到行动</span>
                                 · 现金 ¥{{ currentPlayer?.cash }}
                             </div>
                         </div>
                     </div>
-
-                    <!-- 骰子 -->
-                    <div class="cp-dice">
+                    <div class="cp-dice shrink-0">
                         <div class="die" :class="{ rolling: gs?.phase === 'moving' }">{{ diceFace(gs?.dice?.[0]) }}</div>
                         <div class="die" :class="{ rolling: gs?.phase === 'moving' }">{{ diceFace(gs?.dice?.[1]) }}</div>
                     </div>
+                </div>
 
-                    <!-- 选中地块详情 -->
-                    <div v-if="selectedTileObj" class="cp-detail">
-                        <div class="cp-detail-name">
-                            {{ selectedTileObj.name }}
-                            <span v-if="selectedTileObj.type === 'property'" class="dot" :style="{ background: GROUPS[selectedTileObj.group]?.color }"></span>
-                        </div>
-                        <div class="cp-detail-line" v-if="selectedTileObj.type === 'property' || selectedTileObj.type === 'station' || selectedTileObj.type === 'utility'">
-                            价格 ¥{{ selectedTileObj.price }} · 基础租金 ¥{{ baseRentOf(selectedTileObj) }}
-                        </div>
-                        <div class="cp-detail-line" v-if="selectedOwner">
-                            地主：{{ selectedOwner.name }}（{{ selectedOwner.houses?.[selectedTileObj.id] || 0 }} 栋）
-                        </div>
-                        <div class="cp-detail-line" v-else-if="selectedTileObj.type === 'property' || selectedTileObj.type === 'station' || selectedTileObj.type === 'utility'">
-                            暂无地主
-                        </div>
+                <!-- 选中地块详情 -->
+                <div v-if="selectedTileObj" class="cp-detail mt-2">
+                    <div class="cp-detail-name">
+                        {{ selectedTileObj.name }}
+                        <span v-if="selectedTileObj.type === 'property'" class="dot" :style="{ background: GROUPS[selectedTileObj.group]?.color }"></span>
                     </div>
-                    <div v-else class="cp-hint">点击棋盘上的地块查看详情</div>
+                    <div class="cp-detail-line" v-if="selectedTileObj.type === 'property' || selectedTileObj.type === 'station' || selectedTileObj.type === 'utility'">
+                        价格 ¥{{ selectedTileObj.price }} · 基础租金 ¥{{ baseRentOf(selectedTileObj) }}
+                    </div>
+                    <div class="cp-detail-line" v-if="selectedOwner">
+                        地主：{{ selectedOwner.name }}（{{ selectedOwner.houses?.[selectedTileObj.id] || 0 }} 栋）
+                    </div>
+                    <div class="cp-detail-line" v-else-if="selectedTileObj.type === 'property' || selectedTileObj.type === 'station' || selectedTileObj.type === 'utility'">
+                        暂无地主
+                    </div>
                 </div>
-
-                <!-- 玩家棋子 -->
-                <div v-for="(p, idx) in players" :key="'tok' + p.id"
-                    class="token" :style="tokenStyle(p, idx)"
-                    :class="{ active: p.id === currentPlayer?.id }">
-                    <span v-if="isImg(p.avatar)"><img :src="p.avatar" /></span>
-                    <span v-else>{{ p.avatar }}</span>
-                    <i v-if="p.bankrupt" class="tok-dead">💀</i>
-                </div>
-            </div>
-        </div>
-
-        <!-- 操作栏 -->
-        <div class="action-bar shrink-0 bg-white/90 backdrop-blur border-t border-amber-100 px-3 py-3">
-            <!-- 用户：监狱 -->
-            <div v-if="isUserTurn && gs?.phase === 'rolling' && currentPlayer?.inJail" class="flex gap-2">
-                <button @click="monopolyStore.jailUseCard()" :disabled="!currentPlayer.getOutCards" class="act-btn amber flex-1">用出狱卡 ({{ currentPlayer.getOutCards }})</button>
-                <button @click="monopolyStore.jailPay()" :disabled="currentPlayer.cash < 50" class="act-btn green flex-1">保释 ¥50</button>
-                <button @click="monopolyStore.jailRoll()" class="act-btn blue flex-1">掷骰出狱</button>
-            </div>
-            <!-- 用户：掷骰 -->
-            <button v-else-if="isUserTurn && gs?.phase === 'rolling'" @click="monopolyStore.rollDice()"
-                class="act-btn orange w-full text-lg">
-                <i class="fa-solid fa-dice mr-2"></i>掷骰子
-            </button>
-            <!-- 用户：买地 -->
-            <div v-else-if="isUserTurn && gs?.phase === 'action' && gs?.awaitingBuy != null" class="flex gap-2">
-                <button @click="monopolyStore.buyProperty(gs.awaitingBuy)" :disabled="currentPlayer.cash < buyTile.price"
-                    class="act-btn green flex-1">买下 ¥{{ buyTile.price }}</button>
-                <button @click="monopolyStore.skipBuy()" class="act-btn gray flex-1">放弃</button>
-            </div>
-            <!-- 用户：结束回合 -->
-            <div v-else-if="isUserTurn && gs?.phase === 'action' && gs?.awaitingEnd && gs?.awaitingBuy == null" class="flex gap-2">
-                <button v-if="gs?.awaitingReroll" @click="monopolyStore.userReroll()" class="act-btn blue flex-1">再掷一次（双骰）</button>
-                <button @click="monopolyStore.userEndTurn()" class="act-btn orange flex-1">结束回合</button>
-            </div>
-            <!-- AI 行动中 -->
-            <div v-else class="text-center text-gray-400 text-sm py-1">
-                <span v-if="gs?.phase === 'moving'">🎲 移动中…</span>
-                <span v-else-if="currentPlayer?.isAI">{{ currentPlayer?.name }} 思考中…</span>
-                <span v-else>等待…</span>
+                <div v-else class="cp-hint mt-2">点击棋盘上的地块查看详情</div>
             </div>
 
-            <!-- 盖房面板 -->
-            <div v-if="isUserTurn && userBuildList.length" class="mt-2">
-                <div class="text-[11px] text-gray-400 mb-1">我的地产（垄断组可盖房）</div>
-                <div class="flex gap-1.5 overflow-x-auto pb-1">
-                    <button v-for="b in userBuildList" :key="b.id" @click="monopolyStore.buildHouse(b.id)"
-                        :disabled="currentPlayer.cash < b.cost || b.houses >= 5"
-                        class="build-chip" :class="{ full: b.houses >= 5 }">
-                        <span class="truncate max-w-[60px]">{{ b.name }}</span>
-                        <span class="text-[10px]">{{ b.houses >= 5 ? '旅馆' : (b.houses ? '🏠' + b.houses : '空') }}</span>
-                        <span class="text-[10px] text-amber-600">¥{{ b.cost }}</span>
-                    </button>
+            <!-- 操作栏 -->
+            <div class="action-bar bg-white/90 backdrop-blur border-t border-amber-100 px-3 py-3">
+                <!-- 用户：监狱 -->
+                <div v-if="isUserTurn && gs?.phase === 'rolling' && currentPlayer?.inJail" class="flex gap-2">
+                    <button @click="monopolyStore.jailUseCard()" :disabled="!currentPlayer.getOutCards" class="act-btn amber flex-1">用出狱卡 ({{ currentPlayer.getOutCards }})</button>
+                    <button @click="monopolyStore.jailPay()" :disabled="currentPlayer.cash < 50" class="act-btn green flex-1">保释 ¥50</button>
+                    <button @click="monopolyStore.jailRoll()" class="act-btn blue flex-1">掷骰出狱</button>
                 </div>
-            </div>
-        </div>
+                <!-- 用户：掷骰 -->
+                <button v-else-if="isUserTurn && gs?.phase === 'rolling'" @click="monopolyStore.rollDice()"
+                    class="act-btn orange w-full text-lg">
+                    <i class="fa-solid fa-dice mr-2"></i>掷骰子
+                </button>
+                <!-- 用户：买地 -->
+                <div v-else-if="isUserTurn && gs?.phase === 'action' && gs?.awaitingBuy != null" class="flex gap-2">
+                    <button @click="monopolyStore.buyProperty(gs.awaitingBuy)" :disabled="currentPlayer.cash < buyTile.price"
+                        class="act-btn green flex-1">买下 ¥{{ buyTile.price }}</button>
+                    <button @click="monopolyStore.skipBuy()" class="act-btn gray flex-1">放弃</button>
+                </div>
+                <!-- 用户：结束回合 -->
+                <div v-else-if="isUserTurn && gs?.phase === 'action' && gs?.awaitingEnd && gs?.awaitingBuy == null" class="flex gap-2">
+                    <button v-if="gs?.awaitingReroll" @click="monopolyStore.userReroll()" class="act-btn blue flex-1">再掷一次（双骰）</button>
+                    <button @click="monopolyStore.userEndTurn()" class="act-btn orange flex-1">结束回合</button>
+                </div>
+                <!-- AI 行动中 -->
+                <div v-else class="text-center text-gray-400 text-sm py-1">
+                    <span v-if="gs?.phase === 'moving'">🎲 移动中…</span>
+                    <span v-else-if="currentPlayer?.isAI">{{ currentPlayer?.name }} 思考中…</span>
+                    <span v-else>等待…</span>
+                </div>
 
-        <!-- 日志/聊天切换 -->
-        <div class="panel-toggle shrink-0 flex border-t border-amber-100 bg-white">
-            <button @click="panelTab = 'log'" class="flex-1 py-2 text-sm font-bold" :class="panelTab === 'log' ? 'text-amber-600' : 'text-gray-400'">📜 事件日志</button>
-            <button @click="panelTab = 'chat'" class="flex-1 py-2 text-sm font-bold" :class="panelTab === 'chat' ? 'text-amber-600' : 'text-gray-400'">💬 游戏聊天</button>
-        </div>
-        <div class="panel shrink-0 bg-white/95 border-t border-amber-100" style="height:140px;">
-            <div v-if="panelTab === 'log'" class="h-full overflow-y-auto p-2 space-y-1 text-[12px] text-gray-600">
-                <div v-for="(e, i) in (gs?.log || [])" :key="i" class="leading-snug">{{ e.text }}</div>
-                <div v-if="!(gs?.log || []).length" class="text-gray-300 text-center mt-6">暂无事件</div>
-            </div>
-            <div v-else class="h-full overflow-y-auto p-2 space-y-2">
-                <div v-for="(m, i) in (gs?.chat || [])" :key="i" class="text-[12px]"
-                    :class="m.role === 'system' ? 'text-center text-gray-400' : 'text-gray-700'">
-                    <template v-if="m.role !== 'system'"><b :style="{ color: nameColor(m.name) }">{{ m.name }}：</b></template>{{ m.content }}
+                <!-- 盖房面板 -->
+                <div v-if="isUserTurn && userBuildList.length" class="mt-2">
+                    <div class="text-[11px] text-gray-400 mb-1">我的地产（垄断组可盖房）</div>
+                    <div class="flex gap-1.5 overflow-x-auto pb-1">
+                        <button v-for="b in userBuildList" :key="b.id" @click="monopolyStore.buildHouse(b.id)"
+                            :disabled="currentPlayer.cash < b.cost || b.houses >= 5"
+                            class="build-chip" :class="{ full: b.houses >= 5 }">
+                            <span class="truncate max-w-[60px]">{{ b.name }}</span>
+                            <span class="text-[10px]">{{ b.houses >= 5 ? '旅馆' : (b.houses ? '🏠' + b.houses : '空') }}</span>
+                            <span class="text-[10px] text-amber-600">¥{{ b.cost }}</span>
+                        </button>
+                    </div>
                 </div>
-                <div v-if="!(gs?.chat || []).length" class="text-gray-300 text-center mt-6">暂无聊天</div>
+            </div>
+
+            <!-- 日志/聊天切换 -->
+            <div class="panel-toggle flex border-t border-amber-100 bg-white">
+                <button @click="panelTab = 'log'" class="flex-1 py-2 text-sm font-bold" :class="panelTab === 'log' ? 'text-amber-600' : 'text-gray-400'">📜 事件日志</button>
+                <button @click="panelTab = 'chat'" class="flex-1 py-2 text-sm font-bold" :class="panelTab === 'chat' ? 'text-amber-600' : 'text-gray-400'">💬 游戏聊天</button>
+            </div>
+            <div class="panel bg-white/95 border-t border-amber-100" style="height:100px;">
+                <div v-if="panelTab === 'log'" class="h-full overflow-y-auto p-2 space-y-1 text-[12px] text-gray-600">
+                    <div v-for="(e, i) in (gs?.log || [])" :key="i" class="leading-snug">{{ e.text }}</div>
+                    <div v-if="!(gs?.log || []).length" class="text-gray-300 text-center mt-6">暂无事件</div>
+                </div>
+                <div v-else class="h-full overflow-y-auto p-2 space-y-2">
+                    <div v-for="(m, i) in (gs?.chat || [])" :key="i" class="text-[12px]"
+                        :class="m.role === 'system' ? 'text-center text-gray-400' : 'text-gray-700'">
+                        <template v-if="m.role !== 'system'"><b :style="{ color: nameColor(m.name) }">{{ m.name }}：</b></template>{{ m.content }}
+                    </div>
+                    <div v-if="!(gs?.chat || []).length" class="text-gray-300 text-center mt-6">暂无聊天</div>
+                </div>
             </div>
         </div>
 
@@ -215,8 +218,15 @@ import {
 
 const router = useRouter()
 const monopolyStore = useMonopolyStore()
-// 同步先恢复状态，避免首次渲染时 gameState 为 null 导致 ownerOf 等 helper 抛错
-monopolyStore.loadState()
+// 从大厅进入对局时，内存里已有 currentRoom/gameState，绝不能再用 localStorage 覆盖，
+// 否则旧脏数据触发 schema 校验失败 -> clearState() 把内存清空 -> 被踢回大厅（表现为"选人数界面闪一下"）。
+// 仅在冷启动直达对局页（内存为空）时才从 localStorage 恢复。
+if (!monopolyStore.currentRoom || !monopolyStore.gameState) {
+    monopolyStore.loadState()
+}
+if (!monopolyStore.currentRoom || !monopolyStore.gameState || monopolyStore.gameState.phase === 'ended') {
+    router.replace('/games/monopoly-lobby')
+}
 const boardEl = ref(null)
 const selectedTile = ref(null)
 const panelTab = ref('log')
@@ -288,14 +298,15 @@ function syncDisplay() {
     players.value.forEach(p => { displayPos[p.id] = p.position })
 }
 function tokenStyle(p, idx) {
-    const pos = displayPos[p.id] ?? p.position
+    if (!p) return {}
+    const pos = displayPos[p.id] ?? p.position ?? 0
     const { c, r } = gridPos(pos)
     const left = (c - 0.5) / 11 * 100
     const top = (r - 0.5) / 11 * 100
-    const off = TOKEN_OFFSETS[idx % TOKEN_OFFSETS.length]
+    const off = TOKEN_OFFSETS[(idx || 0) % TOKEN_OFFSETS.length] || [0, 0]
     return {
-        left: `calc(${left}% + ${off[0]}px)`,
-        top: `calc(${top}% + ${off[1]}px)`,
+        left: `calc(${left}% + ${off[0] || 0}px)`,
+        top: `calc(${top}% + ${off[1] || 0}px)`,
         borderColor: p.color,
     }
 }
@@ -362,7 +373,10 @@ watch(() => [monopolyStore.gameState?.phase, monopolyStore.gameState?.currentTur
 })
 
 onMounted(() => {
-    monopolyStore.loadState()
+    // 仅在冷启动直达对局页（内存为空）时才从 localStorage 恢复，避免覆盖大厅刚设好的状态
+    if (!monopolyStore.currentRoom || !monopolyStore.gameState) {
+        monopolyStore.loadState()
+    }
     if (!monopolyStore.currentRoom || !monopolyStore.gameState || monopolyStore.gameState.phase === 'ended') {
         router.replace('/games/monopoly-lobby')
         return
@@ -391,17 +405,15 @@ function confirmLeave() {
 </script>
 
 <style scoped>
-/* ===== 2.5D 棋盘容器 ===== */
+/* ===== 棋盘容器（竖屏用平面 + 立体格子模拟 2.5D，避免 rotateX 压高度） ===== */
 .mono-board {
     background: linear-gradient(145deg, #fde68a, #fbbf24);
     border: 4px solid #d97706;
     border-radius: 16px;
     box-shadow:
-        0 24px 40px rgba(0, 0, 0, 0.22),
+        0 12px 28px rgba(0, 0, 0, 0.18),
         inset 0 2px 0 rgba(255, 255, 255, 0.35),
         inset 0 -6px 0 rgba(180, 83, 9, 0.25);
-    transform-style: preserve-3d;
-    transform: perspective(1000px) rotateX(20deg) scale(1.04);
 }
 
 /* ===== 立体格子 ===== */
@@ -513,23 +525,12 @@ function confirmLeave() {
 .t-chest { background: linear-gradient(180deg, #fae8ff, #f5d0fe) !important; }
 .t-tax { background: linear-gradient(180deg, #ffedd5, #fed7aa) !important; }
 
-/* ===== 中央面板（反向旋转保持可读） ===== */
-.center-panel {
+/* ===== 中央信息面板（移出棋盘，横屏紧凑排布） ===== */
+.info-panel {
     background: linear-gradient(145deg, #fffbeb, #fef3c7);
-    border: 2px solid #f59e0b;
-    border-radius: 14px;
-    margin: 3px;
-    padding: 6px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    box-shadow:
-        inset 0 0 14px rgba(245, 158, 11, 0.12),
-        0 6px 12px rgba(0, 0, 0, 0.1);
-    transform: rotateX(-20deg);
-    transform-style: preserve-3d;
+    border: 1px solid #fcd34d;
+    border-radius: 16px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
 .cp-turn {
@@ -650,7 +651,7 @@ function confirmLeave() {
     color: #9ca3af;
 }
 
-/* ===== 悬浮棋子 ===== */
+/* ===== 悬浮棋子（平面 + 阴影营造 2.5D 感） ===== */
 .token {
     position: absolute;
     width: 20px;
@@ -662,20 +663,19 @@ function confirmLeave() {
     align-items: center;
     justify-content: center;
     font-size: 11px;
-    transform: translate(-50%, -55%) rotateX(-20deg) translateZ(14px);
+    transform: translate(-50%, -55%);
     box-shadow:
-        0 6px 10px rgba(0, 0, 0, 0.35),
+        0 4px 8px rgba(0, 0, 0, 0.3),
         0 0 0 1px rgba(0, 0, 0, 0.08);
     transition: left 0.1s linear, top 0.1s linear;
-    transform-style: preserve-3d;
     z-index: 30;
 }
 
 .token.active {
     box-shadow:
         0 0 0 3px #f59e0b,
-        0 8px 16px rgba(0, 0, 0, 0.35);
-    transform: translate(-50%, -60%) rotateX(-20deg) translateZ(22px);
+        0 6px 14px rgba(0, 0, 0, 0.35);
+    transform: translate(-50%, -60%);
     z-index: 31;
 }
 

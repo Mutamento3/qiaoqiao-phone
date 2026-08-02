@@ -40,10 +40,20 @@
                 <i class="fa-solid fa-rotate-left text-xl"></i>
                 <span>回到牌桌</span>
             </button>
+            <div class="mb-3">
+                <label class="block text-sm font-bold text-gray-700 mb-2">玩家人数</label>
+                <div class="grid grid-cols-4 gap-2">
+                    <button v-for="n in [2,4,6,8]" :key="n" @click="quickCount = n"
+                        class="py-3 rounded-xl border-2 transition-all font-bold"
+                        :class="quickCount === n ? 'border-orange-500 bg-orange-50 text-orange-600' : 'border-gray-200 bg-gray-50 text-gray-700'">
+                        {{ n }}人
+                    </button>
+                </div>
+            </div>
             <button @click="quickStart"
                 class="w-full py-5 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-lg rounded-2xl shadow-xl active:scale-95 transition-transform flex items-center justify-center gap-3">
                 <i class="fa-solid fa-bolt text-xl"></i>
-                <span>快速开始</span>
+                <span>快速开始（{{ quickCount }}人）</span>
             </button>
         </div>
 
@@ -81,9 +91,9 @@
         <!-- 创建房间弹窗 -->
         <Transition name="fade">
             <div v-if="showCreateRoom" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-                @click="showCreateRoom = false; isQuickCreate = false">
+                @click="showCreateRoom = false">
                 <div class="bg-white rounded-2xl p-6 m-4 max-w-sm w-full" @click.stop>
-                    <h2 class="text-xl font-bold mb-4 text-center">{{ isQuickCreate ? '快速开始' : '创建房间' }}</h2>
+                    <h2 class="text-xl font-bold mb-4 text-center">创建房间</h2>
                     <div class="space-y-6 mb-6">
                         <div>
                             <label class="block text-sm font-bold text-gray-700 mb-3">玩家人数</label>
@@ -97,10 +107,10 @@
                         </div>
                     </div>
                     <div class="flex gap-3">
-                        <button @click="showCreateRoom = false; isQuickCreate = false"
+                        <button @click="showCreateRoom = false"
                             class="flex-1 py-3 bg-gray-200 text-gray-700 font-bold rounded-lg">取消</button>
                         <button @click="createRoom"
-                            class="flex-1 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold rounded-lg">{{ isQuickCreate ? '开始游戏' : '创建' }}</button>
+                            class="flex-1 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold rounded-lg">创建</button>
                     </div>
                 </div>
             </div>
@@ -144,8 +154,8 @@ const isImageAvatar = (avatar) => !!avatar && (avatar.startsWith('/') || avatar.
 const hasActiveGame = computed(() => monopolyStore.hasActiveGame)
 
 const showCreateRoom = ref(false)
-const isQuickCreate = ref(false)
 const showRules = ref(false)
+const quickCount = ref(4)
 const roomConfig = ref({ playerCount: 4 })
 
 onMounted(() => {
@@ -153,26 +163,29 @@ onMounted(() => {
     if (monopolyStore.hasActiveGame) router.replace('/games/monopoly')
 })
 
+// 快速开始：一键直接开对应人数的 AI 局，不再弹窗中转
 const quickStart = () => {
-    isQuickCreate.value = true
-    showCreateRoom.value = true
+    monopolyStore.createRoom({
+        mode: 'quick',
+        playerCount: quickCount.value,
+        userName: userName.value,
+        userAvatar: userAvatar.value,
+    })
+    const ok = monopolyStore.startGame()
+    if (!ok) return
+    router.push('/games/monopoly')
 }
 
+// 创建房间：自定义人数后可邀请好友/通讯录，再到房间页开始
 const createRoom = () => {
     monopolyStore.createRoom({
-        mode: isQuickCreate.value ? 'quick' : 'custom',
+        mode: 'custom',
         playerCount: roomConfig.value.playerCount,
         userName: userName.value,
         userAvatar: userAvatar.value,
     })
     showCreateRoom.value = false
-    if (isQuickCreate.value) {
-        monopolyStore.startGame()
-        isQuickCreate.value = false
-        router.push('/games/monopoly')
-    } else {
-        router.push('/games/monopoly-room')
-    }
+    router.push('/games/monopoly-room')
 }
 
 const returnToGame = () => {
