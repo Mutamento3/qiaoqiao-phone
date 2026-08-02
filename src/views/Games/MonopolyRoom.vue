@@ -1,8 +1,8 @@
 <template>
-    <div class="mono-room w-full h-full flex flex-col bg-gradient-to-br from-amber-50 to-orange-50">
+    <div class="mono-room w-full h-full flex flex-col bg-gradient-to-br from-sky-50 to-blue-50">
         <!-- 顶部导航 -->
         <div
-            class="h-[50px] bg-gradient-to-r from-amber-500 to-orange-500 flex items-center justify-between px-4 shadow-lg">
+            class="h-[50px] bg-gradient-to-r from-sky-500 to-blue-500 flex items-center justify-between px-4 shadow-lg">
             <button @click="handleBack" class="w-10 h-10 flex items-center justify-center text-white">
                 <i class="fa-solid fa-chevron-left text-xl"></i>
             </button>
@@ -12,13 +12,13 @@
 
         <div class="m-4 bg-white rounded-2xl shadow-lg p-4">
             <div class="flex items-center gap-2">
-                <div class="flex-1 flex flex-col items-center justify-center text-gray-600 px-2 py-2 bg-gray-50 rounded-xl border border-amber-100 font-bold whitespace-nowrap">
+                <div class="flex-1 flex flex-col items-center justify-center text-gray-600 px-2 py-2 bg-gray-50 rounded-xl border border-sky-100 font-bold whitespace-nowrap">
                     <span class="text-[10px] opacity-70">房间号</span>
                     <span class="text-gray-900 text-sm">{{ roomId }}</span>
                 </div>
-                <div class="flex-1 flex flex-col items-center justify-center text-gray-600 px-2 py-2 bg-gray-50 rounded-xl border border-amber-100 font-bold whitespace-nowrap">
+                <div class="flex-1 flex flex-col items-center justify-center text-gray-600 px-2 py-2 bg-gray-50 rounded-xl border border-sky-100 font-bold whitespace-nowrap">
                     <span class="text-[10px] opacity-70">人数</span>
-                    <span class="text-amber-700 text-sm">{{ playerCount }}人</span>
+                    <span class="text-sky-700 text-sm">{{ playerCount }}人</span>
                 </div>
             </div>
         </div>
@@ -54,7 +54,7 @@
         <!-- 底部按钮 -->
         <div class="p-4">
             <button v-if="playerCount >= 2" @click="startGame"
-                class="w-full py-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold text-xl rounded-2xl shadow-xl active:scale-95 transition-transform">
+                class="w-full py-4 bg-gradient-to-r from-sky-500 to-blue-500 text-white font-bold text-xl rounded-2xl shadow-xl active:scale-95 transition-transform">
                 <i class="fa-solid fa-play mr-2"></i>开始游戏
             </button>
             <div v-else class="w-full py-4 bg-gray-300 text-gray-500 font-bold text-xl rounded-2xl text-center">
@@ -70,16 +70,16 @@
                     <h2 class="text-xl font-bold mb-4">邀请玩家</h2>
                     <div class="flex gap-2 mb-4">
                         <button @click="inviteTab = 'npc'" class="flex-1 py-2 rounded-lg font-bold transition-all"
-                            :class="inviteTab === 'npc' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-600'">NPC</button>
+                            :class="inviteTab === 'npc' ? 'bg-sky-500 text-white' : 'bg-gray-100 text-gray-600'">NPC</button>
                         <button @click="inviteTab = 'contacts'" class="flex-1 py-2 rounded-lg font-bold transition-all"
-                            :class="inviteTab === 'contacts' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-600'">通讯录</button>
+                            :class="inviteTab === 'contacts' ? 'bg-sky-500 text-white' : 'bg-gray-100 text-gray-600'">通讯录</button>
                     </div>
                     <div v-if="inviteTab === 'npc'" class="space-y-2">
                         <div v-for="npc in availableNPCs" :key="npc.id" @click="addNPC(npc)"
                             class="flex items-center gap-3 p-3 bg-gray-50 rounded-lg active:bg-gray-100 cursor-pointer">
                             <div class="text-3xl">{{ npc.avatar }}</div>
                             <div class="flex-1"><div class="font-bold">{{ npc.name }}</div></div>
-                            <i class="fa-solid fa-plus text-amber-500"></i>
+                            <i class="fa-solid fa-plus text-sky-500"></i>
                         </div>
                         <div v-if="!availableNPCs.length" class="text-center text-gray-400 text-sm py-4">没有更多可用 NPC</div>
                     </div>
@@ -91,7 +91,7 @@
                             </div>
                             <div v-else class="text-3xl">{{ contact.avatar || '👤' }}</div>
                             <div class="flex-1"><div class="font-bold">{{ contact.name }}</div></div>
-                            <i class="fa-solid fa-plus text-amber-500"></i>
+                            <i class="fa-solid fa-plus text-sky-500"></i>
                         </div>
                         <div v-if="!availableContacts.length" class="text-center text-gray-400 text-sm py-4">通讯录暂无更多好友</div>
                     </div>
@@ -226,13 +226,13 @@ const handleBack = () => {
 }
 
 .seat-card.ready {
-    border-color: #f59e0b;
-    background: linear-gradient(145deg, #fffbeb, #fef3c7);
+    border-color: #38bdf8;
+    background: linear-gradient(145deg, #f0f9ff, #e0f2fe);
 }
 
 .seat-card.empty {
-    border: 3px dashed #fcd34d;
-    background: #fffdf5;
+    border: 3px dashed #7dd3fc;
+    background: #f0f9ff;
     cursor: pointer;
     opacity: 0.8;
 }
