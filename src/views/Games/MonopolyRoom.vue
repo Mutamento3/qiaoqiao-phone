@@ -20,10 +20,6 @@
                     <span class="text-[10px] opacity-70">人数</span>
                     <span class="text-amber-700 text-sm">{{ playerCount }}人</span>
                 </div>
-                <div class="flex-1 flex flex-col items-center justify-center text-gray-600 px-2 py-2 bg-gray-50 rounded-xl border border-amber-100 font-bold whitespace-nowrap">
-                    <span class="text-[10px] opacity-70">回合上限</span>
-                    <span class="text-blue-600 text-sm">{{ monopolyStore.currentRoom?.maxRounds }}回</span>
-                </div>
             </div>
         </div>
 

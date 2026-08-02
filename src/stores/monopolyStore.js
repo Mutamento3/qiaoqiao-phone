@@ -37,7 +37,7 @@ function genRoomId() {
 }
 
 export const useMonopolyStore = defineStore('monopoly', () => {
-    const currentRoom = ref(null) // { id, mode, playerCount, maxRounds, players:[] }
+    const currentRoom = ref(null) // { id, mode, playerCount, players:[] }
     const gameState = ref(null)   // 见 startGame
     const settings = ref({ soundEnabled: true })
 
@@ -68,8 +68,20 @@ export const useMonopolyStore = defineStore('monopoly', () => {
             const raw = localStorage.getItem(STORAGE_KEY)
             if (!raw) return
             const data = JSON.parse(raw)
-            currentRoom.value = data.room || null
-            gameState.value = data.game || null
+            const room = data.room || null
+            const game = data.game || null
+            // schema 校验：不兼容旧数据直接清空，避免模板读 undefined 字段白屏
+            if (room && (!Array.isArray(room.players) || room.players.length < 1)) {
+                clearState(); return
+            }
+            if (game) {
+                if (!Array.isArray(game.players) || game.players.length < 1 ||
+                    typeof game.phase !== 'string' || !Array.isArray(game.dice)) {
+                    clearState(); return
+                }
+            }
+            currentRoom.value = room
+            gameState.value = game
         } catch (e) { /* ignore */ }
     }
 
@@ -97,13 +109,12 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         }
     }
 
-    function createRoom({ mode = 'custom', playerCount = 4, maxRounds = 30, userName = '我', userAvatar = '🎭' }) {
+    function createRoom({ mode = 'custom', playerCount = 4, userName = '我', userAvatar = '🎭' }) {
         const players = [makeUserPlayer(userName, userAvatar)]
         const room = {
             id: genRoomId(),
             mode,
             playerCount: Math.min(8, Math.max(2, playerCount)),
-            maxRounds,
             players,
         }
         // 快速开始：直接填充 NPC 到目标人数
@@ -687,9 +698,8 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         // 轮转一圈 → 回合+1
         if (next <= gs.currentTurn) gs.round++
         gs.currentTurn = next
-        // 结束条件：存活≤1 或达到最大回合
+        // 结束条件：存活≤1（破产淘汰制，没有回合上限）
         if (activePlayers().length <= 1) { finishGame(); return }
-        if (gs.round > gs.maxRounds) { finishGame(); return }
         gs.phase = 'rolling'
         saveState()
     }

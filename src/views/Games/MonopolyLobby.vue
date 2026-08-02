@@ -73,7 +73,7 @@
                     <li>• 空地可买下，集齐同色组可盖房收更高租金</li>
                     <li>• 落到别人地产要付租金，车站/公共按持有数计费</li>
                     <li>• 抽到机会/命运卡触发随机事件，进监狱需保释</li>
-                    <li>• 资金耗尽即破产，剩最后一人或回合上限后按净资产决出冠军</li>
+                    <li>• 资金耗尽即破产，坚持到最后一人即为冠军</li>
                 </ul>
             </div>
         </div>
@@ -95,16 +95,6 @@
                                 </button>
                             </div>
                         </div>
-                        <div>
-                            <label class="block text-sm font-bold text-gray-700 mb-3">回合上限</label>
-                            <div class="grid grid-cols-3 gap-2">
-                                <button v-for="r in [10,20,30]" :key="r" @click="roomConfig.maxRounds = r"
-                                    class="py-3 rounded-lg border-2 transition-all"
-                                    :class="roomConfig.maxRounds === r ? 'border-blue-500 bg-blue-50 text-blue-600 font-bold' : 'border-gray-200 bg-gray-50 text-gray-700'">
-                                    {{ r }}回合
-                                </button>
-                            </div>
-                        </div>
                     </div>
                     <div class="flex gap-3">
                         <button @click="showCreateRoom = false; isQuickCreate = false"
@@ -123,13 +113,13 @@
                 <div class="bg-white rounded-[28px] w-full max-w-[450px] m-4 max-h-[85vh] overflow-y-auto p-6" @click.stop>
                     <h2 class="text-2xl font-black text-amber-700 mb-4 flex items-center gap-2">🎩 大富翁规则</h2>
                     <div class="space-y-3 text-sm text-gray-700 leading-relaxed">
-                        <p><b>目标：</b>通过买地、收租让对手破产，成为最后的赢家（或回合上限时净资产最高）。</p>
+                        <p><b>目标：</b>通过买地、收租让对手破产，成为坚持到最后的唯一赢家。</p>
                         <p><b>移动：</b>每回合掷两颗骰子，按点数顺时针绕 40 格棋盘移动，路过起点领 ¥200。</p>
                         <p><b>买地：</b>停在无人地产可买下；集齐同色一组（垄断）后可盖房，租金大幅上涨。</p>
                         <p><b>付租：</b>停在他人地产须付租金；车站按对方持有车站数（25/50/100/200），公共按骰子点数×4 或 ×10。</p>
                         <p><b>卡牌：</b>机会/命运卡含领钱、罚款、前进/后退、进监狱、免费出狱卡等。</p>
                         <p><b>监狱：</b>进监狱后需保释（¥50）、用出狱卡或掷双骰离开；连掷三次双骰也会被请进监狱。</p>
-                        <p><b>破产：</b>资金不足支付时破产出局，名下地产转给债主。剩 1 人或达回合上限即结算。</p>
+                        <p><b>破产：</b>资金不足支付时破产出局，名下地产转给债主。只剩 1 人时自动结算。</p>
                     </div>
                     <button @click="showRules = false" class="w-full mt-5 py-3 bg-amber-500 text-white font-bold rounded-xl">知道了</button>
                 </div>
@@ -156,7 +146,7 @@ const hasActiveGame = computed(() => monopolyStore.hasActiveGame)
 const showCreateRoom = ref(false)
 const isQuickCreate = ref(false)
 const showRules = ref(false)
-const roomConfig = ref({ playerCount: 4, maxRounds: 20 })
+const roomConfig = ref({ playerCount: 4 })
 
 onMounted(() => {
     monopolyStore.loadState()
@@ -172,7 +162,6 @@ const createRoom = () => {
     monopolyStore.createRoom({
         mode: isQuickCreate.value ? 'quick' : 'custom',
         playerCount: roomConfig.value.playerCount,
-        maxRounds: roomConfig.value.maxRounds,
         userName: userName.value,
         userAvatar: userAvatar.value,
     })

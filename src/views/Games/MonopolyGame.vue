@@ -7,7 +7,7 @@
             </button>
             <h1 class="text-base font-bold text-white flex items-center gap-2">
                 <span>🎩</span><span>大富翁</span>
-                <span class="text-[11px] bg-white/25 px-2 py-0.5 rounded-full">回合 {{ gs?.round }}/{{ room?.maxRounds }}</span>
+                <span class="text-[11px] bg-white/25 px-2 py-0.5 rounded-full">回合 {{ gs?.round || 1 }}</span>
             </h1>
             <button @click="confirmEnd" class="h-9 px-3 rounded-full bg-white/25 text-white text-xs font-bold active:scale-95">
                 结束结算
@@ -20,7 +20,7 @@
                 style="display:grid;grid-template-columns:repeat(11,1fr);grid-template-rows:repeat(11,1fr);gap:1px;padding:1px;">
                 <!-- 格子 -->
                 <template v-for="tile in BOARD" :key="tile.id">
-                    <div class="tile" :class="['t-' + tile.type, { owned: ownerOf(tile.id), sel: selectedTile === tile.id }]"
+                    <div class="tile" :class="['t-' + tile.type, { owned: !!tileOwner(tile.id), sel: selectedTile === tile.id }]"
                         :style="gridStyle(tile.id)"
                         @click="selectedTile = (selectedTile === tile.id ? null : tile.id)">
                         <!-- 颜色条 -->
@@ -47,7 +47,7 @@
                             {{ houseCount(tile.id) >= 5 ? '🏨' : '🏠'.repeat(Math.min(houseCount(tile.id), 4)) }}
                         </div>
                         <!-- 地主标记 -->
-                        <div v-if="ownerOf(tile.id)" class="tile-owner" :style="{ background: ownerOf(tile.id).color }"></div>
+                        <div v-if="tileOwner(tile.id)" class="tile-owner" :style="{ background: tileOwner(tile.id)?.color }"></div>
                     </div>
                 </template>
 
@@ -83,8 +83,8 @@
                         <div class="cp-detail-line" v-if="selectedTileObj.type === 'property' || selectedTileObj.type === 'station' || selectedTileObj.type === 'utility'">
                             价格 ¥{{ selectedTileObj.price }} · 基础租金 ¥{{ baseRentOf(selectedTileObj) }}
                         </div>
-                        <div class="cp-detail-line" v-if="ownerOf(selectedTileObj.id)">
-                            地主：{{ ownerOf(selectedTileObj.id).name }}（{{ ownerOf(selectedTileObj.id).houses?.[selectedTileObj.id] || 0 }} 栋）
+                        <div class="cp-detail-line" v-if="selectedOwner">
+                            地主：{{ selectedOwner.name }}（{{ selectedOwner.houses?.[selectedTileObj.id] || 0 }} 栋）
                         </div>
                         <div class="cp-detail-line" v-else-if="selectedTileObj.type === 'property' || selectedTileObj.type === 'station' || selectedTileObj.type === 'utility'">
                             暂无地主
@@ -229,13 +229,14 @@ const currentPlayer = computed(() => monopolyStore.currentPlayer)
 const isUserTurn = computed(() => monopolyStore.isUserTurn)
 const buyTile = computed(() => gs.value?.awaitingBuy != null ? monopolyStore.tileById(gs.value.awaitingBuy) : null)
 const selectedTileObj = computed(() => selectedTile.value != null ? monopolyStore.tileById(selectedTile.value) : null)
+const selectedOwner = computed(() => selectedTileObj.value ? monopolyStore.ownerOf(selectedTileObj.value.id) : null)
 const winner = computed(() => gs.value?.winner ? players.value.find(p => p.id === gs.value.winner) : null)
 const ranking = computed(() => [...players.value].sort((a, b) => monopolyStore.netWorth(b) - monopolyStore.netWorth(a)))
 
 const isImg = (a) => !!a && (a.startsWith('/') || a.startsWith('data:image') || a.startsWith('http'))
-const ownerOf = (id) => monopolyStore.ownerOf(id)
+const tileOwner = (id) => monopolyStore.ownerOf(id)
 const houseCount = (id) => {
-    const o = ownerOf(id)
+    const o = tileOwner(id)
     return o ? (o.houses?.[id] || 0) : 0
 }
 
@@ -390,33 +391,61 @@ function confirmLeave() {
 </script>
 
 <style scoped>
+/* ===== 2.5D 棋盘容器 ===== */
 .mono-board {
-    background: #fde68a;
-    border: 3px solid #f59e0b;
+    background: linear-gradient(145deg, #fde68a, #fbbf24);
+    border: 4px solid #d97706;
+    border-radius: 16px;
+    box-shadow:
+        0 24px 40px rgba(0, 0, 0, 0.22),
+        inset 0 2px 0 rgba(255, 255, 255, 0.35),
+        inset 0 -6px 0 rgba(180, 83, 9, 0.25);
+    transform-style: preserve-3d;
+    transform: perspective(1000px) rotateX(20deg) scale(1.04);
 }
 
+/* ===== 立体格子 ===== */
 .tile {
     position: relative;
-    background: #fffdf5;
-    border: 1px solid #fcd34d;
-    border-radius: 4px;
+    background: linear-gradient(180deg, #fffdf5 0%, #fff8e1 100%);
+    border: 1px solid #f59e0b;
+    border-radius: 5px;
     overflow: hidden;
     display: flex;
     flex-direction: column;
     cursor: pointer;
     min-width: 0;
     min-height: 0;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.9),
+        inset 0 -3px 0 rgba(217, 119, 6, 0.15),
+        0 2px 3px rgba(0, 0, 0, 0.06);
+    transition: transform 0.12s, box-shadow 0.12s;
+}
+
+.tile:active {
+    transform: translateY(-1px) scale(1.03);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.9),
+        inset 0 -1px 0 rgba(217, 119, 6, 0.15),
+        0 6px 10px rgba(0, 0, 0, 0.12);
+    z-index: 5;
 }
 
 .tile.sel {
     outline: 2px solid #ef4444;
     outline-offset: -2px;
     z-index: 5;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.9),
+        0 0 0 2px rgba(239, 68, 68, 0.35),
+        0 4px 8px rgba(0, 0, 0, 0.15);
 }
 
 .tile-bar {
     height: 22%;
     width: 100%;
+    box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.08);
 }
 
 .tile-body {
@@ -433,10 +462,11 @@ function confirmLeave() {
     font-size: 8px;
     line-height: 1.05;
     color: #374151;
-    font-weight: 600;
+    font-weight: 700;
     overflow: hidden;
     max-height: 2.1em;
     width: 100%;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 .tile-name.sm {
@@ -446,12 +476,13 @@ function confirmLeave() {
 .tile-price {
     font-size: 7px;
     color: #b45309;
-    font-weight: 700;
+    font-weight: 800;
 }
 
 .tile-icon {
     font-size: 14px;
     line-height: 1;
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.15));
 }
 
 .tile-house {
@@ -459,40 +490,46 @@ function confirmLeave() {
     bottom: 1px;
     right: 1px;
     font-size: 7px;
-    background: rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.9);
     border-radius: 3px;
     padding: 0 1px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 .tile-owner {
     position: absolute;
-    top: 1px;
-    left: 1px;
-    width: 6px;
-    height: 6px;
+    top: 2px;
+    left: 2px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
-    box-shadow: 0 0 0 1px #fff;
+    box-shadow: 0 0 0 1.5px #fff, 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
-.t-go { background: #fef3c7 !important; }
-.t-jail, .t-gotojail { background: #fee2e2 !important; }
-.t-parking { background: #dcfce7 !important; }
-.t-chance { background: #dbeafe !important; }
-.t-chest { background: #fae8ff !important; }
-.t-tax { background: #ffedd5 !important; }
+.t-go { background: linear-gradient(180deg, #fef3c7, #fde68a) !important; }
+.t-jail, .t-gotojail { background: linear-gradient(180deg, #fee2e2, #fecaca) !important; }
+.t-parking { background: linear-gradient(180deg, #dcfce7, #bbf7d0) !important; }
+.t-chance { background: linear-gradient(180deg, #dbeafe, #bfdbfe) !important; }
+.t-chest { background: linear-gradient(180deg, #fae8ff, #f5d0fe) !important; }
+.t-tax { background: linear-gradient(180deg, #ffedd5, #fed7aa) !important; }
 
+/* ===== 中央面板（反向旋转保持可读） ===== */
 .center-panel {
     background: linear-gradient(145deg, #fffbeb, #fef3c7);
     border: 2px solid #f59e0b;
-    border-radius: 12px;
-    margin: 2px;
+    border-radius: 14px;
+    margin: 3px;
     padding: 6px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 6px;
-    box-shadow: inset 0 0 12px rgba(245, 158, 11, 0.15);
+    box-shadow:
+        inset 0 0 14px rgba(245, 158, 11, 0.12),
+        0 6px 12px rgba(0, 0, 0, 0.1);
+    transform: rotateX(-20deg);
+    transform-style: preserve-3d;
 }
 
 .cp-turn {
@@ -512,7 +549,7 @@ function confirmLeave() {
     font-size: 16px;
     overflow: hidden;
     border: 2px solid #fff;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.25);
 }
 
 .cp-avatar img {
@@ -553,7 +590,7 @@ function confirmLeave() {
 .die {
     width: 30px;
     height: 30px;
-    background: #fff;
+    background: linear-gradient(145deg, #fff, #fef3c7);
     border: 1px solid #f59e0b;
     border-radius: 8px;
     display: flex;
@@ -561,7 +598,9 @@ function confirmLeave() {
     justify-content: center;
     font-size: 22px;
     color: #b45309;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow:
+        0 3px 5px rgba(0, 0, 0, 0.15),
+        inset 0 -2px 0 rgba(217, 119, 6, 0.15);
 }
 
 .die.rolling {
@@ -575,10 +614,11 @@ function confirmLeave() {
 
 .cp-detail {
     width: 100%;
-    background: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.85);
     border-radius: 8px;
     padding: 4px 6px;
     text-align: center;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
 .cp-detail-name {
@@ -596,6 +636,7 @@ function confirmLeave() {
     height: 8px;
     border-radius: 50%;
     display: inline-block;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 .cp-detail-line {
@@ -609,26 +650,33 @@ function confirmLeave() {
     color: #9ca3af;
 }
 
+/* ===== 悬浮棋子 ===== */
 .token {
     position: absolute;
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     border-radius: 50%;
-    border: 2px solid #fff;
+    border: 2.5px solid #fff;
     background: #fff;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 11px;
-    transform: translate(-50%, -50%);
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+    transform: translate(-50%, -55%) rotateX(-20deg) translateZ(14px);
+    box-shadow:
+        0 6px 10px rgba(0, 0, 0, 0.35),
+        0 0 0 1px rgba(0, 0, 0, 0.08);
     transition: left 0.1s linear, top 0.1s linear;
-    z-index: 20;
+    transform-style: preserve-3d;
+    z-index: 30;
 }
 
 .token.active {
-    box-shadow: 0 0 0 2px #f59e0b, 0 1px 4px rgba(0, 0, 0, 0.35);
-    z-index: 21;
+    box-shadow:
+        0 0 0 3px #f59e0b,
+        0 8px 16px rgba(0, 0, 0, 0.35);
+    transform: translate(-50%, -60%) rotateX(-20deg) translateZ(22px);
+    z-index: 31;
 }
 
 .token img {
@@ -641,8 +689,10 @@ function confirmLeave() {
 .tok-dead {
     position: absolute;
     font-size: 10px;
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3));
 }
 
+/* ===== 操作按钮 ===== */
 .action-bar .act-btn {
     padding: 12px;
     border-radius: 14px;
@@ -650,9 +700,13 @@ function confirmLeave() {
     color: #fff;
     transition: all 0.15s;
     text-align: center;
+    box-shadow:
+        0 4px 6px rgba(0, 0, 0, 0.12),
+        inset 0 1px 0 rgba(255, 255, 255, 0.25),
+        inset 0 -3px 0 rgba(0, 0, 0, 0.1);
 }
 
-.act-btn:active { transform: scale(0.97); }
+.act-btn:active { transform: translateY(2px) scale(0.97); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.1); }
 .act-btn:disabled { opacity: 0.45; }
 .act-btn.orange { background: linear-gradient(135deg, #f59e0b, #ea580c); }
 .act-btn.amber { background: #f59e0b; }
@@ -667,15 +721,16 @@ function confirmLeave() {
     align-items: center;
     gap: 1px;
     padding: 4px 8px;
-    background: #fffbeb;
+    background: linear-gradient(180deg, #fffbeb, #fef3c7);
     border: 1px solid #fcd34d;
     border-radius: 10px;
     font-size: 10px;
     color: #92400e;
     min-width: 64px;
+    box-shadow: 0 2px 3px rgba(0, 0, 0, 0.06);
 }
 
-.build-chip.full { background: #fde68a; }
+.build-chip.full { background: linear-gradient(180deg, #fde68a, #fcd34d); }
 .build-chip:disabled { opacity: 0.5; }
 
 .panel {
