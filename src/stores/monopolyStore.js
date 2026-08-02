@@ -205,26 +205,31 @@ export const useMonopolyStore = defineStore('monopoly', () => {
     }
 
     function ownerOf(tileId) {
+        if (!gameState.value || !gameState.value.players) return null
         const p = gameState.value.players.find(pl => pl.properties.includes(tileId))
         return p || null
     }
 
     function ownsFullGroup(player, group) {
+        if (!player || !group) return false
         const ids = groupTileIds(group)
         return ids.every(id => player.properties.includes(id))
     }
 
     function netWorth(player) {
-        let w = player.cash
-        for (const id of player.properties) {
+        if (!player) return 0
+        let w = player.cash || 0
+        for (const id of player.properties || []) {
             const t = tileById(id)
-            w += t.price + (player.houses[id] || 0) * houseCostOf(t)
+            if (!t) continue
+            w += (t.price || 0) + (player.houses[id] || 0) * houseCostOf(t)
         }
         return w
     }
 
     // ---------- 租金 ----------
     function computeRent(tile, owner, diceSum) {
+        if (!tile || !owner || !gameState.value) return 0
         if (tile.type === 'station') {
             const n = gameState.value.players.filter(p => p.properties.includes(tile.id)).length
             // 持有数按 owner 统计

@@ -215,6 +215,8 @@ import {
 
 const router = useRouter()
 const monopolyStore = useMonopolyStore()
+// 同步先恢复状态，避免首次渲染时 gameState 为 null 导致 ownerOf 等 helper 抛错
+monopolyStore.loadState()
 const boardEl = ref(null)
 const selectedTile = ref(null)
 const panelTab = ref('log')

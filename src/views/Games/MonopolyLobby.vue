@@ -81,9 +81,9 @@
         <!-- 创建房间弹窗 -->
         <Transition name="fade">
             <div v-if="showCreateRoom" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-                @click="showCreateRoom = false">
+                @click="showCreateRoom = false; isQuickCreate = false">
                 <div class="bg-white rounded-2xl p-6 m-4 max-w-sm w-full" @click.stop>
-                    <h2 class="text-xl font-bold mb-4 text-center">创建房间</h2>
+                    <h2 class="text-xl font-bold mb-4 text-center">{{ isQuickCreate ? '快速开始' : '创建房间' }}</h2>
                     <div class="space-y-6 mb-6">
                         <div>
                             <label class="block text-sm font-bold text-gray-700 mb-3">玩家人数</label>
@@ -107,10 +107,10 @@
                         </div>
                     </div>
                     <div class="flex gap-3">
-                        <button @click="showCreateRoom = false"
+                        <button @click="showCreateRoom = false; isQuickCreate = false"
                             class="flex-1 py-3 bg-gray-200 text-gray-700 font-bold rounded-lg">取消</button>
                         <button @click="createRoom"
-                            class="flex-1 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold rounded-lg">创建</button>
+                            class="flex-1 py-3 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold rounded-lg">{{ isQuickCreate ? '开始游戏' : '创建' }}</button>
                     </div>
                 </div>
             </div>
@@ -154,6 +154,7 @@ const isImageAvatar = (avatar) => !!avatar && (avatar.startsWith('/') || avatar.
 const hasActiveGame = computed(() => monopolyStore.hasActiveGame)
 
 const showCreateRoom = ref(false)
+const isQuickCreate = ref(false)
 const showRules = ref(false)
 const roomConfig = ref({ playerCount: 4, maxRounds: 20 })
 
@@ -163,26 +164,26 @@ onMounted(() => {
 })
 
 const quickStart = () => {
-    monopolyStore.createRoom({
-        mode: 'quick',
-        playerCount: roomConfig.value.playerCount,
-        maxRounds: roomConfig.value.maxRounds,
-        userName: userName.value,
-        userAvatar: userAvatar.value,
-    })
-    router.push('/games/monopoly-room')
+    isQuickCreate.value = true
+    showCreateRoom.value = true
 }
 
 const createRoom = () => {
     monopolyStore.createRoom({
-        mode: 'custom',
+        mode: isQuickCreate.value ? 'quick' : 'custom',
         playerCount: roomConfig.value.playerCount,
         maxRounds: roomConfig.value.maxRounds,
         userName: userName.value,
         userAvatar: userAvatar.value,
     })
     showCreateRoom.value = false
-    router.push('/games/monopoly-room')
+    if (isQuickCreate.value) {
+        monopolyStore.startGame()
+        isQuickCreate.value = false
+        router.push('/games/monopoly')
+    } else {
+        router.push('/games/monopoly-room')
+    }
 }
 
 const returnToGame = () => {
