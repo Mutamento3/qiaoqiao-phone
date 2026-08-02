@@ -111,7 +111,28 @@
                     </div>
                 </div>
 
-                <!-- 斗地主（即将推出） -->
+                        <!-- 大富翁 -->
+                <div @click="openGame('monopoly')"
+                    class="game-card bg-white rounded-2xl shadow-lg overflow-hidden active:scale-95 transition-transform">
+                    <div
+                        class="h-[120px] bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center relative overflow-hidden">
+                        <div class="absolute inset-0 opacity-20">
+                            <div class="absolute top-2 left-2 text-5xl">🎩</div>
+                            <div class="absolute bottom-2 right-2 text-3xl">🏠</div>
+                        </div>
+                        <div class="text-6xl relative z-10">🎩</div>
+                    </div>
+                    <div class="p-3">
+                        <h3 class="font-bold text-lg mb-1">大富翁</h3>
+                        <p class="text-xs text-gray-500 mb-2">买地收租，称霸棋盘</p>
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-orange-600 font-bold">✨ 新</span>
+                            <span class="text-xs text-gray-400">2-8 人对战</span>
+                        </div>
+                    </div>
+                </div>
+
+        <!-- 斗地主（即将推出） -->
                 <div class="game-card bg-white rounded-2xl shadow-lg overflow-hidden opacity-60">
                     <div
                         class="h-[120px] bg-gradient-to-br from-yellow-400 to-orange-400 flex items-center justify-center relative overflow-hidden">
@@ -602,6 +623,8 @@ const openGame = (gameId) => {
         router.push('/games/claw-machine')
     } else if (gameId === 'uno') {
         router.push('/games/uno-lobby')
+    } else if (gameId === 'monopoly') {
+        router.push('/games/monopoly-lobby')
     } else {
         alert('该游戏即将推出，敬请期待！')
     }

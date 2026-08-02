@@ -10,6 +10,7 @@
 const STORAGE_KEYS = {
     mahjong: 'mahjong_game_chat',
     uno: 'uno_game_chat',
+    monopoly: 'monopoly_game_chat',
 }
 
 const HARD_CAP = 300

@@ -131,6 +131,21 @@ const router = createRouter({
             component: () => import('../views/Games/UnoGame.vue')
         },
         {
+            path: '/games/monopoly-lobby',
+            name: 'monopoly-lobby',
+            component: () => import('../views/Games/MonopolyLobby.vue')
+        },
+        {
+            path: '/games/monopoly-room',
+            name: 'monopoly-room',
+            component: () => import('../views/Games/MonopolyRoom.vue')
+        },
+        {
+            path: '/games/monopoly',
+            name: 'monopoly-game',
+            component: () => import('../views/Games/MonopolyGame.vue')
+        },
+        {
             path: '/wechat/profile/:charId',
             name: 'character-info',
             component: () => import('../views/WeChat/CharacterProfileView.vue')
