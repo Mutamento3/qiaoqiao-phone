@@ -91,11 +91,11 @@ export const ITEM_CARDS = [
         effect: { action: 'limitMove', min: 1, max: 3 },
     },
     {
-        id: 'steal_paw', name: '偷钱小爪', desc: '从指定玩家处偷 ¥50',
+        id: 'steal_paw', name: '偷钱小爪', desc: '从指定玩家处偷 ¥500',
         type: 'attack', rarity: 'common', usablePhase: ['action'],
         targetType: 'player',
         image: '/monopoly-assets/cards/card-steal_paw.png',
-        effect: { action: 'stealCash', amount: 50 },
+        effect: { action: 'stealCash', amount: 500 },
     },
     {
         id: 'demolish_hammer', name: '拆房锤', desc: '拆除指定地产 1 级房屋',
@@ -133,11 +133,11 @@ export const ITEM_CARDS = [
         effect: { action: 'blockCards' },
     },
     {
-        id: 'trap_card', name: '陷阱卡', desc: '在指定地产设陷阱，下位停留者扣 ¥80',
+        id: 'trap_card', name: '陷阱卡', desc: '在指定地产设陷阱，下位停留者扣 ¥800',
         type: 'attack', rarity: 'common', usablePhase: ['action'],
         targetType: 'tile',
         image: '/monopoly-assets/cards/card-trap_card.png',
-        effect: { action: 'setTrap', amount: 80 },
+        effect: { action: 'setTrap', amount: 800 },
     },
 
     // ===== 防御类（6 张）=====
@@ -186,32 +186,32 @@ export const ITEM_CARDS = [
 
     // ===== 资源类（6 张）=====
     {
-        id: 'gold_can', name: '金罐头', desc: '立即获得 ¥100',
+        id: 'gold_can', name: '金罐头', desc: '立即获得 ¥1000',
         type: 'resource', rarity: 'common', usablePhase: ['rolling', 'action'],
         targetType: 'self',
         image: '/monopoly-assets/cards/card-gold_can.png',
-        effect: { action: 'addCash', amount: 100 },
+        effect: { action: 'addCash', amount: 1000 },
     },
     {
-        id: 'fish_gift', name: '鱼干大礼包', desc: '立即获得 ¥200',
+        id: 'fish_gift', name: '鱼干大礼包', desc: '立即获得 ¥2000',
         type: 'resource', rarity: 'rare', usablePhase: ['rolling', 'action'],
         targetType: 'self',
         image: '/monopoly-assets/cards/card-fish_gift.png',
-        effect: { action: 'addCash', amount: 200 },
+        effect: { action: 'addCash', amount: 2000 },
     },
     {
-        id: 'loan', name: '贷款合同', desc: '立即获得 ¥300，之后 3 回合每回合扣 ¥50',
+        id: 'loan', name: '贷款合同', desc: '立即获得 ¥3000，之后 3 回合每回合扣 ¥500',
         type: 'resource', rarity: 'common', usablePhase: ['rolling', 'action'],
         targetType: 'self',
         image: '/monopoly-assets/cards/card-loan.png',
-        effect: { action: 'loan', amount: 300, perTurn: 50, turns: 3 },
+        effect: { action: 'loan', amount: 3000, perTurn: 500, turns: 3 },
     },
     {
-        id: 'lottery', name: '彩票', desc: '50% 获得 ¥150，50% 失去 ¥50',
+        id: 'lottery', name: '彩票', desc: '50% 获得 ¥1500，50% 失去 ¥500',
         type: 'resource', rarity: 'common', usablePhase: ['rolling', 'action'],
         targetType: 'self',
         image: '/monopoly-assets/cards/card-lottery.png',
-        effect: { action: 'lottery', win: 150, lose: 50 },
+        effect: { action: 'lottery', win: 1500, lose: 500 },
     },
     {
         id: 'dividend', name: '投资分红', desc: '立即获得所有自有地产租金总和的 50%',
@@ -221,11 +221,11 @@ export const ITEM_CARDS = [
         effect: { action: 'dividend' },
     },
     {
-        id: 'emergency_piggy', name: '紧急存钱罐', desc: '破产时自动触发，获得 ¥300（被动卡）',
+        id: 'emergency_piggy', name: '紧急存钱罐', desc: '破产时自动触发，获得 ¥3000（被动卡）',
         type: 'resource', rarity: 'rare', usablePhase: ['passive'],
         targetType: 'self',
         image: '/monopoly-assets/cards/card-emergency_piggy.png',
-        effect: { action: 'emergencySave', amount: 300 },
+        effect: { action: 'emergencySave', amount: 3000 },
     },
 
     // ===== 特殊类（4 张）=====

@@ -2339,21 +2339,41 @@ const userFinalStats = computed(() => {
 
 // 返回大厅
 const returnToLobby = () => {
-    sendGameEndNotification()
+    // 先关闭结算弹窗，避免弹窗 v-if 与导航竞争导致事件被吞
+    showFinalSettlement.value = false
+    // sendGameEndNotification 可能抛错，不应阻断跳转
+    try {
+        sendGameEndNotification()
+    } catch (e) {
+        console.warn('[mahjong] sendGameEndNotification failed', e)
+    }
     mahjongStore.exitRoom()
-    router.push('/games/mahjong-lobby')
+    // store 清理完成后（nextTick）再跳转，规避可能的重定向守卫
+    nextTick(() => {
+        router.push('/games/mahjong-lobby').catch(() => {})
+    })
 }
 
 // 再来一局
-const startNewGame = () => {
-    sendGameEndNotification()
+const startNewGame = async () => {
+    // 先关闭结算弹窗，避免事件被吞
+    showFinalSettlement.value = false
+    try {
+        sendGameEndNotification()
+    } catch (e) {
+        console.warn('[mahjong] sendGameEndNotification failed', e)
+    }
     mahjongStore.exitRoom()
-    // 重新创建房间
-    router.push('/games/mahjong-lobby')
-    setTimeout(() => {
-        mahjongStore.createRoom({ mode: 'quick', baseStake: 100, totalRounds: 8 })
-        router.push('/games/mahjong-room')
-    }, 100)
+    router.push('/games/mahjong-lobby').catch(() => {})
+    try {
+        // 必须等 createRoom 真正完成（异步）后再跳转，否则房间尚未就绪
+        // 会被目标页守卫重定向回大厅
+        await mahjongStore.createRoom({ mode: 'quick', baseStake: 100, totalRounds: 8 })
+        router.push('/games/mahjong-room').catch(() => {})
+    } catch (e) {
+        console.warn('[mahjong] createRoom failed', e)
+        router.push('/games/mahjong-lobby').catch(() => {})
+    }
 }
 
 // 游戏结束时发送系统提示

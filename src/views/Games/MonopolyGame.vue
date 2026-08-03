@@ -195,7 +195,7 @@
                 <div class="action-deck">
                     <div v-if="isUserTurn && gs?.phase === 'rolling' && currentPlayer?.inJail" class="flex gap-2">
                         <button @click="monopolyStore.jailUseCard()" :disabled="!currentPlayer.getOutCards" class="game-btn sky flex-1 text-sm">用出狱卡 ({{ currentPlayer.getOutCards }})</button>
-                        <button @click="monopolyStore.jailPay()" :disabled="currentPlayer.cash < 50" class="game-btn green flex-1 text-sm">保释 ¥50</button>
+                        <button @click="monopolyStore.jailPay()" :disabled="currentPlayer.cash < GET_OUT_FEE" class="game-btn green flex-1 text-sm">保释 ¥{{ GET_OUT_FEE }}</button>
                         <button @click="monopolyStore.jailRoll()" class="game-btn yellow flex-1 text-sm">掷骰出狱</button>
                     </div>
                     <button v-else-if="isUserTurn && gs?.phase === 'rolling'" @click="monopolyStore.rollDice()"
@@ -339,14 +339,14 @@
 
         <!-- 道具卡使用确认弹窗 -->
         <div v-if="cardToUse" class="fixed inset-0 z-[250] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div class="bg-white rounded-2xl p-5 max-w-[300px] w-full shadow-2xl">
+            <div class="bg-white rounded-2xl p-5 max-w-[360px] w-full max-h-[85vh] overflow-y-auto shadow-2xl">
                 <div class="text-center mb-3">
                     <div class="inline-block px-3 py-1 rounded-full text-white text-xs font-bold mb-2"
                         :style="{ background: cardTypeColor(getItemCard(cardToUse)?.type) }">
                         {{ cardTypeName(getItemCard(cardToUse)?.type) }}
                     </div>
-                    <img v-if="getItemCard(cardToUse)?.image" :src="getItemCard(cardToUse).image" class="card-pop-img" alt="" />
-                    <h3 class="text-lg font-bold text-gray-800">{{ getItemCard(cardToUse)?.name }}</h3>
+                    <img v-if="getItemCard(cardToUse)?.image" :src="getItemCard(cardToUse).image" class="card-pop-img" :class="{ 'card-burst': cardBursting }" alt="" />
+                    <h3 class="text-xl font-bold text-gray-800">{{ getItemCard(cardToUse)?.name }}</h3>
                     <p class="text-sm text-gray-500 mt-1">{{ getItemCard(cardToUse)?.desc }}</p>
                 </div>
                 <div v-if="isForceDice(getItemCard(cardToUse))" class="mb-3">
@@ -369,13 +369,13 @@
                             class="w-full py-2 px-3 rounded-lg text-sm flex items-center justify-between"
                             :class="selectedTarget === t.id ? 'bg-sky-100 border-2 border-sky-400' : 'bg-gray-50 border border-gray-200'">
                             <span>{{ t.name }}</span>
-                            <span class="text-xs text-gray-400">{{ t.owner ? '地主 ' + t.owner : '¥' + t.price }}</span>
+                            <span class="text-xs text-gray-400">{{ t.sub }}</span>
                         </button>
                     </div>
                 </div>
                 <div class="flex gap-2">
-                    <button @click="cardToUse = null; selectedTarget = null; selectedDiceValue = null" class="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl font-bold text-sm">取消</button>
-                    <button @click="confirmUseCard" :disabled="!canUseCard" class="flex-1 py-2.5 bg-sky-500 text-white rounded-xl font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed">使用</button>
+                    <button @click="cardToUse = null; selectedTarget = null; selectedDiceValue = null" class="flex-1 py-3 bg-gray-100 text-gray-600 rounded-xl font-bold text-sm">取消</button>
+                    <button @click="confirmUseCard" :disabled="!canUseCard || cardBursting" class="flex-1 py-3 bg-sky-500 text-white rounded-xl font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed">使用</button>
                 </div>
             </div>
         </div>
@@ -400,6 +400,9 @@ import { playSound, startBGM, stopBGM, unlockAudio } from '../../utils/monopoly/
 const router = useRouter()
 const monopolyStore = useMonopolyStore()
 
+// 通用等待 helper（AI/操作节奏控制，让用户看清动画与决策）
+const sleep = ms => new Promise(r => setTimeout(r, ms))
+
 if (!monopolyStore.currentRoom || !monopolyStore.gameState) {
     monopolyStore.loadState()
 }
@@ -413,6 +416,7 @@ const showEndConfirm = ref(false)
 const cardToUse = ref(null)
 const selectedTarget = ref(null)
 const selectedDiceValue = ref(null)
+const cardBursting = ref(false)
 const logOpen = ref(true)
 
 // 悬浮聊天
@@ -514,26 +518,34 @@ const cardTargets = computed(() => {
     const card = getItemCard(cardToUse.value)
     if (!card) return []
     if (card.targetType === 'player') {
+        // 玩家目标：显示其现金（修复 ¥undefined）
         return activePlayersList.value.filter(p => !p.isUser)
+            .map(p => ({ id: p.id, name: p.name, cash: p.cash, sub: '💰 ¥' + (p.cash || 0) }))
+    }
+    const toTarget = (t) => {
+        const owner = monopolyStore.ownerOf(t.id)?.name || ''
+        return {
+            id: t.id, name: t.name, price: t.price, owner,
+            sub: owner ? '地主 ' + owner : '¥' + t.price,
+        }
     }
     if (card.targetType === 'tile') {
         // 传送卷轴等：全图可选
-        return BOARD.filter(t => OWNED_TYPES.includes(t.type))
-            .map(t => ({ id: t.id, name: t.name, price: t.price, owner: monopolyStore.ownerOf(t.id)?.name || '' }))
+        return BOARD.filter(t => OWNED_TYPES.includes(t.type)).map(toTarget)
     }
     if (card.targetType === 'tile_owned_by_others') {
         // 只返回被其他玩家拥有的 property/station/utility（拆房锤等）
         const me = monopolyStore.currentPlayer
         return BOARD.filter(t => OWNED_TYPES.includes(t.type))
             .filter(t => { const o = monopolyStore.ownerOf(t.id); return o && o.id !== me?.id })
-            .map(t => ({ id: t.id, name: t.name, price: t.price, owner: monopolyStore.ownerOf(t.id)?.name || '' }))
+            .map(toTarget)
     }
     if (card.targetType === 'tile_owned_by_self') {
         // 只返回被当前玩家拥有的 property/station/utility
         const me = monopolyStore.currentPlayer
         return BOARD.filter(t => OWNED_TYPES.includes(t.type))
             .filter(t => { const o = monopolyStore.ownerOf(t.id); return o && o.id === me?.id })
-            .map(t => ({ id: t.id, name: t.name, price: t.price, owner: monopolyStore.ownerOf(t.id)?.name || '' }))
+            .map(toTarget)
     }
     return []
 })
@@ -557,13 +569,19 @@ function onCardTap(cardId) {
 }
 
 function confirmUseCard() {
-    if (!cardToUse.value) return
+    if (!cardToUse.value || cardBursting.value) return
     const card = getItemCard(cardToUse.value)
+    if (!card) return
     const target = isForceDice(card) ? selectedDiceValue.value : selectedTarget.value
-    monopolyStore.useItemCard(cardToUse.value, target)
-    cardToUse.value = null
-    selectedTarget.value = null
-    selectedDiceValue.value = null
+    // 先播放缩放+光晕动画，再关闭弹窗并执行卡牌效果（配合任务要求 400~600ms 等待）
+    cardBursting.value = true
+    setTimeout(() => {
+        monopolyStore.useItemCard(cardToUse.value, target)
+        cardToUse.value = null
+        selectedTarget.value = null
+        selectedDiceValue.value = null
+        cardBursting.value = false
+    }, 500)
 }
 
 function cardTypeColor(type) {
@@ -662,7 +680,7 @@ function scheduleAI() {
     const delay = 1200 + Math.random() * 800
     aiTimer = setTimeout(() => { aiTimer = null; aiAct() }, delay)
 }
-function aiAct() {
+async function aiAct() {
     const g = monopolyStore.gameState
     if (!g || g.phase !== 'rolling') return
     const p = monopolyStore.currentPlayer
@@ -676,6 +694,8 @@ function aiAct() {
         }
         return
     }
+    // AI 掷骰前停顿 800~1200ms，让用户看清
+    await sleep(800 + Math.random() * 400)
     if (Math.random() < 0.3) {
         monopolyStore.aiTryUseCard(p)
     }
@@ -700,7 +720,8 @@ function startMoveAnimation() {
         if (i < mv.path.length) {
             displayPos[pid] = mv.path[i]
             i++
-            setTimeout(step, 150)
+            // AI/用户移动每步等待 350~400ms，让用户看清棋子移动
+            setTimeout(step, 350 + Math.random() * 50)
         } else {
             displayPos[pid] = mv.finalPos
             animating = false
@@ -721,12 +742,15 @@ watch(() => monopolyStore.gameState?.phase, (np, op) => {
     // 移动结束（离开 moving，进入 action 或下一玩家 rolling）：短暂显示落点地块立绘
     if (op === 'moving' && pendingLandPos != null && np !== 'moving') {
         const t = BOARD[pendingLandPos]
-        if (t) {
-            lastLandedTile.value = t
-            if (landedTimer) clearTimeout(landedTimer)
-            landedTimer = setTimeout(() => { lastLandedTile.value = null }, 2600)
-        }
         pendingLandPos = null
+        if (t) {
+            // 落点立绘显示前等待 300~500ms，让用户看清落点
+            setTimeout(() => {
+                lastLandedTile.value = t
+                if (landedTimer) clearTimeout(landedTimer)
+                landedTimer = setTimeout(() => { lastLandedTile.value = null }, 2600)
+            }, 400)
+        }
     }
 })
 watch(() => [monopolyStore.gameState?.phase, monopolyStore.gameState?.currentTurn], () => {
@@ -882,7 +906,7 @@ function confirmLeave() {
 /* ===== 棋盘舞台（2.5D） ===== */
 .board-stage {
     perspective: 1300px;
-    perspective-origin: 50% 42%;
+    perspective-origin: 50% 45%;
     padding: 1px;
 }
 .board-table {
@@ -890,7 +914,7 @@ function confirmLeave() {
     width: min(100%, 520px);
     margin: 0 auto;
     transform-style: preserve-3d;
-    transform: rotateX(7deg);
+    transform: rotateX(5deg);
 }
 .board-rim {
     position: absolute;
@@ -1466,7 +1490,14 @@ function confirmLeave() {
 .card-anim-name { font-size: 20px; font-weight: 900; color: #1a2634; }
 .card-anim-desc { font-size: 12px; color: #64748b; margin-top: 6px; }
 .card-anim-player { font-size: 11px; color: #94a3b8; margin-top: 10px; }
-.card-pop-img { width: 90px; height: 120px; object-fit: cover; border-radius: 12px; margin: 0 auto 10px; border: 2px solid #fff; box-shadow: 0 6px 16px rgba(0,0,0,0.18); }
+.card-pop-img { width: 120px; height: 160px; object-fit: cover; border-radius: 12px; margin: 0 auto 10px; border: 2px solid #fff; box-shadow: 0 6px 16px rgba(0,0,0,0.18); }
+/* 道具卡使用：点击"使用"后缩放 + 光晕扩散动画 */
+.card-burst { animation: card-burst 0.5s ease-out; }
+@keyframes card-burst {
+    0% { transform: scale(1); filter: drop-shadow(0 0 0 rgba(244, 208, 63, 0.9)); }
+    50% { transform: scale(1.12); filter: drop-shadow(0 0 22px rgba(244, 208, 63, 0.95)); }
+    100% { transform: scale(1); filter: drop-shadow(0 0 0 rgba(244, 208, 63, 0)); }
+}
 @keyframes cardPop {
     0% { transform: scale(0.5) rotate(-10deg) translateY(40px); opacity: 0; }
     20% { transform: scale(1.1) rotate(2deg) translateY(0); opacity: 1; }
@@ -1565,10 +1596,11 @@ function confirmLeave() {
         flex: none;
         width: 100%;
         position: sticky;
-        top: 40px;
+        /* HUD 高 56px，sticky top 与之对齐，确保棋盘不被遮挡 */
+        top: 56px;
         z-index: 14;
-        /* 顶部留白，避免最顶一排格子/棋子被 HUD 遮住 */
-        padding: 22px 8px 12px;
+        /* 顶部留白，避免最顶一排格子/棋子被 HUD 遮住（竖屏下加大顶部空间） */
+        padding: 42px 8px 12px;
         overflow: visible;
     }
     /* 棋盘高度按视口高度封顶，确保 11×11 最外圈完整落在视口内（HUD 占 40px） */

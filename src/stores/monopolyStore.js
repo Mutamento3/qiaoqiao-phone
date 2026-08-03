@@ -30,6 +30,11 @@ import { useSettingsStore } from './settingsStore.js'
 const STORAGE_KEY = 'monopoly_current'
 const MAX_HAND_SIZE = 5
 
+// AI 买地分支延迟期间为 true，避免 afterResolve 再次延迟“结束回合”
+let aiBuyDeferring = false
+// 道具卡效果内部（移动/结算）触发的嵌套 resolveTile，需同步执行，不要插入延迟
+let nestedCardResolution = false
+
 function tileById(id) {
     return BOARD[id]
 }
@@ -64,6 +69,9 @@ function makeActiveEffects() {
         immunityJail: false,     // 免疫一次入狱
     }
 }
+
+// 通用等待 helper（用于 AI/操作节奏控制，让用户看清动画与决策）
+const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 export const useMonopolyStore = defineStore('monopoly', () => {
     const currentRoom = ref(null)
@@ -318,10 +326,10 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         if (char.skill.trigger !== trigger) return
 
         switch (char.id) {
-            case 'pudding': // 贪吃福利：路过起点 +50
+            case 'pudding': // 贪吃福利：路过起点 +500
                 if (trigger === 'passGo') {
-                    player.cash += 50
-                    logEvent(`🐟 ${player.name}（布丁）贪吃福利触发，额外 +¥50 小鱼干！`)
+                    player.cash += 500
+                    logEvent(`🐟 ${player.name}（布丁）贪吃福利触发，额外 +¥500 小鱼干！`)
                 }
                 break
             case 'nuomi': // 幸运双骰：双骰概率+10%（在 rollDice 里处理）
@@ -436,8 +444,14 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         const card = getItemCard(cardId)
         if (!card) return false
 
-        // 执行效果
-        const result = executeCardEffect(card, p, target)
+        // 执行效果（嵌套结算时同步执行，避免延迟导致状态错乱）
+        nestedCardResolution = true
+        let result = false
+        try {
+            result = executeCardEffect(card, p, target)
+        } finally {
+            nestedCardResolution = false
+        }
         if (!result) return false
 
         // 移除卡牌
@@ -906,9 +920,22 @@ export const useMonopolyStore = defineStore('monopoly', () => {
                         gs.awaitingBuy = tile.id
                         gs.phase = 'action'
                         logEvent(`🏠 ${p.name} 停在 ${tile.name}（¥${tile.price}），等待决策。`)
-                    } else {
+                    } else if (nestedCardResolution) {
+                        // 道具卡效果内部的嵌套结算：同步执行，避免延迟导致状态错乱
                         aiDecideBuy(tile, p)
                         afterResolve(p)
+                    } else {
+                        // AI 买地决策前停顿 800~1200ms，并显示“正在行动”
+                        gs.phase = 'action'
+                        logEvent(`🏠 ${p.name} 停在 ${tile.name}（¥${tile.price}），思考中…`)
+                        // 保持 aiBuyDeferring=true 直到 afterResolve 执行完，避免 afterResolve 再次延迟结束回合
+                        aiBuyDeferring = true
+                        setTimeout(() => {
+                            if (!gameState.value || gameState.value.phase === 'ended') { aiBuyDeferring = false; return }
+                            aiDecideBuy(tile, p)
+                            afterResolve(p)
+                            aiBuyDeferring = false
+                        }, 900 + Math.random() * 300)
                     }
                 } else if (owner.id === p.id) {
                     logEvent(`🏠 ${p.name} 回到自己的 ${tile.name}。`)
@@ -1021,19 +1048,27 @@ export const useMonopolyStore = defineStore('monopoly', () => {
                 const cardIdx = deck.length ? deck.pop() : 0
                 const card = (tile.type === 'chance' ? CHANCE_CARDS : CHEST_CARDS)[cardIdx]
                 logEvent(`🎴 ${p.name} 抽到${tile.name}：${card.text}`)
+                // 抽卡/机会结果展示等待 600~800ms 后再执行效果，让用户看清
                 // 奶茶技能：多看一张（简化：50%概率换更好的）
                 const char = getCharacterOf(p)
-                if (char.id === 'naicha' && deck.length > 0 && Math.random() < 0.5) {
-                    const altIdx = deck.pop()
-                    const altCard = (tile.type === 'chance' ? CHANCE_CARDS : CHEST_CARDS)[altIdx]
-                    // 选金额更大的
-                    const cardAmt = card.amount || 0
-                    const altAmt = altCard.amount || 0
-                    const chosen = altAmt > cardAmt ? altCard : card
-                    logEvent(`😺 ${p.name}（奶茶）温柔选择，挑了更好的卡！`)
-                    applyCard(chosen, p)
+                const applyChosen = () => {
+                    if (char.id === 'naicha' && deck.length > 0 && Math.random() < 0.5) {
+                        const altIdx = deck.pop()
+                        const altCard = (tile.type === 'chance' ? CHANCE_CARDS : CHEST_CARDS)[altIdx]
+                        // 选金额更大的
+                        const cardAmt = card.amount || 0
+                        const altAmt = altCard.amount || 0
+                        const chosen = altAmt > cardAmt ? altCard : card
+                        logEvent(`😺 ${p.name}（奶茶）温柔选择，挑了更好的卡！`)
+                        applyCard(chosen, p)
+                    } else {
+                        applyCard(card, p)
+                    }
+                }
+                if (nestedCardResolution) {
+                    applyChosen()
                 } else {
-                    applyCard(card, p)
+                    setTimeout(applyChosen, 700 + Math.random() * 100)
                 }
                 break
             }
@@ -1129,14 +1164,14 @@ export const useMonopolyStore = defineStore('monopoly', () => {
     function bankruptTo(p, creditor, amount) {
         const gs = gameState.value
         // 紧急存钱罐
-        const hasEmergency = p.itemCards.includes('emergency_piggy')
-        if (hasEmergency) {
-            const idx = p.itemCards.indexOf('emergency_piggy')
-            p.itemCards.splice(idx, 1)
-            p.cash += 300
-            logEvent(`🐷 ${p.name} 紧急存钱罐触发，获得 ¥300！`)
-            if (p.cash >= 0) return // 救回来了
-        }
+    const hasEmergency = p.itemCards.includes('emergency_piggy')
+    if (hasEmergency) {
+        const idx = p.itemCards.indexOf('emergency_piggy')
+        p.itemCards.splice(idx, 1)
+        p.cash += 3000
+        logEvent(`🐷 ${p.name} 紧急存钱罐触发，获得 ¥3000！`)
+        if (p.cash >= 0) return // 救回来了
+    }
         p.bankrupt = true
         logEvent(`💥 ${p.name} 破产出局！`)
         const chat = generateAiChat(p.characterId, 'bankrupt')
@@ -1264,7 +1299,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
                 const cur = p.houses[id] || 0
                 if (cur < MAX_HOUSES) {
                     const cost = houseCostOf(tileById(id))
-                    if (p.cash > cost + 200) {
+                    if (p.cash > cost + 2000) {
                         p.cash -= cost
                         p.houses[id] = cur + 1
                         const lvl = HOUSE_LEVELS[cur + 1]
@@ -1362,6 +1397,11 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         if (p.bankrupt) { endTurn(); return }
         if (reroll) {
             gs.phase = 'rolling'
+        } else if (p.isAI && !aiBuyDeferring && !nestedCardResolution) {
+            // AI 结束回合决策前停顿 800~1200ms（买地分支已等待过 / 嵌套结算需同步，此处不重复延迟）
+            setTimeout(() => {
+                if (gameState.value && gameState.value.phase !== 'ended') endTurn()
+            }, 900 + Math.random() * 300)
         } else {
             endTurn()
         }

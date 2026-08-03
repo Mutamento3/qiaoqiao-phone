@@ -22,7 +22,7 @@ export const CHARACTERS = [
         personality: '乐观贪吃，大大咧咧，容易开心也容易丧',
         skill: {
             name: '贪吃福利',
-            desc: '每次路过起点额外获得 ¥50 小鱼干奖金',
+            desc: '每次路过起点额外获得 ¥500 小鱼干奖金',
             trigger: 'passGo',
         },
         // AI 决策权重
@@ -348,11 +348,11 @@ export function aiDecideBuyWithPersonality(characterId, cash, price, groupOwned,
     // 资金充裕加成
     if (cash > price * 3) prob += 0.15
     // 资金紧张惩罚
-    if (cash < price + 200) prob -= 0.30
+    if (cash < price + 2000) prob -= 0.30
     // 随机波动（性格驱动）
     prob += (Math.random() - 0.5) * ai.buyVariance
     // 风险偏好影响
-    if (ai.riskAppetite > 0.6 && cash < price + 150) prob += 0.10
+    if (ai.riskAppetite > 0.6 && cash < price + 1500) prob += 0.10
     return Math.random() < Math.max(0.1, Math.min(0.95, prob))
 }
 

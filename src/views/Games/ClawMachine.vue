@@ -538,6 +538,10 @@
                 <button @click="exitToSelecting" class="w-full py-3 rounded-2xl bg-white/20 text-white font-bold text-sm shadow active:scale-95 transition-transform">
                     返回选机子
                 </button>
+                <!-- 新增：结算后可直接返回游戏大厅 -->
+                <button @click="returnToHall" class="w-full py-2.5 rounded-2xl bg-transparent text-white/80 font-medium text-sm border border-white/30 active:scale-95 transition-transform">
+                    返回大厅
+                </button>
             </div>
         </div>
 
@@ -1401,6 +1405,19 @@ function exitToSelecting() {
     clawStore.cancelAI()
     clawStore.resetSession()
     clawStore.gamePhase = 'selecting'
+}
+
+// 结算后返回游戏大厅（/games）
+function returnToHall() {
+    // 先关闭可能残留的弹层，避免事件被吞或状态残留
+    showExhibition.value = false
+    showRecharge.value = false
+    customUploadMachineId.value = null
+    showModeSelector.value = false
+    clawStore.cancelAI()
+    clawStore.resetSession()
+    // 跳转前先收起结果态；重复点击/同路由会被 Vue Router 拒绝为 NavigationDuplicated，需吞掉
+    router.push('/games').catch(() => {})
 }
 
 // ============================================================

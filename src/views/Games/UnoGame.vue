@@ -190,7 +190,8 @@
                         </div>
                     </div>
                     <div class="flex gap-3">
-                        <button @click="backToLobby" class="flex-1 py-3 bg-white text-stone-500 rounded-2xl font-bold active:scale-95 shadow-sm border border-stone-100">返回大厅</button>
+                        <!-- 结算弹窗的“返回大厅”直接离开并跳转，不再二次弹出确认框（避免用户以为无效） -->
+                        <button @click="confirmBack" class="flex-1 py-3 bg-white text-stone-500 rounded-2xl font-bold active:scale-95 shadow-sm border border-stone-100">返回大厅</button>
                         <button @click="playAgain" class="flex-1 py-3 bg-gradient-to-r from-rose-400 to-pink-400 text-white rounded-2xl font-bold active:scale-95 shadow-md">再来一局</button>
                     </div>
                 </div>
@@ -700,15 +701,20 @@ function confirmBack() {
     stopBGM()
     showConfirm.value = false
     unoStore.returnToLobby()
-    router.push('/games/uno-lobby')
+    // 已在同路由或重复点击时会被 Vue Router 拒绝为 NavigationDuplicated，需吞掉避免控制台报错
+    router.push('/games/uno-lobby').catch(() => {})
 }
 
 async function playAgain() {
     await unoStore.startNewGame()
     drewThisTurn.value = false
     bgmStoppedByGame.value = false
+    // 重置离开标记，避免“再来一局”后 BGM 起不来或被拦截点击
+    isLeaving.value = false
     startBGM()
     scheduleAI()
+    // 确保回到游戏页（若当前已在 /games/uno 则触发 NavigationDuplicated，需吞掉）
+    router.push('/games/uno').catch(() => {})
 }
 
 function toggleChat() {

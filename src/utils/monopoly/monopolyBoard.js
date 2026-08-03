@@ -38,53 +38,53 @@ export const GROUPS = {
 // 40 格帕瓦小镇棋盘（顺时针：起点左上角 → 右 → 下 → 左 → 上）
 export const BOARD = [
     { id: 0,  type: 'go',       name: '镇中心广场',     image: '/monopoly-assets/tiles/tile-go.png',         desc: '喷泉彩虹，猫狗聚会' },
-    { id: 1,  type: 'property', name: '鱼干便利店',     image: '/monopoly-assets/tiles/tile-1.png',          group: 'brown',    price: 60,  desc: '橙色小猫招牌，货架满是鱼干' },
+    { id: 1,  type: 'property', name: '鱼干便利店',     image: '/monopoly-assets/tiles/tile-1.png',          group: 'brown',    price: 600,  desc: '橙色小猫招牌，货架满是鱼干' },
     { id: 2,  type: 'chance',   name: '幸运猫爪',       image: '/monopoly-assets/tiles/tile-chance.png',     desc: '发光猫爪印，问号气泡' },
-    { id: 3,  type: 'property', name: '毛线球杂货铺',   image: '/monopoly-assets/tiles/tile-3.png',          group: 'brown',    price: 60,  desc: '彩色毛线球堆成山' },
-    { id: 4,  type: 'tax',      name: '零食税',         image: '/monopoly-assets/tiles/tile-tax.png',        amount: 200,       desc: '橘猫镇长收税台' },
-    { id: 5,  type: 'station',  name: '猫咪巴士站',     image: '/monopoly-assets/tiles/tile-station-cat.png', price: 200,        desc: '猫耳巴士站牌' },
-    { id: 6,  type: 'property', name: '狗爪咖啡馆',     image: '/monopoly-assets/tiles/tile-6.png',          group: 'lightblue', price: 100, desc: '咖啡杯上印着狗爪' },
+    { id: 3,  type: 'property', name: '毛线球杂货铺',   image: '/monopoly-assets/tiles/tile-3.png',          group: 'brown',    price: 600,  desc: '彩色毛线球堆成山' },
+    { id: 4,  type: 'tax',      name: '零食税',         image: '/monopoly-assets/tiles/tile-tax.png',        amount: 2000,       desc: '橘猫镇长收税台' },
+    { id: 5,  type: 'station',  name: '猫咪巴士站',     image: '/monopoly-assets/tiles/tile-station-cat.png', price: 2000,        desc: '猫耳巴士站牌' },
+    { id: 6,  type: 'property', name: '狗爪咖啡馆',     image: '/monopoly-assets/tiles/tile-6.png',          group: 'lightblue', price: 1000, desc: '咖啡杯上印着狗爪' },
     { id: 7,  type: 'chest',    name: '命运狗屋',       image: '/monopoly-assets/tiles/tile-chest.png',      desc: '狗屋形状宝箱' },
-    { id: 8,  type: 'property', name: '彩虹宠物医院',   image: '/monopoly-assets/tiles/tile-8.png',          group: 'lightblue', price: 100, desc: '粉色医院+红十字' },
-    { id: 9,  type: 'property', name: '喵爪书店',       image: '/monopoly-assets/tiles/tile-9.png',          group: 'lightblue', price: 120, desc: '猫咪趴在书堆上' },
+    { id: 8,  type: 'property', name: '彩虹宠物医院',   image: '/monopoly-assets/tiles/tile-8.png',          group: 'lightblue', price: 1000, desc: '粉色医院+红十字' },
+    { id: 9,  type: 'property', name: '喵爪书店',       image: '/monopoly-assets/tiles/tile-9.png',          group: 'lightblue', price: 1200, desc: '猫咪趴在书堆上' },
     { id: 10, type: 'jail',     name: '宠物寄养所',     image: '/monopoly-assets/tiles/tile-jail.png',       desc: '栅栏+委屈小狗' },
-    { id: 11, type: 'property', name: '骨头健身房',     image: '/monopoly-assets/tiles/tile-11.png',         group: 'pink',     price: 140, desc: '狗狗举骨头哑铃' },
-    { id: 12, type: 'utility',  name: '喵喵电力',       image: '/monopoly-assets/tiles/tile-utility-power.png', price: 150,     desc: '猫耳发电塔' },
-    { id: 13, type: 'property', name: '毛绒玩具店',     image: '/monopoly-assets/tiles/tile-13.png',         group: 'pink',     price: 140, desc: '满屋毛绒玩具' },
-    { id: 14, type: 'property', name: '狗狗美容院',     image: '/monopoly-assets/tiles/tile-14.png',         group: 'pink',     price: 160, desc: '浴缸+泡泡' },
-    { id: 15, type: 'station',  name: '狗狗快车站',     image: '/monopoly-assets/tiles/tile-station-dog.png', price: 200,       desc: '狗骨头形状车站' },
-    { id: 16, type: 'property', name: '仓鼠滚轮乐园',   image: '/monopoly-assets/tiles/tile-16.png',         group: 'orange',   price: 180, desc: '大滚轮+仓鼠' },
+    { id: 11, type: 'property', name: '骨头健身房',     image: '/monopoly-assets/tiles/tile-11.png',         group: 'pink',     price: 1400, desc: '狗狗举骨头哑铃' },
+    { id: 12, type: 'utility',  name: '喵喵电力',       image: '/monopoly-assets/tiles/tile-utility-power.png', price: 1500,     desc: '猫耳发电塔' },
+    { id: 13, type: 'property', name: '毛绒玩具店',     image: '/monopoly-assets/tiles/tile-13.png',         group: 'pink',     price: 1400, desc: '满屋毛绒玩具' },
+    { id: 14, type: 'property', name: '狗狗美容院',     image: '/monopoly-assets/tiles/tile-14.png',         group: 'pink',     price: 1600, desc: '浴缸+泡泡' },
+    { id: 15, type: 'station',  name: '狗狗快车站',     image: '/monopoly-assets/tiles/tile-station-dog.png', price: 2000,       desc: '狗骨头形状车站' },
+    { id: 16, type: 'property', name: '仓鼠滚轮乐园',   image: '/monopoly-assets/tiles/tile-16.png',         group: 'orange',   price: 1800, desc: '大滚轮+仓鼠' },
     { id: 17, type: 'chance',   name: '幸运猫爪',       image: '/monopoly-assets/tiles/tile-chance.png',     desc: '发光猫爪印' },
-    { id: 18, type: 'property', name: '猫咪歌剧院',     image: '/monopoly-assets/tiles/tile-18.png',         group: 'orange',   price: 180, desc: '猫耳剧院帷幕' },
-    { id: 19, type: 'property', name: '狗狗音乐厅',     image: '/monopoly-assets/tiles/tile-19.png',         group: 'orange',   price: 200, desc: '狗狗吹萨克斯' },
+    { id: 18, type: 'property', name: '猫咪歌剧院',     image: '/monopoly-assets/tiles/tile-18.png',         group: 'orange',   price: 1800, desc: '猫耳剧院帷幕' },
+    { id: 19, type: 'property', name: '狗狗音乐厅',     image: '/monopoly-assets/tiles/tile-19.png',         group: 'orange',   price: 2000, desc: '狗狗吹萨克斯' },
     { id: 20, type: 'parking',  name: '阳光草坪',       image: '/monopoly-assets/tiles/tile-parking.png',    desc: '野餐垫+气球' },
-    { id: 21, type: 'property', name: '兔兔胡萝卜田',   image: '/monopoly-assets/tiles/tile-21.png',         group: 'red',      price: 220, desc: '兔子拔萝卜' },
+    { id: 21, type: 'property', name: '兔兔胡萝卜田',   image: '/monopoly-assets/tiles/tile-21.png',         group: 'red',      price: 2200, desc: '兔子拔萝卜' },
     { id: 22, type: 'chest',    name: '命运狗屋',       image: '/monopoly-assets/tiles/tile-chest.png',      desc: '狗屋宝箱' },
-    { id: 23, type: 'property', name: '企鹅冰沙店',     image: '/monopoly-assets/tiles/tile-23.png',         group: 'red',      price: 220, desc: '企鹅卖冰沙' },
-    { id: 24, type: 'property', name: '熊猫竹林茶馆',   image: '/monopoly-assets/tiles/tile-24.png',         group: 'red',      price: 240, desc: '熊猫泡茶' },
-    { id: 25, type: 'station',  name: '仓鼠轮渡',       image: '/monopoly-assets/tiles/tile-station-hamster.png', price: 200,    desc: '仓鼠踩轮船' },
-    { id: 26, type: 'property', name: '狐狸裁缝铺',     image: '/monopoly-assets/tiles/tile-26.png',         group: 'yellow',   price: 260, desc: '狐狸踩缝纫机' },
-    { id: 27, type: 'property', name: '浣熊便利店',     image: '/monopoly-assets/tiles/tile-27.png',         group: 'yellow',   price: 260, desc: '浣熊洗水果' },
-    { id: 28, type: 'utility',  name: '汪汪水厂',       image: '/monopoly-assets/tiles/tile-utility-water.png', price: 150,     desc: '狗骨头水龙头' },
-    { id: 29, type: 'property', name: '绵羊温泉旅馆',   image: '/monopoly-assets/tiles/tile-29.png',         group: 'yellow',   price: 280, desc: '绵羊泡温泉' },
+    { id: 23, type: 'property', name: '企鹅冰沙店',     image: '/monopoly-assets/tiles/tile-23.png',         group: 'red',      price: 2200, desc: '企鹅卖冰沙' },
+    { id: 24, type: 'property', name: '熊猫竹林茶馆',   image: '/monopoly-assets/tiles/tile-24.png',         group: 'red',      price: 2400, desc: '熊猫泡茶' },
+    { id: 25, type: 'station',  name: '仓鼠轮渡',       image: '/monopoly-assets/tiles/tile-station-hamster.png', price: 2000,    desc: '仓鼠踩轮船' },
+    { id: 26, type: 'property', name: '狐狸裁缝铺',     image: '/monopoly-assets/tiles/tile-26.png',         group: 'yellow',   price: 2600, desc: '狐狸踩缝纫机' },
+    { id: 27, type: 'property', name: '浣熊便利店',     image: '/monopoly-assets/tiles/tile-27.png',         group: 'yellow',   price: 2600, desc: '浣熊洗水果' },
+    { id: 28, type: 'utility',  name: '汪汪水厂',       image: '/monopoly-assets/tiles/tile-utility-water.png', price: 1500,     desc: '狗骨头水龙头' },
+    { id: 29, type: 'property', name: '绵羊温泉旅馆',   image: '/monopoly-assets/tiles/tile-29.png',         group: 'yellow',   price: 2800, desc: '绵羊泡温泉' },
     { id: 30, type: 'gotojail', name: '宠物管理员',     image: '/monopoly-assets/tiles/tile-gotojail.png',   desc: '严肃猫管理员抓人' },
-    { id: 31, type: 'property', name: '鹦鹉糖果店',     image: '/monopoly-assets/tiles/tile-31.png',         group: 'green',    price: 300, desc: '彩色糖果罐' },
-    { id: 32, type: 'property', name: '刺猬花店',       image: '/monopoly-assets/tiles/tile-32.png',         group: 'green',    price: 300, desc: '刺猬背鲜花' },
+    { id: 31, type: 'property', name: '鹦鹉糖果店',     image: '/monopoly-assets/tiles/tile-31.png',         group: 'green',    price: 3000, desc: '彩色糖果罐' },
+    { id: 32, type: 'property', name: '刺猬花店',       image: '/monopoly-assets/tiles/tile-32.png',         group: 'green',    price: 3000, desc: '刺猬背鲜花' },
     { id: 33, type: 'chance',   name: '幸运猫爪',       image: '/monopoly-assets/tiles/tile-chance.png',     desc: '发光猫爪印' },
-    { id: 34, type: 'property', name: '松鼠坚果银行',   image: '/monopoly-assets/tiles/tile-34.png',         group: 'green',    price: 320, desc: '松鼠守着金坚果' },
-    { id: 35, type: 'station',  name: '兔兔热气球',     image: '/monopoly-assets/tiles/tile-station-rabbit.png', price: 200,     desc: '热气球吊篮是胡萝卜' },
+    { id: 34, type: 'property', name: '松鼠坚果银行',   image: '/monopoly-assets/tiles/tile-34.png',         group: 'green',    price: 3200, desc: '松鼠守着金坚果' },
+    { id: 35, type: 'station',  name: '兔兔热气球',     image: '/monopoly-assets/tiles/tile-station-rabbit.png', price: 2000,     desc: '热气球吊篮是胡萝卜' },
     { id: 36, type: 'chest',    name: '命运狗屋',       image: '/monopoly-assets/tiles/tile-chest.png',      desc: '狗屋宝箱' },
-    { id: 37, type: 'property', name: '天鹅湖畔别墅',   image: '/monopoly-assets/tiles/tile-37.png',         group: 'darkblue', price: 350, desc: '天鹅+湖畔小别墅' },
-    { id: 38, type: 'tax',      name: '小镇建设费',     image: '/monopoly-assets/tiles/tile-tax.png',        amount: 100,       desc: '镇长猫拿着锤子' },
-    { id: 39, type: 'property', name: '星空观景台',     image: '/monopoly-assets/tiles/tile-39.png',         group: 'darkblue', price: 400, desc: '猫狗一起望星星' },
+    { id: 37, type: 'property', name: '天鹅湖畔别墅',   image: '/monopoly-assets/tiles/tile-37.png',         group: 'darkblue', price: 3500, desc: '天鹅+湖畔小别墅' },
+    { id: 38, type: 'tax',      name: '小镇建设费',     image: '/monopoly-assets/tiles/tile-tax.png',        amount: 1000,       desc: '镇长猫拿着锤子' },
+    { id: 39, type: 'property', name: '星空观景台',     image: '/monopoly-assets/tiles/tile-39.png',         group: 'darkblue', price: 4000, desc: '猫狗一起望星星' },
 ]
 
 export const BOARD_SIZE = BOARD.length // 40
-export const GO_SALARY = 200
+export const GO_SALARY = 2000
 export const JAIL_TILE = 10
-export const START_CASH = 1500
+export const START_CASH = 15000
 export const MAX_HOUSES = 5
-export const GET_OUT_FEE = 50
+export const GET_OUT_FEE = 500
 export const HOUSE_COST_RATIO = 0.5
 
 // 房屋等级名称（萌系）
@@ -113,46 +113,46 @@ export function houseCostOf(tile) {
 
 // ---- 机会卡（幸运猫爪）萌系文本 ----
 export const CHANCE_CARDS = [
-    { text: '鱼干大促销！领 ¥150 小鱼干', type: 'money', amount: 150 },
-    { text: '偷吃零食被抓，罚 ¥100', type: 'money', amount: -100 },
-    { text: '猫粮中奖！获得 ¥200', type: 'money', amount: 200 },
-    { text: '咬坏沙发赔钱，支付 ¥80', type: 'money', amount: -80 },
+    { text: '鱼干大促销！领 ¥1500 小鱼干', type: 'money', amount: 1500 },
+    { text: '偷吃零食被抓，罚 ¥1000', type: 'money', amount: -1000 },
+    { text: '猫粮中奖！获得 ¥2000', type: 'money', amount: 2000 },
+    { text: '咬坏沙发赔钱，支付 ¥800', type: 'money', amount: -800 },
     { text: '获得免费出狱卡（撒娇成功）', type: 'jailcard' },
     { text: '打翻花瓶被管理员抓走，进寄养所', type: 'gotojail' },
     { text: '散步到镇中心，回到起点领工资', type: 'togo', target: 0 },
     { text: '追蝴蝶前进 3 格', type: 'forward', steps: 3 },
     { text: '被狗吓到后退 2 格', type: 'back', steps: 2 },
-    { text: '捐给流浪猫基金 ¥50', type: 'money', amount: -50 },
-    { text: '股市（松鼠银行）大涨，获得 ¥120', type: 'money', amount: 120 },
-    { text: '看兽医花费 ¥60', type: 'money', amount: -60 },
+    { text: '捐给流浪猫基金 ¥500', type: 'money', amount: -500 },
+    { text: '股市（松鼠银行）大涨，获得 ¥1200', type: 'money', amount: 1200 },
+    { text: '看兽医花费 ¥600', type: 'money', amount: -600 },
 ]
 
 // ---- 命运卡（命运狗屋）萌系文本 ----
 export const CHEST_CARDS = [
-    { text: '生日收到礼物！领 ¥100', type: 'money', amount: 100 },
-    { text: '退还宠物医保 ¥80', type: 'money', amount: 80 },
-    { text: '保险理赔，获得 ¥180', type: 'money', amount: 180 },
-    { text: '交水电费（喵喵电力），支付 ¥90', type: 'money', amount: -90 },
+    { text: '生日收到礼物！领 ¥1000', type: 'money', amount: 1000 },
+    { text: '退还宠物医保 ¥800', type: 'money', amount: 800 },
+    { text: '保险理赔，获得 ¥1800', type: 'money', amount: 1800 },
+    { text: '交水电费（喵喵电力），支付 ¥900', type: 'money', amount: -900 },
     { text: '获得免费出狱卡（乖巧表现）', type: 'jailcard' },
-    { text: '继承猫奶奶遗产，获得 ¥250', type: 'money', amount: 250 },
-    { text: '公益捐猫粮 ¥70', type: 'money', amount: -70 },
+    { text: '继承猫奶奶遗产，获得 ¥2500', type: 'money', amount: 2500 },
+    { text: '公益捐猫粮 ¥700', type: 'money', amount: -700 },
     { text: '闯红灯被管理员抓走，进寄养所', type: 'gotojail' },
     { text: '返程车票，回到起点领工资', type: 'togo', target: 0 },
-    { text: '幸运转盘，获得 ¥160', type: 'money', amount: 160 },
-    { text: '修理抓坏的窗帘，支付 ¥75', type: 'money', amount: -75 },
-    { text: '年终奖到账，获得 ¥140', type: 'money', amount: 140 },
+    { text: '幸运转盘，获得 ¥1600', type: 'money', amount: 1600 },
+    { text: '修理抓坏的窗帘，支付 ¥750', type: 'money', amount: -750 },
+    { text: '年终奖到账，获得 ¥1400', type: 'money', amount: 1400 },
 ]
 
 // ---- 预置 NPC（猫狗角色，快速开始填充用） ----
 // 完整角色数据在 characters.js，这里给 NPC 用简化版
 export const MONOPOLY_NPCS = [
-    { id: 'npc_pudding',  name: '布丁',  avatar: '🐱', character: 'pudding',  species: '橘猫',   cash: 1500 },
-    { id: 'npc_nuomi',    name: '糯米',  avatar: '🐶', character: 'nuomi',    species: '萨摩耶', cash: 1500 },
-    { id: 'npc_coco',     name: '可可',  avatar: '🐈', character: 'coco',     species: '黑猫',   cash: 1500 },
-    { id: 'npc_tuanzi',   name: '团子',  avatar: '🐕', character: 'tuanzi',   species: '柯基',   cash: 1500 },
-    { id: 'npc_naicha',   name: '奶茶',  avatar: '😺', character: 'naicha',   species: '布偶猫', cash: 1500 },
-    { id: 'npc_doudou',   name: '豆豆',  avatar: '🦊', character: 'doudou',   species: '柴犬',   cash: 1500 },
-    { id: 'npc_xuehua',   name: '雪花',  avatar: '😾', character: 'xuehua',   species: '白猫',   cash: 1500 },
+    { id: 'npc_pudding',  name: '布丁',  avatar: '🐱', character: 'pudding',  species: '橘猫',   cash: 15000 },
+    { id: 'npc_nuomi',    name: '糯米',  avatar: '🐶', character: 'nuomi',    species: '萨摩耶', cash: 15000 },
+    { id: 'npc_coco',     name: '可可',  avatar: '🐈', character: 'coco',     species: '黑猫',   cash: 15000 },
+    { id: 'npc_tuanzi',   name: '团子',  avatar: '🐕', character: 'tuanzi',   species: '柯基',   cash: 15000 },
+    { id: 'npc_naicha',   name: '奶茶',  avatar: '😺', character: 'naicha',   species: '布偶猫', cash: 15000 },
+    { id: 'npc_doudou',   name: '豆豆',  avatar: '🦊', character: 'doudou',   species: '柴犬',   cash: 15000 },
+    { id: 'npc_xuehua',   name: '雪花',  avatar: '😾', character: 'xuehua',   species: '白猫',   cash: 15000 },
 ]
 
 export const PLAYER_COLORS = [
