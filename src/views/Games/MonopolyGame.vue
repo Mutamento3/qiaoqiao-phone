@@ -539,10 +539,10 @@ const unreadCount = ref(0)
 const chatScroll = ref(null)
 let lastChatLen = 0
 
-// 操作气泡（棋盘中央逐个飘出，排队不冲突）
+// 操作气泡（棋盘顶部逐个飘出，排队不冲突）
 const currentBubble = ref(null)
 const bubbleQueue = []
-const seenBubbleIds = new Set()
+let bubbleReadIndex = 0
 let _bubbleConsuming = false
 let _bubbleTimer = null
 function consumeBubbles() {
@@ -558,8 +558,6 @@ function consumeBubbles() {
     }, stay)
 }
 function pushBubble(b) {
-    if (seenBubbleIds.has(b.id)) return
-    seenBubbleIds.add(b.id)
     bubbleQueue.push(b)
     consumeBubbles()
 }
@@ -1095,11 +1093,17 @@ watch(() => gs.value?.chat?.length, (n, o) => {
 })
 watch(chatOpen, (v) => { if (v) { unreadCount.value = 0; nextTick(() => { if (chatScroll.value) chatScroll.value.scrollTop = chatScroll.value.scrollHeight }) } })
 
-// 操作气泡：监听 store 事件队列，逐个飘出（store 数组只增不消费，本地去重后排队）
-watch(() => monopolyStore.actionBubbles, (list) => {
-    if (!list) return
-    for (const b of list) pushBubble(b)
-}, { deep: true })
+// 操作气泡：监听 store 事件队列长度，用游标消费，避免遍历全数组和重放旧气泡
+watch(() => monopolyStore.actionBubbles.value.length, (len, oldLen) => {
+    if (len < bubbleReadIndex || (oldLen !== undefined && len < oldLen)) {
+        bubbleReadIndex = 0
+        return
+    }
+    while (bubbleReadIndex < len) {
+        pushBubble(monopolyStore.actionBubbles.value[bubbleReadIndex])
+        bubbleReadIndex++
+    }
+})
 
 onMounted(() => {
     if (!monopolyStore.currentRoom || !monopolyStore.gameState) {
@@ -1124,6 +1128,11 @@ onMounted(() => {
 onUnmounted(() => {
     stopBGM()
     if (_bubbleTimer) clearTimeout(_bubbleTimer)
+    // 离开游戏页时清空气泡队列，防止下次进来重放旧气泡
+    monopolyStore.actionBubbles.value = []
+    bubbleQueue.length = 0
+    bubbleReadIndex = 0
+    currentBubble.value = null
     window.removeEventListener('pointerdown', tryStartBgmOnGesture)
     window.removeEventListener('touchend', tryStartBgmOnGesture)
     window.removeEventListener('keydown', tryStartBgmOnGesture)
@@ -1650,12 +1659,12 @@ function confirmLeave() {
     z-index: 4;
 }
 
-/* ===== 操作气泡（棋盘中央逐个飘出） ===== */
+/* ===== 操作气泡（棋盘顶部红框区域逐个飘出） ===== */
 .action-bubble-layer {
     position: absolute;
     left: 50%;
-    top: 44%;
-    transform: translate(-50%, -50%);
+    top: 14%;
+    transform: translateX(-50%);
     z-index: 45;
     pointer-events: none;
     display: flex;

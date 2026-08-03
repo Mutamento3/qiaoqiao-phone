@@ -124,6 +124,8 @@ export const useMonopolyStore = defineStore('monopoly', () => {
     function clearState() {
         currentRoom.value = null
         gameState.value = null
+        actionBubbles.value = []
+        _bubbleSeq = 0
         try { localStorage.removeItem(STORAGE_KEY) } catch (e) { /* ignore */ }
         if (!useSettingsStore().gameChatMemory.enabled) clearGameChat('monopoly')
     }
@@ -261,6 +263,8 @@ export const useMonopolyStore = defineStore('monopoly', () => {
             aiThinking: null,
             cardAnimation: null,
         }
+        actionBubbles.value = []
+        _bubbleSeq = 0
         logEvent(`🐾 帕瓦小镇开局！${players.length} 只猫狗入场，每人启动资金 ¥${START_CASH} 小鱼干。`)
         pushChat({ role: 'system', name: '系统', content: `帕瓦小镇开局，${players.length} 人同场竞技，祝好运！` })
         // 每人发 2 张初始道具卡
@@ -291,7 +295,6 @@ export const useMonopolyStore = defineStore('monopoly', () => {
     function pushAction(icon, text, color, kind = 'info') {
         if (!color) color = '#5dade2'
         actionBubbles.value.push({ id: ++_bubbleSeq, icon, text, color, kind })
-        if (actionBubbles.value.length > 30) actionBubbles.value.shift()
     }
 
     function activePlayers() {
