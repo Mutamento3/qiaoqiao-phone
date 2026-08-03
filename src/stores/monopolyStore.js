@@ -910,6 +910,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
 
         switch (tile.type) {
             case 'go':
+                afterResolve(p)
                 break
             case 'property':
             case 'station':
@@ -1002,10 +1003,8 @@ export const useMonopolyStore = defineStore('monopoly', () => {
             case 'tax': {
                 const amt = tile.amount
                 logEvent(`🧾 ${p.name} 在 ${tile.name} 缴费 ¥${amt}。`)
-                const paid = Math.min(p.cash, amt)
-                p.cash -= paid
-                gs.freeParkingPot += paid
-                if (p.cash < 0) { p.cash = 0; bankruptTo(p, null, amt) }
+                payTo(p, null, amt, `税费 ¥${amt}（${tile.name}）`)
+                if (p.bankrupt) break
                 else afterResolve(p)
                 break
             }
@@ -1086,10 +1085,8 @@ export const useMonopolyStore = defineStore('monopoly', () => {
                     p.cash += card.amount
                 } else {
                     const amt = -card.amount
-                    const paid = Math.min(p.cash, amt)
-                    p.cash -= paid
-                    gs.freeParkingPot += paid
-                    if (p.cash < 0) { p.cash = 0; bankruptTo(p, null, amt); return }
+                    payTo(p, null, amt, `罚款 ¥${amt}`)
+                    if (p.bankrupt) return
                 }
                 break
             case 'jailcard':
@@ -1144,20 +1141,30 @@ export const useMonopolyStore = defineStore('monopoly', () => {
     // ---------- 支付 / 破产 ----------
     function payTo(payer, receiver, amount, label) {
         const gs = gameState.value
-        const paid = Math.min(payer.cash, amount)
-        payer.cash -= paid
-        if (receiver && !receiver.bankrupt) receiver.cash += paid
-        else gs.freeParkingPot += (receiver ? 0 : paid)
-        if (payer.cash < 0) { payer.cash = 0; bankruptTo(payer, receiver, amount); return }
-        logEvent(`💸 ${payer.name} 向 ${receiver ? receiver.name : '银行'} 支付 ${label}。`)
-        // AI 聊天
-        if (!payer.isUser) {
-            const chat = generateAiChat(payer.characterId, 'payRent')
-            if (chat) pushChat({ role: 'ai', name: payer.name, content: chat })
-        }
-        if (receiver && !receiver.isUser) {
-            const chat = generateAiChat(receiver.characterId, 'getRent')
-            if (chat) pushChat({ role: 'ai', name: receiver.name, content: chat })
+        payer.cash -= amount
+        if (payer.cash >= 0) {
+            // 现金充足：全额支付，保留原有日志与 AI 聊天
+            if (receiver && !receiver.bankrupt) receiver.cash += amount
+            else if (!receiver) gs.freeParkingPot += amount
+            logEvent(`💸 ${payer.name} 向 ${receiver ? receiver.name : '银行'} 支付 ${label}。`)
+            // AI 聊天
+            if (!payer.isUser) {
+                const chat = generateAiChat(payer.characterId, 'payRent')
+                if (chat) pushChat({ role: 'ai', name: payer.name, content: chat })
+            }
+            if (receiver && !receiver.isUser) {
+                const chat = generateAiChat(receiver.characterId, 'getRent')
+                if (chat) pushChat({ role: 'ai', name: receiver.name, content: chat })
+            }
+        } else {
+            // 现金不足：把破产前拥有的全部现金转给 receiver/奖池，触发破产
+            const available = amount + payer.cash // payer.cash 此时为负，available 即破产前现金
+            if (receiver && !receiver.bankrupt) receiver.cash += available
+            else if (!receiver) gs.freeParkingPot += available
+            payer.cash = 0
+            // 注意：bankruptTo 内部会处理紧急存钱罐(+¥3000 自救)并推进回合，这里不要重复处理
+            bankruptTo(payer, receiver, amount)
+            return
         }
     }
 
