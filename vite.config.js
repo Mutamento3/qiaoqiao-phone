@@ -73,6 +73,12 @@ export default defineConfig(({ command }) => ({
       }
     }
   },
+  // 开发态冷启动优化：把体积大、被间接依赖的库预打包成缓存块，
+  // 减少 Vite dev server 逐个 transform ESM 的请求量，缓解首屏 main.js 过大导致的 ~20s 超时。
+  // 仅影响 dev，不影响 esbuild 生产构建。
+  optimizeDeps: {
+    include: ['three', 'tone', 'marked', 'localforage'],
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))

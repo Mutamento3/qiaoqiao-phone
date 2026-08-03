@@ -68,7 +68,7 @@ function makeActiveEffects() {
 export const useMonopolyStore = defineStore('monopoly', () => {
     const currentRoom = ref(null)
     const gameState = ref(null)
-    const settings = ref({ soundEnabled: true })
+    const settings = ref({ soundEnabled: true, bgmEnabled: true })
 
     const hasActiveGame = computed(() =>
         !!currentRoom.value && !!gameState.value &&
@@ -446,6 +446,11 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         gs.cardAnimation = { cardId: card.id, playerName: p.name, cardName: card.name, cardDesc: card.desc, cardType: card.type }
         logEvent(`🎴 ${p.name} 使用了 ${card.name}！`)
         saveState()
+        // 1.5s 后自动清掉卡牌动画遮罩，避免卡屏
+        if (gs._cardAnimTimer) clearTimeout(gs._cardAnimTimer)
+        gs._cardAnimTimer = setTimeout(() => {
+            if (gameState.value) gameState.value.cardAnimation = null
+        }, 1500)
         return true
     }
 
@@ -453,10 +458,13 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         const gs = gameState.value
         const eff = card.effect
         switch (eff.action) {
-            case 'forceDice':
-                gs._forceDice = target // 1-6
-                logEvent(`🎲 ${player.name} 使用遥控骰子，指定掷出 ${target} 点！`)
+            case 'forceDice': {
+                const pip = Number(target)
+                const safePip = pip >= 1 && pip <= 6 ? pip : 1
+                gs._forceDice = safePip
+                logEvent(`🎲 ${player.name} 使用遥控骰子，指定掷出 ${safePip} 点！`)
                 return true
+            }
             case 'teleportTo':
                 moveTo(target, player, true)
                 return true
@@ -746,6 +754,16 @@ export const useMonopolyStore = defineStore('monopoly', () => {
             gs.pendingMove = { playerId: p.id, from, steps: 0, finalPos: JAIL_TILE, passedGo: false, path: [], jailRelease: false, toJail: true }
             gs.doublesCount = 0
         }
+        // 进入 3D 掷骰演出态：结果已算好但不立即移动，等骰子动画结束 finishDiceRoll 再切 moving
+        gs.aiThinking = null
+        gs.phase = 'dice'
+        saveState()
+    }
+
+    // 3D 骰子动画结束后调用，正式进入移动阶段（用户/AI 通用）
+    function finishDiceRoll() {
+        const gs = gameState.value
+        if (!gs || gs.phase !== 'dice') return
         gs.phase = 'moving'
         saveState()
     }
@@ -932,6 +950,9 @@ export const useMonopolyStore = defineStore('monopoly', () => {
                     // 可可收租加成
                     triggerSkill(owner, 'getRent', { amount: rent })
                     payTo(p, owner, rent, `租金 ¥${rent}（${tile.name}）`)
+                    // 若支付导致破产, bankruptTo 内部已调用 endTurn 推进回合, 这里直接收尾,
+                    // 避免后续 afterResolve(p) 再次 endTurn 造成重复推进。
+                    if (p.bankrupt) break
                     // 反击爪
                     if (p.activeEffects.counterClaw && rent > 0) {
                         const counter = Math.round(rent * 0.3)
@@ -1130,8 +1151,15 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         }
         p.properties = []
         p.houses = {}
+        // 破产推进回合：存活玩家 <= 1 直接结算；否则推进到下一玩家。
+        // 注意：tax / applyCard 负金额 / applyMove 陷阱 / jailRoll 等调用方在破产后直接
+        // return，不会调用 afterResolve / endTurn，因此由本函数统一推进回合，
+        // 避免 phase 永远停在 'moving'（界面显示"移动中…"且无按钮）。
+        // endTurn 自身也会在末尾判断 activePlayers<=1 并结算，这里先判可避免多余推进。
         if (activePlayers().length <= 1) {
             finishGame()
+        } else {
+            endTurn()
         }
     }
 
@@ -1468,7 +1496,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         // room
         createRoom, addPlayerById, removePlayer, leaveRoom, loadState,
         // game
-        startGame, rollDice, applyMove, buyProperty, skipBuy, buildHouse,
+        startGame, rollDice, applyMove, finishDiceRoll, buyProperty, skipBuy, buildHouse,
         jailPay, jailUseCard, jailRoll, userEndTurn, userReroll, finishGame,
         // item cards
         useItemCard, drawItemCard,
