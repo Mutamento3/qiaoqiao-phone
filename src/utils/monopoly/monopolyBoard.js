@@ -18,8 +18,8 @@
  *   baseRent = round(price * 0.08)
  *   垄断(同组全持有)：×2
  *   房屋 h 级(1~5)：rent = round(baseRent * (1 + 0.6*h) * (垄断?2:1))
- *   车站：25 * 2^(持有数-1) → 25/50/100/200
- *   公共：骰子×(4/10)
+ *   车站：250 * 2^(持有数-1) → 250/500/1000/2000（物价已×10）
+ *   公共：骰子×(40/80)
  */
 
 export const GROUPS = {
@@ -98,6 +98,11 @@ export const HOUSE_LEVELS = [
 ]
 
 export function baseRentOf(tile) {
+    if (!tile) return 0
+    // 车站：1 个车站基础过路费（对应 ¥250 档）
+    if (tile.type === 'station') return 250
+    // 水电：租金依赖骰子点数，无法固定，详情卡单独展示倍率
+    if (tile.type === 'utility') return 0
     if (tile.type !== 'property') return 0
     return Math.max(2, Math.round(tile.price * 0.08))
 }

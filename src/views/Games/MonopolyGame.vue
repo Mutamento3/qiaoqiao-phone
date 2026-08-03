@@ -30,6 +30,41 @@
             </div>
         </div>
 
+        <!-- 顶部玩家栏：点击查看玩家详情 -->
+        <div class="player-bar" v-if="players.length">
+            <div v-for="p in players" :key="p.id"
+                class="player-item"
+                :class="{ active: p.id === currentPlayer?.id, bankrupt: p.bankrupt }"
+                @click="selectedPlayer = p">
+                <div class="pi-avatar">
+                    <img v-if="isImg(getCharacterOf(p)?.fullBody)" :src="getCharacterOf(p)?.fullBody" />
+                    <img v-else-if="isImg(getCharacterOf(p)?.token)" :src="getCharacterOf(p)?.token" />
+                    <img v-else-if="isImg(p.avatar)" :src="p.avatar" />
+                    <span v-else>{{ p.avatar }}</span>
+                    <i v-if="p.bankrupt" class="pi-dead">💀</i>
+                </div>
+                <div class="pi-name">{{ p.name }}<em v-if="p.isUser">·你</em></div>
+                <div class="pi-cash">¥{{ p.cash }}</div>
+            </div>
+        </div>
+
+        <!-- 操作视觉特效层（纯视觉，不阻塞逻辑） -->
+        <div class="fx-layer">
+            <template v-for="fx in fxItems" :key="fx.id">
+                <div v-if="fx.type === 'buy'" class="fx-coins">
+                    <span class="fx-coin" v-for="n in 8" :key="n" :style="coinStyle(n)">💰</span>
+                </div>
+                <div v-else-if="fx.type === 'penalty'" class="fx-flash fx-flash-red"></div>
+                <div v-else-if="fx.type === 'jail'" class="fx-flash fx-flash-gray"></div>
+                <div v-else-if="fx.type === 'bankrupt'" class="fx-flash fx-fade-gray"><span class="fx-skull">💀</span></div>
+                <div v-else-if="fx.type === 'build'" class="fx-glow" :style="glowStyle(fx.payload.tileId)"></div>
+                <div v-else-if="fx.type === 'draw'" class="fx-card-fly">🎴</div>
+                <div v-else-if="fx.type === 'rent'" class="fx-rent" :style="{ left: (fx.payload.from?.x || 0) + 'px', top: (fx.payload.from?.y || 0) + 'px' }">
+                    <span class="fx-coin-fly" v-for="n in 6" :key="n" :style="rentCoinStyle(n)">💰</span>
+                </div>
+            </template>
+        </div>
+
         <!-- 主内容区 -->
         <div class="game-body relative z-10 min-h-0 portrait:flex portrait:flex-col landscape:flex landscape:flex-row">
             <!-- 左栏：棋盘舞台 -->
@@ -66,6 +101,7 @@
                                         <img v-if="houseCount(tile.id) > 0 && HOUSE_LEVELS[houseCount(tile.id)]?.image" :src="HOUSE_LEVELS[houseCount(tile.id)].image" class="tile-house-img" alt="" />
                                         <span v-else-if="houseCount(tile.id) > 0">{{ houseLevelIcon(tile.id) }}</span>
                                         <span v-else class="tile-house-owned">🏠</span>
+                                        <span v-if="houseCount(tile.id) > 0" class="tile-house-badge">{{ houseCount(tile.id) }}</span>
                                     </div>
                                     <div v-if="tileOwner(tile.id)" class="tile-owner" :style="{ background: tileOwner(tile.id)?.color }"></div>
                                 </div>
@@ -192,8 +228,14 @@
                             {{ selectedTileObj.name }}
                             <span v-if="selectedTileObj.type === 'property'" class="dot" :style="{ background: GROUPS[selectedTileObj.group]?.color }"></span>
                         </div>
-                        <div class="tile-card-line" v-if="selectedTileObj.type === 'property' || selectedTileObj.type === 'station' || selectedTileObj.type === 'utility'">
+                        <div class="tile-card-line" v-if="selectedTileObj.type === 'property'">
                             价格 ¥{{ selectedTileObj.price }} · 基础租金 ¥{{ baseRentOf(selectedTileObj) }}
+                        </div>
+                        <div class="tile-card-line" v-else-if="selectedTileObj.type === 'station'">
+                            价格 ¥{{ selectedTileObj.price }} · 车站 · 持有 {{ selectedStationOwned }} 个过路费：¥250/¥500/¥1000/¥2000
+                        </div>
+                        <div class="tile-card-line" v-else-if="selectedTileObj.type === 'utility'">
+                            价格 ¥{{ selectedTileObj.price }} · 水电 · 掷骰点数 × 40（1 个）/ × 80（2 个）
                         </div>
                         <div class="tile-card-line" v-if="selectedOwner">
                             地主：{{ selectedOwner.name }}（{{ houseLevelName(selectedTileObj.id) }}）
@@ -391,6 +433,62 @@
             </div>
         </div>
 
+        <!-- 玩家详情弹层 -->
+        <div v-if="selectedPlayer" class="pd-mask" @click="selectedPlayer = null">
+            <div class="pd-modal" @click.stop>
+                <button class="pd-close" @click="selectedPlayer = null" aria-label="关闭">✕</button>
+                <div class="pd-head">
+                    <div class="pd-portrait">
+                        <img v-if="isImg(getCharacterOf(selectedPlayer)?.fullBody)" :src="getCharacterOf(selectedPlayer)?.fullBody" />
+                        <img v-else-if="isImg(getCharacterOf(selectedPlayer)?.token)" :src="getCharacterOf(selectedPlayer)?.token" />
+                        <img v-else-if="isImg(selectedPlayer.avatar)" :src="selectedPlayer.avatar" />
+                        <span v-else>{{ selectedPlayer.avatar }}</span>
+                    </div>
+                    <div class="pd-id">
+                        <div class="pd-name">{{ selectedPlayer.name }}
+                            <span v-if="selectedPlayer.isUser" class="pd-you">你</span>
+                        </div>
+                        <div class="pd-species">{{ getCharacterOf(selectedPlayer)?.emoji }} {{ getCharacterOf(selectedPlayer)?.species }} · {{ selectedPlayer.isUser ? '玩家' : 'AI' }}</div>
+                        <div v-if="selectedPlayer.bankrupt" class="pd-bankrupt">💥 已破产出局</div>
+                    </div>
+                </div>
+                <div class="pd-stats">
+                    <div class="pd-stat"><span>现金</span><b>¥{{ selectedPlayer.cash }}</b></div>
+                    <div class="pd-stat"><span>净资产</span><b>¥{{ netWorth(selectedPlayer) }}</b></div>
+                    <div class="pd-stat"><span>所在地</span><b>{{ BOARD[selectedPlayer.position]?.name }}</b></div>
+                </div>
+                <div class="pd-sec">
+                    <div class="pd-sec-title">🏠 拥有的地产（{{ selectedPlayer.properties.length }}）</div>
+                    <div v-if="selectedPlayer.properties.length" class="pd-prop-list">
+                        <div v-for="id in selectedPlayer.properties" :key="id" class="pd-prop">
+                            <span class="pd-prop-dot" :style="{ background: tileById(id) ? (GROUPS[tileById(id).group]?.color || '#999') : '#999' }"></span>
+                            <span class="pd-prop-name">{{ tileById(id)?.name }}</span>
+                            <span class="pd-prop-lvl">{{ houseLevelName(id) }}</span>
+                        </div>
+                    </div>
+                    <div v-else class="pd-empty">暂无地产</div>
+                </div>
+                <div class="pd-sec">
+                    <div class="pd-sec-title">🎴 道具卡（{{ selectedPlayer.itemCards.length }}/5）</div>
+                    <div v-if="selectedPlayer.itemCards.length" class="pd-card-list">
+                        <div v-for="cid in selectedPlayer.itemCards" :key="cid" class="pd-card">
+                            <img v-if="getItemCard(cid)?.image" :src="getItemCard(cid).image" class="pd-card-img" />
+                            <span v-else class="pd-card-ico">🎴</span>
+                            <span class="pd-card-name">{{ getItemCard(cid)?.name }}</span>
+                        </div>
+                    </div>
+                    <div v-else class="pd-empty">暂无道具卡</div>
+                </div>
+                <div class="pd-sec">
+                    <div class="pd-sec-title">✨ 生效中效果</div>
+                    <div v-if="selectedPlayerEffects.length" class="pd-eff-list">
+                        <span v-for="e in selectedPlayerEffects" :key="e.key" class="pd-eff">{{ e.name }}</span>
+                    </div>
+                    <div v-else class="pd-empty">无</div>
+                </div>
+            </div>
+        </div>
+
     </div>
 </template>
 
@@ -429,6 +527,11 @@ const selectedTarget = ref(null)
 const selectedDiceValue = ref(null)
 const cardBursting = ref(false)
 const logOpen = ref(true)
+// 顶部玩家栏点击选中的玩家（详情弹层）
+const selectedPlayer = ref(null)
+// 操作视觉特效层（纯视觉，不阻塞逻辑）
+const fxItems = ref([])
+const fxShake = ref(false)
 
 // 悬浮聊天
 const chatOpen = ref(false)
@@ -514,6 +617,33 @@ const isUserTurn = computed(() => monopolyStore.isUserTurn)
 const buyTile = computed(() => gs.value?.awaitingBuy != null ? monopolyStore.tileById(gs.value.awaitingBuy) : null)
 const selectedTileObj = computed(() => selectedTile.value != null ? monopolyStore.tileById(selectedTile.value) : null)
 const selectedOwner = computed(() => selectedTileObj.value ? monopolyStore.ownerOf(selectedTileObj.value.id) : null)
+// 车站详情卡：当前地主持有的车站数量（决定过路费档位）
+const selectedStationOwned = computed(() => {
+    if (!selectedTileObj.value || selectedTileObj.value.type !== 'station') return 0
+    const o = selectedOwner.value
+    if (!o) return 0
+    return BOARD.filter(t => t.type === 'station' && monopolyStore.ownerOf(t.id)?.id === o.id).length
+})
+
+// 玩家详情弹层：生效中的效果（过滤掉 false/0/null/内部 _ 字段，映射友好名称）
+const EFFECT_FRIENDLY = {
+    shield: '租金护盾', halfRent: '租金减半', noRent: '过路免租',
+    doubleRentNext: '收租翻倍', rentInsurance: '收租保险', counterClaw: '反击爪',
+    blockBuild: '禁盖房', blockCards: '禁道具卡', extraRoll: '额外掷骰',
+    immunityJail: '免罪金牌', moveBonus: '移动加成', limitMove: '步数限制',
+}
+const selectedPlayerEffects = computed(() => {
+    if (!selectedPlayer.value) return []
+    const ae = selectedPlayer.value.activeEffects || {}
+    const out = []
+    for (const k in ae) {
+        if (k.startsWith('_')) continue
+        const v = ae[k]
+        if (!v) continue
+        out.push({ key: k, name: EFFECT_FRIENDLY[k] || k })
+    }
+    return out
+})
 const winner = computed(() => gs.value?.winner ? players.value.find(p => p.id === gs.value.winner) : null)
 const ranking = computed(() => [...players.value].sort((a, b) => monopolyStore.netWorth(b) - monopolyStore.netWorth(a)))
 
@@ -530,7 +660,13 @@ const houseLevelIcon = (id) => {
 }
 const houseLevelName = (id) => {
     const h = houseCount(id)
-    return HOUSE_LEVELS[h]?.name || '空地'
+    const owner = tileOwner(id)
+    if (h === 0) {
+        // 有地主但 0 级：显示"未盖房"；无地主：显示"空地"
+        return owner ? '未盖房（0级）' : '空地'
+    }
+    // 盖房后显示"等级·名称"，如"1级·小帐篷"
+    return `${h}级·${HOUSE_LEVELS[h]?.name || '空地'}`
 }
 const houseLevelShort = (h) => {
     return HOUSE_LEVELS[h]?.icon || '⚪'
@@ -656,8 +792,12 @@ function tileDetailText(tile) {
     if (!tile) return ''
     const parts = []
     if (tile.price) parts.push('价格 ¥' + tile.price)
-    if (tile.type === 'property' || tile.type === 'station' || tile.type === 'utility') {
+    if (tile.type === 'property') {
         parts.push('基础租金 ¥' + baseRentOf(tile))
+    } else if (tile.type === 'station') {
+        parts.push('过路费：¥250/¥500/¥1000/¥2000（随持有数递增）')
+    } else if (tile.type === 'utility') {
+        parts.push('过路费：骰子点数 ×40（1 个）/ ×80（2 个）')
     }
     const funcMap = {
         go: '起点 · 路过领工资', tax: '缴税点', parking: '免费停车奖池',
@@ -738,17 +878,35 @@ async function aiAct() {
     monopolyStore.rollDice()
 }
 
+// 落子后把棋子显示位置对齐到真实落点
+// （修正入狱/传送等被 resolveTile 二次改写 position、但 displayPos 未同步的情况）
+function syncToken(pid) {
+    const pl = monopolyStore.gameState?.players.find(x => x.id === pid)
+    if (pl) displayPos[pid] = pl.position
+}
+
 function startMoveAnimation() {
     if (animating) return
     const g = monopolyStore.gameState
     const mv = g?.pendingMove
-    if (!mv) { monopolyStore.applyMove(); return }
+    if (!mv) {
+        // 没有待处理移动却停在 moving：兜底直接结算，避免永久卡死
+        if (g?.phase === 'moving') monopolyStore.applyMove()
+        return
+    }
     animating = true
     const pid = mv.playerId
+    // 安全保底：动画开始后 6s 若仍停在 moving（卡住/未收尾），强制结算推进回合
+    const safetyTimer = setTimeout(() => {
+        const gg = monopolyStore.gameState
+        if (gg && gg.phase === 'moving') monopolyStore.applyMove()
+    }, 6000)
     if (!mv.path || !mv.path.length) {
         displayPos[pid] = mv.finalPos
         animating = false
+        clearTimeout(safetyTimer)
         monopolyStore.applyMove()
+        syncToken(pid)
         return
     }
     let i = 0
@@ -761,7 +919,8 @@ function startMoveAnimation() {
         } else {
             displayPos[pid] = mv.finalPos
             animating = false
-            setTimeout(() => monopolyStore.applyMove(), 600)
+            clearTimeout(safetyTimer)
+            setTimeout(() => { monopolyStore.applyMove(); syncToken(pid) }, 600)
         }
     }
     step()
@@ -789,6 +948,15 @@ watch(() => monopolyStore.gameState?.phase, (np, op) => {
         }
     }
 })
+
+// 监听 pendingMove：卡牌/传送造成的 moveTo 常在 phase 已为 'moving' 时再次写入 pendingMove，
+// 此时 phase 不变化、上面的 phase watch 不会触发，这里补触发移动动画，避免棋子不动/卡死。
+watch(() => monopolyStore.gameState?.pendingMove, (nm) => {
+    if (nm && monopolyStore.gameState?.phase === 'moving') {
+        nextTick(startMoveAnimation)
+    }
+})
+
 watch(() => [monopolyStore.gameState?.phase, monopolyStore.gameState?.currentTurn], () => {
     scheduleAI()
 })
@@ -816,6 +984,93 @@ watch(() => gs.value?.log?.length, (n) => {
         }
     }
     lastLogLen = len
+})
+
+// ===== 操作视觉特效（纯视觉，不阻塞逻辑）=====
+// 监听事件日志，按关键词分类触发 CSS 动画；fxQueue 逐个播放，1.5s 后自动移除。
+let _fxSeq = 0
+let _lastFxLen = 0
+let _fxShakeTimer = null
+function classifyFx(text) {
+    if (text.includes('买下')) return 'buy'
+    if (text.includes('陷阱') || text.includes('罚款') || text.includes('赔钱')) return 'penalty'
+    if (text.includes('寄养所') || text.includes('进监狱')) return 'jail'
+    if (text.includes('破产出局')) return 'bankrupt'
+    if (text.includes('升级为') || text.includes('盖房')) return 'build'
+    if (text.includes('抽到')) return 'draw'
+    if (text.includes('租金')) return 'rent'
+    return null
+}
+// 棋子棋盘坐标 -> 屏幕坐标（viewport 相对）
+function tokenScreenPos(pos) {
+    const el = boardEl.value
+    if (!el || pos == null) return null
+    const rect = el.getBoundingClientRect()
+    const { c, r } = gridPos(pos)
+    return {
+        x: rect.left + (c - 0.5) / 11 * rect.width,
+        y: rect.top + (r - 0.5) / 11 * rect.height,
+    }
+}
+// 地块格屏幕坐标（viewport 相对）
+function tileScreenRect(tileId) {
+    const el = boardEl.value
+    if (!el || tileId == null) return null
+    const rect = el.getBoundingClientRect()
+    const { c, r } = gridPos(tileId)
+    const w = rect.width / 11, h = rect.height / 11
+    return { left: rect.left + (c - 1) * w, top: rect.top + (r - 1) * h, width: w, height: h }
+}
+function spawnFx(type, payload) {
+    const id = ++_fxSeq
+    fxItems.value.push({ id, type, payload: payload || {} })
+    if (type === 'penalty' || type === 'jail') {
+        fxShake.value = true
+        if (_fxShakeTimer) clearTimeout(_fxShakeTimer)
+        _fxShakeTimer = setTimeout(() => { fxShake.value = false }, 420)
+    }
+    setTimeout(() => {
+        fxItems.value = fxItems.value.filter(f => f.id !== id)
+    }, 1500)
+}
+function coinStyle(n) {
+    const left = 8 + (n * 11) + (Math.random() * 6 - 3)
+    const delay = (n % 4) * 0.08 + Math.random() * 0.1
+    return { left: left + '%', animationDelay: delay.toFixed(2) + 's' }
+}
+function rentCoinStyle(n) {
+    const dx = (Math.random() * 36 - 18).toFixed(0)
+    const dy = -(40 + Math.random() * 40).toFixed(0)
+    return { '--dx': dx + 'px', '--dy': dy + 'px', animationDelay: (n * 0.05).toFixed(2) + 's' }
+}
+function glowStyle(tileId) {
+    const rect = tileScreenRect(tileId)
+    if (!rect) return { left: '50%', top: '50%', width: '60px', height: '60px', transform: 'translate(-50%, -50%)' }
+    return { left: rect.left + 'px', top: rect.top + 'px', width: rect.width + 'px', height: rect.height + 'px' }
+}
+watch(() => gs.value?.log?.length, (n) => {
+    const len = n || 0
+    if (len > _lastFxLen) {
+        const log = gs.value?.log || []
+        const start = Math.max(_lastFxLen, len > 200 ? len - 50 : 0)
+        for (let i = start; i < len; i++) {
+            const txt = log[i]?.text || ''
+            const type = classifyFx(txt)
+            if (!type) continue
+            let payload = {}
+            if (type === 'rent') {
+                const from = tokenScreenPos(currentPlayer.value?.position)
+                payload = { from }
+            } else if (type === 'build') {
+                const m = txt.match(/在 (.+?) 升级/)
+                const name = m ? m[1] : null
+                const t = name ? BOARD.find(b => b.name === name) : null
+                payload = { tileId: t ? t.id : null }
+            }
+            spawnFx(type, payload)
+        }
+    }
+    _lastFxLen = len
 })
 
 // 聊天未读 + 自动滚动
@@ -945,6 +1200,137 @@ function confirmLeave() {
     border-radius: 999px; border: 2px solid #2e86c1;
     display: flex; align-items: center; justify-content: center;
 }
+
+/* ===== 顶部玩家栏 ===== */
+.player-bar {
+    position: relative; z-index: 20;
+    display: flex; gap: 6px;
+    padding: 6px 8px;
+    background: linear-gradient(180deg, #eaf6fd 0%, #d6ecfa 100%);
+    border-bottom: 2px solid rgba(46, 134, 193, 0.18);
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.player-bar::-webkit-scrollbar { display: none; }
+.player-item {
+    flex: 0 0 auto;
+    display: flex; flex-direction: column; align-items: center; gap: 1px;
+    padding: 4px 8px;
+    border-radius: 12px;
+    background: #fff;
+    border: 2px solid transparent;
+    box-shadow: 0 2px 5px rgba(46, 134, 193, 0.12);
+    cursor: pointer;
+    transition: transform 0.12s, border-color 0.12s, box-shadow 0.12s;
+    min-width: 56px;
+}
+.player-item:active { transform: translateY(2px); }
+.player-item.active {
+    border-color: #f4d03f;
+    box-shadow: 0 0 0 2px #f4d03f, 0 3px 8px rgba(244, 208, 63, 0.35);
+}
+.player-item.bankrupt { filter: grayscale(0.7); opacity: 0.7; }
+.pi-avatar {
+    position: relative;
+    width: 34px; height: 34px; border-radius: 50%;
+    overflow: hidden; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(180deg, #e3f2fd 0%, #bbdefb 100%);
+    border: 2px solid #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.12);
+}
+.pi-avatar img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+.pi-avatar span { font-size: 18px; }
+.pi-dead { position: absolute; bottom: -2px; right: -2px; font-size: 13px; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3)); }
+.pi-name { font-size: 10px; font-weight: 800; color: #1a2634; max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pi-name em { font-style: normal; font-size: 8px; color: #2e86c1; background: #d6ecfa; border-radius: 4px; padding: 0 3px; }
+.pi-cash { font-size: 9px; font-weight: 900; color: #b45309; }
+
+/* ===== 玩家详情弹层 ===== */
+.pd-mask {
+    position: fixed; inset: 0; z-index: 210;
+    background: rgba(15, 23, 42, 0.55);
+    backdrop-filter: blur(3px);
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+}
+.pd-modal {
+    position: relative;
+    width: 100%; max-width: 340px; max-height: 86vh; overflow-y: auto;
+    background: linear-gradient(180deg, #ffffff 0%, #f0f9ff 100%);
+    border: 3px solid #f4d03f;
+    border-radius: 22px;
+    padding: 18px 16px 16px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.38), inset 0 2px 0 rgba(255, 255, 255, 0.8);
+    animation: pdPop 0.28s ease-out;
+}
+@keyframes pdPop {
+    0% { transform: scale(0.82) translateY(20px); opacity: 0; }
+    100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+.pd-close {
+    position: absolute; top: 10px; right: 10px;
+    width: 28px; height: 28px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(93, 173, 226, 0.45);
+    color: #2e86c1; font-size: 13px; font-weight: 900;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.14);
+    z-index: 4;
+}
+.pd-head { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
+.pd-portrait {
+    flex: 0 0 64px; width: 64px; height: 72px; border-radius: 12px; overflow: hidden;
+    background: linear-gradient(180deg, #e3f2fd 0%, #bbdefb 100%);
+    border: 2.5px solid #fff; box-shadow: 0 5px 12px rgba(0, 0, 0, 0.16);
+    display: flex; align-items: flex-end; justify-content: center;
+}
+.pd-portrait img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+.pd-portrait span { font-size: 30px; padding-bottom: 4px; }
+.pd-id { min-width: 0; flex: 1; }
+.pd-name { font-size: 18px; font-weight: 900; color: #1a2634; display: flex; align-items: center; gap: 5px; }
+.pd-you { font-size: 10px; background: #5dade2; color: #fff; border-radius: 6px; padding: 1px 5px; }
+.pd-species { font-size: 11px; color: #5dade2; font-weight: 700; margin-top: 2px; }
+.pd-bankrupt { display: inline-block; margin-top: 4px; font-size: 10px; font-weight: 800; color: #fff; background: #e74c3c; border-radius: 6px; padding: 1px 7px; }
+.pd-stats { display: flex; gap: 6px; margin-bottom: 12px; }
+.pd-stat {
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 7px 4px; border-radius: 12px;
+    background: #fff; border: 1.5px solid #aed6f1;
+    box-shadow: 0 2px 5px rgba(46, 134, 193, 0.08);
+}
+.pd-stat span { font-size: 9px; color: #64748b; font-weight: 700; }
+.pd-stat b { font-size: 12px; color: #1a2634; font-weight: 900; }
+.pd-sec { margin-bottom: 12px; }
+.pd-sec-title { font-size: 11px; font-weight: 800; color: #1a2634; margin-bottom: 6px; }
+.pd-prop-list, .pd-card-list, .pd-eff-list { display: flex; flex-direction: column; gap: 5px; }
+.pd-card-list { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+.pd-prop {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 8px; border-radius: 10px;
+    background: #fff; border: 1.5px solid #e3f2fd;
+    box-shadow: 0 2px 4px rgba(46, 134, 193, 0.06);
+    font-size: 11px;
+}
+.pd-prop-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; box-shadow: 0 1px 2px rgba(0,0,0,0.15); }
+.pd-prop-name { flex: 1; min-width: 0; font-weight: 700; color: #1a2634; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pd-prop-lvl { color: #b45309; font-weight: 800; flex: 0 0 auto; }
+.pd-card {
+    display: flex; align-items: center; gap: 4px;
+    padding: 4px 8px; border-radius: 10px;
+    background: linear-gradient(180deg, #fff 0%, #e8f6fc 100%);
+    border: 1.5px solid #aed6f1;
+    font-size: 10px; font-weight: 700; color: #1f618d;
+}
+.pd-card-img { width: 18px; height: 22px; object-fit: cover; border-radius: 4px; }
+.pd-card-ico { font-size: 14px; }
+.pd-eff {
+    align-self: flex-start;
+    padding: 3px 10px; border-radius: 999px;
+    background: linear-gradient(180deg, #fde68a 0%, #f4d03f 100%);
+    color: #7a5c06; font-size: 10px; font-weight: 800;
+    box-shadow: 0 2px 4px rgba(244, 208, 63, 0.3);
+}
+.pd-empty { font-size: 10px; color: #94a3b8; padding: 4px 2px; }
 
 /* ===== 棋盘舞台（2.5D） ===== */
 .board-stage {
@@ -1110,6 +1496,18 @@ function confirmLeave() {
     padding: 0;
 }
 .tile-house-owned { font-size: 11px; line-height: 1; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.2)); }
+/* 盖房等级数字徽标：房屋图标右下角，白字深色底 */
+.tile-house-badge {
+    position: absolute;
+    right: -5px; bottom: -5px;
+    min-width: 15px; height: 15px; padding: 0 3px;
+    border-radius: 999px;
+    background: #1f2937; color: #fff;
+    font-size: 10px; font-weight: 900; line-height: 15px; text-align: center;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+    z-index: 6;
+    pointer-events: none;
+}
 .tile-owner {
     position: absolute; top: 2px; left: 2px;
     width: 9px; height: 9px; border-radius: 50%; z-index: 4;
@@ -1715,4 +2113,98 @@ function confirmLeave() {
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 .card-pop-enter-active, .card-pop-leave-active { transition: opacity 0.2s; }
 .card-pop-enter-from, .card-pop-leave-to { opacity: 0; }
+
+/* ===== 操作视觉特效层（纯视觉，不阻塞逻辑） ===== */
+.fx-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+    pointer-events: none;
+    overflow: hidden;
+}
+/* 棋盘轻微抖动（惩罚/入狱） */
+.fx-shake { animation: fxShake 0.42s ease-in-out; }
+@keyframes fxShake {
+    0%, 100% { transform: translate(0, 0); }
+    20% { transform: translate(-4px, 2px); }
+    40% { transform: translate(4px, -2px); }
+    60% { transform: translate(-3px, 1px); }
+    80% { transform: translate(3px, -1px); }
+}
+/* 买地：金币飘落 */
+.fx-coins { position: absolute; inset: 0; }
+.fx-coin {
+    position: absolute; top: -8%;
+    font-size: 22px;
+    animation: fxCoinFall 1s ease-in forwards;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.25));
+}
+@keyframes fxCoinFall {
+    0% { transform: translateY(-10vh) rotate(0deg); opacity: 0; }
+    15% { opacity: 1; }
+    100% { transform: translateY(105vh) rotate(360deg); opacity: 0; }
+}
+/* 红/灰闪 */
+.fx-flash { position: absolute; inset: 0; pointer-events: none; }
+.fx-flash-red { background: radial-gradient(circle at 50% 50%, rgba(231,76,60,0.0) 30%, rgba(231,76,60,0.42) 100%); animation: fxFlashRed 0.3s ease-out forwards; }
+@keyframes fxFlashRed { 0% { opacity: 0; } 40% { opacity: 1; } 100% { opacity: 0; } }
+.fx-flash-gray { background: rgba(120,120,130,0.45); animation: fxFadeGray 0.5s ease-out forwards; }
+.fx-fade-gray { background: rgba(90,90,100,0.5); animation: fxFadeGray 0.9s ease-out forwards; }
+@keyframes fxFadeGray { 0% { opacity: 0; } 30% { opacity: 1; } 100% { opacity: 0; } }
+/* 破产：💀 飘落 */
+.fx-skull {
+    position: absolute; left: 50%; top: -10%;
+    font-size: 30px;
+    animation: fxSkullFall 1.2s ease-in forwards;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4));
+}
+@keyframes fxSkullFall {
+    0% { transform: translate(-50%, -10vh) rotate(0deg); opacity: 0; }
+    20% { opacity: 1; }
+    100% { transform: translate(-50%, 105vh) rotate(220deg); opacity: 0; }
+}
+/* 盖房：目标格子金光 */
+.fx-glow {
+    position: absolute;
+    border-radius: 8px;
+    background: radial-gradient(circle, rgba(244,208,63,0.85) 0%, rgba(244,208,63,0.0) 70%);
+    box-shadow: 0 0 18px 6px rgba(244, 208, 63, 0.7);
+    animation: fxGlow 0.5s ease-out forwards;
+    pointer-events: none;
+}
+@keyframes fxGlow {
+    0% { opacity: 0; transform: scale(0.6); }
+    30% { opacity: 1; }
+    100% { opacity: 0; transform: scale(1.25); }
+}
+/* 抽卡：卡牌从中央飞出 */
+.fx-card-fly {
+    position: absolute; left: 50%; top: 50%;
+    font-size: 34px;
+    transform: translate(-50%, -50%);
+    animation: fxCardFly 0.9s ease-out forwards;
+    filter: drop-shadow(0 3px 6px rgba(0,0,0,0.35));
+}
+@keyframes fxCardFly {
+    0% { transform: translate(-50%, -50%) scale(0.3) rotate(-20deg); opacity: 0; }
+    25% { opacity: 1; transform: translate(-50%, -50%) scale(1.15) rotate(6deg); }
+    100% { transform: translate(60%, -160%) scale(0.8) rotate(20deg); opacity: 0; }
+}
+/* 收租：金币从付款方位置飞出 */
+.fx-rent {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    width: 0; height: 0;
+}
+.fx-coin-fly {
+    position: absolute; left: 0; top: 0;
+    font-size: 20px;
+    animation: fxCoinFly 1s ease-out forwards;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.25));
+}
+@keyframes fxCoinFly {
+    0% { transform: translate(0, 0) scale(0.6); opacity: 0; }
+    20% { opacity: 1; }
+    100% { transform: translate(var(--dx, 0), var(--dy, -60px)) scale(1); opacity: 0; }
+}
 </style>

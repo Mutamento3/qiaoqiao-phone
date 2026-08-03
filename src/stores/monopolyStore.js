@@ -406,11 +406,11 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         if (!tile || !owner || !gameState.value || !Array.isArray(gameState.value.players)) return 0
         if (tile.type === 'station') {
             const owned = BOARD.filter(t => t.type === 'station' && ownerOf(t.id) === owner).length
-            return 25 * Math.pow(2, Math.max(0, owned - 1))
+            return 250 * Math.pow(2, Math.max(0, owned - 1))
         }
         if (tile.type === 'utility') {
             const owned = BOARD.filter(t => t.type === 'utility' && ownerOf(t.id) === owner).length
-            return diceSum * (owned >= 2 ? 10 : 4)
+            return diceSum * (owned >= 2 ? 80 : 40)
         }
         if (tile.type === 'property') {
             const base = baseRentOf(tile)
@@ -911,6 +911,14 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         }
         resolveTile(mv.finalPos, { diceSum: gs.dice[0] + gs.dice[1] })
         saveState()
+        // 安全网：若执行完后仍停在 moving（个别 resolveTile 分支遗漏推进，或落点是
+        // 机会/命运卡等待动画），兜底推进回合，避免界面永久显示"移动中…"。
+        // 注意：机会/命运卡（chance/chest）会延迟 700ms 后再 applyCard 并自行推进，
+        // 因此这里跳过这两类落点，否则会与后续 applyCard 的 afterResolve 重复推进。
+        if (gameState.value && gameState.value.phase === 'moving') {
+            const ft = tileById(mv.finalPos)
+            if (ft.type !== 'chance' && ft.type !== 'chest') afterResolve(p)
+        }
     }
 
     // ---------- 落格结算 ----------
@@ -1119,13 +1127,9 @@ export const useMonopolyStore = defineStore('monopoly', () => {
                     logEvent(`🎖️ ${p.name} 免罪金牌触发，免疫入狱！`)
                     break
                 }
-                p.position = JAIL_TILE
-                p.inJail = true
-                p.jailTurns = 0
-                triggerSkill(p, 'onJail')
-                logEvent(`🚔 ${p.name} 因卡牌被送进寄养所！`)
                 pushAction('🚔', `${p.name} 因卡牌被送进寄养所！`, getCharacterOf(p).color, 'bad')
-                break
+                moveTo(JAIL_TILE, p, true)
+                return
             case 'togo':
                 pushAction('🔄', `${p.name} 直达第 ${card.target} 格`, getCharacterOf(p).color)
                 moveTo(card.target, p, true)
@@ -1151,16 +1155,21 @@ export const useMonopolyStore = defineStore('monopoly', () => {
     function moveTo(target, p, forward) {
         const gs = gameState.value
         const from = p.position
-        if (target === 0 && forward && from !== 0) {
-            p.cash += GO_SALARY
-            logEvent(`💰 ${p.name} 回到镇中心广场，领取工资 ¥${GO_SALARY}。`)
-            triggerSkill(p, 'passGo')
+        // 走 pendingMove 路径，让 Vue 层 startMoveAnimation 驱动 displayPos 同步，
+        // 避免直接改 p.position 导致棋子不即时更新（下次掷骰才瞬移）。
+        // applyMove 统一处理落格结算 / 发工资 / 入狱。
+        gs.pendingMove = {
+            playerId: p.id,
+            from,
+            steps: 0,
+            finalPos: target,
+            passedGo: false,
+            path: [],
+            toJail: target === JAIL_TILE,
+            teleport: true,
         }
-        p.position = target
-        if (target === JAIL_TILE) {
-            logEvent(`🔒 ${p.name} 移动到寄养所（探监）。`)
-        }
-        resolveTile(target, { diceSum: gs.dice[0] + gs.dice[1] })
+        gs.phase = 'moving'
+        saveState()
     }
 
     // ---------- 支付 / 破产 ----------
