@@ -285,6 +285,15 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         saveGameChat('monopoly', gameState.value.chat, useSettingsStore().gameChatMemory)
     }
 
+    // ---------- 操作气泡事件队列（棋盘中央飘出，逐个排队）----------
+    const actionBubbles = ref([])
+    let _bubbleSeq = 0
+    function pushAction(icon, text, color, kind = 'info') {
+        if (!color) color = '#5dade2'
+        actionBubbles.value.push({ id: ++_bubbleSeq, icon, text, color, kind })
+        if (actionBubbles.value.length > 30) actionBubbles.value.shift()
+    }
+
     function activePlayers() {
         return (gameState.value && Array.isArray(gameState.value.players)) ? gameState.value.players.filter(p => !p.bankrupt) : []
     }
@@ -746,6 +755,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         }
 
         gs.dice = [d1, d2]
+        pushAction('🎲', `${p.name} 掷出 ${d1}+${d2}=${d1 + d2} 点`, getCharacterOf(p).color)
         let steps = d1 + d2
         // 移动加成
         if (p.activeEffects.moveBonus > 0) {
@@ -887,6 +897,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         if (mv.passedGo || mv.finalPos === 0) {
             p.cash += GO_SALARY
             logEvent(`💰 ${p.name} 路过镇中心广场，领取工资 ¥${GO_SALARY}。`)
+            pushAction('💰', `${p.name} 路过镇中心领工资 +¥${GO_SALARY}`, getCharacterOf(p).color, 'good')
             triggerSkill(p, 'passGo')
         }
         // 陷阱检查
@@ -895,6 +906,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
             delete gs.trappedProperties[mv.finalPos]
             p.cash -= trapAmt
             logEvent(`🕳️ ${p.name} 踩到陷阱，损失 ¥${trapAmt}！`)
+            pushAction('🕳️', `${p.name} 踩到陷阱，损失 ¥${trapAmt}！`, getCharacterOf(p).color, 'bad')
             if (p.cash < 0) { p.cash = 0; bankruptTo(p, null, trapAmt); return }
         }
         resolveTile(mv.finalPos, { diceSum: gs.dice[0] + gs.dice[1] })
@@ -910,6 +922,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
 
         switch (tile.type) {
             case 'go':
+                pushAction('📍', `${p.name} 来到镇中心广场`, getCharacterOf(p).color)
                 afterResolve(p)
                 break
             case 'property':
@@ -921,6 +934,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
                         gs.awaitingBuy = tile.id
                         gs.phase = 'action'
                         logEvent(`🏠 ${p.name} 停在 ${tile.name}（¥${tile.price}），等待决策。`)
+                        pushAction('🏠', `${p.name} 停在 ${tile.name}（¥${tile.price}）`, getCharacterOf(p).color)
                     } else if (nestedCardResolution) {
                         // 道具卡效果内部的嵌套结算：同步执行，避免延迟导致状态错乱
                         aiDecideBuy(tile, p)
@@ -940,6 +954,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
                     }
                 } else if (owner.id === p.id) {
                     logEvent(`🏠 ${p.name} 回到自己的 ${tile.name}。`)
+                    pushAction('🏠', `${p.name} 回到自己的 ${tile.name}`, getCharacterOf(p).color)
                     afterResolve(p)
                 } else {
                     // 隐形斗篷
@@ -1013,9 +1028,11 @@ export const useMonopolyStore = defineStore('monopoly', () => {
                 if (pot > 0) {
                     p.cash += pot
                     logEvent(`🅿️ ${p.name} 停在阳光草坪，拿走奖池 ¥${pot}！`)
+                    pushAction('🅿️', `${p.name} 停在阳光草坪，拿走奖池 ¥${pot}`, getCharacterOf(p).color, 'good')
                     gs.freeParkingPot = 0
                 } else {
                     logEvent(`🅿️ ${p.name} 停在阳光草坪，奖池为空。`)
+                    pushAction('🅿️', `${p.name} 停在阳光草坪`, getCharacterOf(p).color)
                 }
                 afterResolve(p)
                 break
@@ -1032,12 +1049,13 @@ export const useMonopolyStore = defineStore('monopoly', () => {
                     afterResolve(p)
                     break
                 }
-                p.position = JAIL_TILE
-                p.inJail = true
-                p.jailTurns = 0
-                triggerSkill(p, 'onJail')
-                logEvent(`🚔 ${p.name} 被管理员抓进寄养所！`)
-                const jailChat = generateAiChat(p.characterId, 'jail')
+            p.position = JAIL_TILE
+            p.inJail = true
+            p.jailTurns = 0
+            triggerSkill(p, 'onJail')
+            logEvent(`🚔 ${p.name} 被管理员抓进寄养所！`)
+            pushAction('🚔', `${p.name} 被管理员抓进寄养所！`, getCharacterOf(p).color, 'bad')
+            const jailChat = generateAiChat(p.characterId, 'jail')
                 if (jailChat) pushChat({ role: 'ai', name: p.name, content: jailChat })
                 afterResolve(p)
                 break
@@ -1047,6 +1065,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
                 const cardIdx = deck.length ? deck.pop() : 0
                 const card = (tile.type === 'chance' ? CHANCE_CARDS : CHEST_CARDS)[cardIdx]
                 logEvent(`🎴 ${p.name} 抽到${tile.name}：${card.text}`)
+                pushAction('🎴', `${p.name} 抽到${tile.name}：${card.text.slice(0, 22)}`, getCharacterOf(p).color)
                 // 抽卡/机会结果展示等待 600~800ms 后再执行效果，让用户看清
                 // 奶茶技能：多看一张（简化：50%概率换更好的）
                 const char = getCharacterOf(p)
@@ -1083,6 +1102,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
             case 'money':
                 if (card.amount >= 0) {
                     p.cash += card.amount
+                    pushAction('🎁', `${p.name} 获得 ¥${card.amount}`, getCharacterOf(p).color, 'good')
                 } else {
                     const amt = -card.amount
                     payTo(p, null, amt, `罚款 ¥${amt}`)
@@ -1091,6 +1111,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
                 break
             case 'jailcard':
                 p.getOutCards++
+                pushAction('🔓', `${p.name} 获得出狱卡`, getCharacterOf(p).color, 'good')
                 break
             case 'gotojail':
                 if (p.activeEffects.immunityJail) {
@@ -1103,14 +1124,18 @@ export const useMonopolyStore = defineStore('monopoly', () => {
                 p.jailTurns = 0
                 triggerSkill(p, 'onJail')
                 logEvent(`🚔 ${p.name} 因卡牌被送进寄养所！`)
+                pushAction('🚔', `${p.name} 因卡牌被送进寄养所！`, getCharacterOf(p).color, 'bad')
                 break
             case 'togo':
+                pushAction('🔄', `${p.name} 直达第 ${card.target} 格`, getCharacterOf(p).color)
                 moveTo(card.target, p, true)
                 return
             case 'forward':
+                pushAction('🔄', `${p.name} 前进 ${card.steps} 格`, getCharacterOf(p).color)
                 moveTo((p.position + card.steps) % BOARD_SIZE, p, true)
                 return
             case 'back':
+                pushAction('🔄', `${p.name} 后退 ${card.steps} 格`, getCharacterOf(p).color)
                 moveTo((p.position - card.steps + BOARD_SIZE) % BOARD_SIZE, p, false)
                 return
         }
@@ -1147,6 +1172,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
             if (receiver && !receiver.bankrupt) receiver.cash += amount
             else if (!receiver) gs.freeParkingPot += amount
             logEvent(`💸 ${payer.name} 向 ${receiver ? receiver.name : '银行'} 支付 ${label}。`)
+            pushAction('💸', `${payer.name} 支付 ${label}`, getCharacterOf(payer).color)
             // AI 聊天
             if (!payer.isUser) {
                 const chat = generateAiChat(payer.characterId, 'payRent')
@@ -1162,6 +1188,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
             if (receiver && !receiver.bankrupt) receiver.cash += available
             else if (!receiver) gs.freeParkingPot += available
             payer.cash = 0
+            pushAction('💸', `${payer.name} 支付 ${label}（破产）`, getCharacterOf(payer).color, 'bad')
             // 注意：bankruptTo 内部会处理紧急存钱罐(+¥3000 自救)并推进回合，这里不要重复处理
             bankruptTo(payer, receiver, amount)
             return
@@ -1177,10 +1204,12 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         p.itemCards.splice(idx, 1)
         p.cash += 3000
         logEvent(`🐷 ${p.name} 紧急存钱罐触发，获得 ¥3000！`)
+        pushAction('🐷', `${p.name} 掏出存钱罐自救 +¥3000`, getCharacterOf(p).color, 'good')
         if (p.cash >= 0) return // 救回来了
     }
         p.bankrupt = true
         logEvent(`💥 ${p.name} 破产出局！`)
+        pushAction('💀', `${p.name} 破产出局！`, getCharacterOf(p).color, 'bad')
         const chat = generateAiChat(p.characterId, 'bankrupt')
         if (chat) pushChat({ role: 'ai', name: p.name, content: chat })
         if (creditor && !creditor.bankrupt) {
@@ -1216,6 +1245,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         p.properties.push(tileId)
         gs.awaitingBuy = null
         logEvent(`🏠 ${p.name} 买下 ${tile.name}（¥${tile.price}）。`)
+        pushAction('🏠', `${p.name} 买下 ${tile.name}（¥${tile.price}）`, getCharacterOf(p).color, 'good')
         // 可可技能：买地返现
         triggerSkill(p, 'buy', { price: tile.price })
         // AI 聊天
@@ -1227,6 +1257,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         }
         if (ownsFullGroup(p, tile.group)) {
             logEvent(`🎉 ${p.name} 集齐 ${GROUPS[tile.group].name} 组，可盖房！`)
+            pushAction('🎉', `${p.name} 集齐 ${GROUPS[tile.group].name} 组`, getCharacterOf(p).color, 'good')
         }
         afterResolve(p)
         saveState()
@@ -1239,6 +1270,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         const tile = tileById(gs.awaitingBuy)
         gs.awaitingBuy = null
         logEvent(`⏭️ ${p.name} 放弃购买 ${tile.name}。`)
+        pushAction('⏭️', `${p.name} 放弃购买 ${tile.name}`, getCharacterOf(p).color)
         afterResolve(p)
         saveState()
     }
@@ -1262,6 +1294,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         p.houses[tileId] = cur + 1
         const lvl = HOUSE_LEVELS[cur + 1]
         logEvent(`🏗️ ${p.name} 在 ${tile.name} 升级为「${lvl.name}」（¥${cost}）。`)
+        pushAction('🏗️', `${p.name} 在 ${tile.name} 升级「${lvl.name}」（¥${cost}）`, getCharacterOf(p).color, 'good')
         saveState()
     }
 
@@ -1537,7 +1570,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
 
     return {
         // state
-        currentRoom, gameState, settings,
+        currentRoom, gameState, settings, actionBubbles,
         // computed
         hasActiveGame, currentPlayer, isUserTurn,
         // room

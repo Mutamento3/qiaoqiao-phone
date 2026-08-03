@@ -128,6 +128,17 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- 操作气泡层（棋盘中央逐个飘出，排队不冲突） -->
+                    <div class="action-bubble-layer">
+                        <Transition name="bubble">
+                            <div v-if="currentBubble" class="action-bubble" :class="'kind-' + currentBubble.kind"
+                                :style="{ '--bub-color': currentBubble.color }" :key="currentBubble.id">
+                                <span class="ab-icon">{{ currentBubble.icon }}</span>
+                                <span class="ab-text">{{ currentBubble.text }}</span>
+                            </div>
+                        </Transition>
+                    </div>
                 </div>
             </div>
 
@@ -424,6 +435,31 @@ const chatOpen = ref(false)
 const unreadCount = ref(0)
 const chatScroll = ref(null)
 let lastChatLen = 0
+
+// 操作气泡（棋盘中央逐个飘出，排队不冲突）
+const currentBubble = ref(null)
+const bubbleQueue = []
+const seenBubbleIds = new Set()
+let _bubbleConsuming = false
+let _bubbleTimer = null
+function consumeBubbles() {
+    if (_bubbleConsuming) return
+    if (bubbleQueue.length === 0) { _bubbleConsuming = false; return }
+    _bubbleConsuming = true
+    const next = bubbleQueue.shift()
+    currentBubble.value = next
+    const stay = 1400 + Math.random() * 600 // 停留 1.4~2.0s，慢慢来不冲突
+    _bubbleTimer = setTimeout(() => {
+        currentBubble.value = null
+        setTimeout(() => { _bubbleConsuming = false; consumeBubbles() }, 360) // 等出场动画结束再弹下一个
+    }, stay)
+}
+function pushBubble(b) {
+    if (seenBubbleIds.has(b.id)) return
+    seenBubbleIds.add(b.id)
+    bubbleQueue.push(b)
+    consumeBubbles()
+}
 
 // 音效 / BGM
 let booted = false
@@ -804,6 +840,12 @@ watch(() => gs.value?.chat?.length, (n, o) => {
 })
 watch(chatOpen, (v) => { if (v) { unreadCount.value = 0; nextTick(() => { if (chatScroll.value) chatScroll.value.scrollTop = chatScroll.value.scrollHeight }) } })
 
+// 操作气泡：监听 store 事件队列，逐个飘出（store 数组只增不消费，本地去重后排队）
+watch(() => monopolyStore.actionBubbles, (list) => {
+    if (!list) return
+    for (const b of list) pushBubble(b)
+}, { deep: true })
+
 onMounted(() => {
     if (!monopolyStore.currentRoom || !monopolyStore.gameState) {
         monopolyStore.loadState()
@@ -826,6 +868,7 @@ onMounted(() => {
 
 onUnmounted(() => {
     stopBGM()
+    if (_bubbleTimer) clearTimeout(_bubbleTimer)
     window.removeEventListener('pointerdown', tryStartBgmOnGesture)
     window.removeEventListener('touchend', tryStartBgmOnGesture)
     window.removeEventListener('keydown', tryStartBgmOnGesture)
@@ -1207,6 +1250,50 @@ function confirmLeave() {
     pointer-events: auto;
     box-shadow: 0 2px 4px rgba(0,0,0,0.14);
     z-index: 4;
+}
+
+/* ===== 操作气泡（棋盘中央逐个飘出） ===== */
+.action-bubble-layer {
+    position: absolute;
+    left: 50%;
+    top: 44%;
+    transform: translate(-50%, -50%);
+    z-index: 45;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 92%;
+}
+.action-bubble {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: min(330px, 88%);
+    padding: 9px 15px;
+    border-radius: 18px;
+    background: rgba(30, 41, 59, 0.88);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.3;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.30);
+    border: 2px solid var(--bub-color, #5dade2);
+    text-align: left;
+    word-break: break-word;
+}
+.action-bubble .ab-icon { font-size: 19px; flex-shrink: 0; }
+.action-bubble.kind-good { background: rgba(33, 140, 60, 0.92); }
+.action-bubble.kind-bad { background: rgba(178, 40, 40, 0.92); }
+.bubble-enter-active { animation: bubbleIn .32s ease-out; }
+.bubble-leave-active { animation: bubbleOut .38s ease-in forwards; }
+@keyframes bubbleIn {
+    0% { opacity: 0; transform: scale(.7) translateY(10px); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes bubbleOut {
+    0% { opacity: 1; transform: scale(1) translateY(0); }
+    100% { opacity: 0; transform: scale(1.12) translateY(-12px); }
 }
 
 /* ===== 站立式棋子（全身立绘） ===== */
