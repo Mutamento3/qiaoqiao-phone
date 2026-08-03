@@ -1,5 +1,5 @@
 <template>
-    <div class="mono-game w-full h-full flex flex-col bg-gradient-to-br from-sky-50 via-amber-50 to-pink-50 overflow-y-auto overflow-x-hidden relative">
+    <div class="mono-game w-full h-full flex flex-col bg-gradient-to-br from-sky-50 via-amber-50 to-pink-50 overflow-x-hidden relative mono-root">
         <!-- 背景漂浮粒子（Three.js，置于最底层） -->
         <ParticleOverlay />
 
@@ -31,7 +31,7 @@
         </div>
 
         <!-- 顶部玩家栏：点击查看玩家详情 -->
-        <div class="player-bar" v-if="players.length">
+        <div class="player-bar shrink-0" v-if="players.length">
             <div v-for="p in players" :key="p.id"
                 class="player-item"
                 :class="{ active: p.id === currentPlayer?.id, bankrupt: p.bankrupt }"
@@ -1094,13 +1094,13 @@ watch(() => gs.value?.chat?.length, (n, o) => {
 watch(chatOpen, (v) => { if (v) { unreadCount.value = 0; nextTick(() => { if (chatScroll.value) chatScroll.value.scrollTop = chatScroll.value.scrollHeight }) } })
 
 // 操作气泡：监听 store 事件队列长度，用游标消费，避免遍历全数组和重放旧气泡
-watch(() => monopolyStore.actionBubbles.value.length, (len, oldLen) => {
+watch(() => monopolyStore.actionBubbles.length, (len, oldLen) => {
     if (len < bubbleReadIndex || (oldLen !== undefined && len < oldLen)) {
         bubbleReadIndex = 0
         return
     }
     while (bubbleReadIndex < len) {
-        pushBubble(monopolyStore.actionBubbles.value[bubbleReadIndex])
+        pushBubble(monopolyStore.actionBubbles[bubbleReadIndex])
         bubbleReadIndex++
     }
 })
@@ -1129,7 +1129,7 @@ onUnmounted(() => {
     stopBGM()
     if (_bubbleTimer) clearTimeout(_bubbleTimer)
     // 离开游戏页时清空气泡队列，防止下次进来重放旧气泡
-    monopolyStore.actionBubbles.value = []
+    monopolyStore.actionBubbles = []
     bubbleQueue.length = 0
     bubbleReadIndex = 0
     currentBubble.value = null
@@ -1665,7 +1665,8 @@ function confirmLeave() {
     left: 50%;
     top: 14%;
     transform: translateX(-50%);
-    z-index: 45;
+    /* 提到 token(z:50) 之上，确保操作气泡永远可见不被棋子遮挡 */
+    z-index: 60;
     pointer-events: none;
     display: flex;
     align-items: center;
@@ -1706,18 +1707,20 @@ function confirmLeave() {
 /* ===== 站立式棋子（全身立绘） ===== */
 .token {
     position: absolute;
-    /* 略缩整体尺寸，让单棋子更居中于 tile base；translateZ 降到 20px 减少“悬浮感” */
     width: 34px; height: 48px;
-    /* translateZ 把棋子抬到格子之上（tile-face 在 translateZ(5px)），否则会被棋盘格挡住 */
-    transform: translate(-50%, -100%) translateZ(20px);
+    /* translateZ 抬高到 40px，确保在 board-table rotateX(5deg) + tile translateZ(4~5px) 之上 */
+    transform: translate(-50%, -100%) translateZ(40px);
     transform-style: preserve-3d;
-    z-index: 30;
+    /* z-index 提到 50，压过 board-center-scene(z:8) 和所有 tile 内容 */
+    z-index: 50;
     transition: left 0.15s linear, top 0.15s linear;
     filter: drop-shadow(0 6px 7px rgba(0,0,0,0.3));
+    /* 确保 token 不被任何父级 overflow 裁剪 */
+    pointer-events: auto;
 }
 .token.active {
-    z-index: 31;
-    transform: translate(-50%, -100%) translateZ(26px);
+    z-index: 51;
+    transform: translate(-50%, -100%) translateZ(48px);
     filter: drop-shadow(0 0 9px #f4d03f) drop-shadow(0 6px 9px rgba(0,0,0,0.32));
 }
 .token-base {
@@ -2083,23 +2086,42 @@ function confirmLeave() {
     .log-body { max-height: 120px; }
 }
 
-/* 竖屏：单列。棋盘区 sticky 固定顶部（在 HUD 之下），下方信息区随主容器纵向滚动 */
+/* 竖屏：单列。棋盘区固定在上方不滚动（非 sticky，而是根容器不滚 + side-col 内部滚） */
 @media (orientation: portrait) {
-    .game-body { flex: none; flex-direction: column; min-height: 0; }
+    /* 根容器禁止整体滚动 */
+    .mono-root { overflow: hidden !important; }
+
+    .game-body {
+        flex: 1 1 0%;
+        min-height: 0;
+        flex-direction: column;
+        overflow: hidden;
+    }
     .board-stage {
         flex: none;
         width: 100%;
-        position: sticky;
-        /* HUD 高 56px，sticky top 与之对齐，确保棋盘不被遮挡 */
-        top: 56px;
-        z-index: 14;
-        /* 顶部留白，避免最顶一排格子/棋子被 HUD 遮住（竖屏下加大顶部空间） */
-        padding: 42px 8px 12px;
+        position: static;
+        height: auto;
+        /* 高度上限：给下方 side-col（日志+操作）留 ~200px 空间，
+           否则 flex:none 会把棋盘撑满、side-col 被压成 0 高度导致日志消失 */
+        max-height: calc(100vh - 296px);
+        padding: 52px 8px 12px;
         overflow: visible;
     }
-    /* 棋盘高度按视口高度封顶，确保 11×11 最外圈完整落在视口内（HUD 占 40px） */
-    .board-table { width: min(100%, calc(100vh - 84px)); }
-    .side-col { max-width: none; }
+    /* 棋盘尺寸约束（board-table 是正方形，高度 = 宽度 + padding 64px；
+       100vh - 360 保证 side-col 至少有 ~184px） */
+    .board-table { width: min(100%, calc(100vh - 360px)); }
+
+    /* 信息栏占据剩余空间并独立滚动 —— 这是唯一可滚动的区域 */
+    .side-col {
+        flex: 1 1 0%;
+        min-h: 0;
+        max-width: none;
+        overflow-y: auto;
+        overflow-x: hidden;
+        /* 双指滚动反馈 */
+        -webkit-overflow-scrolling: touch;
+    }
 }
 
 /* ===== 小屏竖屏紧凑 ===== */
