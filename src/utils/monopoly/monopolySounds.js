@@ -13,6 +13,7 @@ const FILE_MAP = {
     rent: 'wechat/coins.mp3',
     build: 'mahjong/我方起牌.MP3',
     drawCard: 'mahjong/发牌.MP3',
+    useCard: null, // 用合成魔法音，不用文件（发牌音不适合道具卡）
     win: 'uno/win.mp3',
     lose: 'uno/lose.mp3',
     chat: 'wechat/notification.mp3',
@@ -88,6 +89,12 @@ export function playSound(name, opts = {}) {
     // 合成兜底：通用按钮点击 / 提示音
     unlock()
     if (name === 'click') tone(880, 0.06, 'square', 0.18)
+    else if (name === 'useCard') {
+        // 道具卡魔法音：上升琶音 + 闪烁高音
+        tone(523, 0.1, 'sine', 0.2, 784)
+        setTimeout(() => tone(784, 0.1, 'sine', 0.18, 1047), 60)
+        setTimeout(() => tone(1047, 0.15, 'sine', 0.15), 120)
+    }
     else tone(660, 0.05, 'sine', 0.15)
 }
 

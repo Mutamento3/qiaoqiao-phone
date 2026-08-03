@@ -210,6 +210,7 @@
                         <div class="hero-species">{{ getCharacterOf(currentPlayer)?.emoji }} {{ getCharacterOf(currentPlayer)?.species }}</div>
                         <div class="hero-status">
                             <span v-if="currentPlayer?.inJail" class="status-jail">🔒 蹲寄养所</span>
+                            <span v-else-if="gs?.phase === 'turnEnd'" class="status-switch">🔄 换人中…</span>
                             <span v-else-if="currentPlayer?.isAI && gs?.phase === 'rolling'" class="status-thinking">💭 思考中…</span>
                             <span v-else class="status-turn">轮到行动</span>
                         </div>
@@ -241,6 +242,17 @@
                             地主：{{ selectedOwner.name }}（{{ houseLevelName(selectedTileObj.id) }}）
                         </div>
                         <div class="tile-card-line" v-else-if="selectedTileObj.desc">{{ selectedTileObj.desc }}</div>
+                        <!-- 升级房屋按钮：自己的地产 + 集齐同色组 + 未满级 + 钱够 -->
+                        <button v-if="canUpgradeSelectedTile" @click="monopolyStore.buildHouse(selectedTileObj.id); selectedTile = null"
+                            class="tile-upgrade-btn" :disabled="currentPlayer.cash < houseCostOf(selectedTileObj)">
+                            <i class="fa-solid fa-arrow-up"></i> 升级为「{{ HOUSE_LEVELS[houseCount(selectedTileObj.id) + 1]?.name }}」
+                            <span class="tile-upgrade-cost">¥{{ houseCostOf(selectedTileObj) }}</span>
+                        </button>
+                        <div v-else-if="selectedOwner?.isUser && selectedTileObj.type === 'property'" class="tile-upgrade-hint">
+                            {{ monopolyStore.ownsFullGroup(currentPlayer, selectedTileObj.group)
+                                ? (houseCount(selectedTileObj.id) >= 5 ? '🏰 已满级' : '💰 钱不够升级')
+                                : '🎯 集齐同色组可盖房' }}
+                        </div>
                     </div>
                 </div>
 
@@ -308,7 +320,7 @@
                         <span>📜 事件日志</span>
                         <i class="fa-solid" :class="logOpen ? 'fa-chevron-up' : 'fa-chevron-down'"></i>
                     </div>
-                    <div v-show="logOpen" class="log-body">
+                    <div v-show="logOpen" ref="logBody" class="log-body">
                         <div v-for="(e, i) in (gs?.log || [])" :key="i" class="log-item">{{ e.text }}</div>
                         <div v-if="!(gs?.log || []).length" class="text-gray-300 text-center mt-6">暂无事件</div>
                     </div>
@@ -325,15 +337,28 @@
                     </h3>
                     <button @click="chatOpen = false" class="fc-close"><i class="fa-solid fa-xmark"></i></button>
                 </div>
-                <div ref="chatScroll" class="flex-1 overflow-y-auto space-y-2 pr-1">
-                    <div v-if="!(gs?.chat || []).length" class="text-center text-gray-300 text-[11px] py-8">暂无聊天</div>
+                <div ref="chatScroll" class="flex-1 overflow-y-auto space-y-2 pr-1 mb-2">
+                    <div v-if="!(gs?.chat || []).length" class="text-center text-gray-300 text-[11px] py-8">说点什么吧，AI 伙伴会回应你~</div>
                     <div v-for="(m, i) in (gs?.chat || [])" :key="i"
-                        :class="m.role === 'system' ? 'text-center text-gray-400 text-[11px]' : (m.name === currentPlayer?.name ? 'chat-row me' : 'chat-row')">
+                        :class="m.role === 'system' ? 'text-center text-gray-400 text-[11px]' : (m.role === 'user' ? 'chat-row me' : 'chat-row')">
                         <template v-if="m.role !== 'system'">
                             <div class="chat-name" :style="{ color: nameColor(m.name) }">{{ m.name }}</div>
                             <div class="chat-bubble">{{ m.content }}</div>
                         </template>
                         <template v-else>{{ m.content }}</template>
+                    </div>
+                </div>
+                <!-- 输入区 -->
+                <div class="chat-input-area">
+                    <input v-model="chatInput" @keyup.enter="sendChat" placeholder="和TA们聊点什么..."
+                        class="chat-text-input" :disabled="chatSending" />
+                    <button @click="sendChat" :disabled="chatSending || !chatInput.trim()"
+                        class="chat-send-btn" :class="{ 'opacity-50': chatSending || !chatInput.trim() }">
+                        <i v-if="!chatSending" class="fa-solid fa-paper-plane"></i>
+                        <i v-else class="fa-solid fa-spinner fa-spin"></i>
+                    </button>
+                    <div class="chat-quick-btns">
+                        <span v-for="q in chatQuickReplies" :key="q" @click="chatInput = q" class="quick-chip">{{ q }}</span>
                     </div>
                 </div>
             </div>
@@ -343,6 +368,7 @@
         <Transition name="card-pop">
             <div v-if="gs?.cardAnimation" class="card-anim-overlay">
                 <div class="card-anim-box" :style="{ borderColor: cardTypeColor(gs.cardAnimation.cardType) }">
+                    <img v-if="gs.cardAnimation.cardImage" :src="gs.cardAnimation.cardImage" class="card-anim-img" :alt="gs.cardAnimation.cardName" />
                     <div class="card-anim-type" :style="{ background: cardTypeColor(gs.cardAnimation.cardType) }">
                         {{ cardTypeName(gs.cardAnimation.cardType) }}
                     </div>
@@ -392,7 +418,7 @@
 
         <!-- 道具卡使用确认弹窗 -->
         <div v-if="cardToUse" class="fixed inset-0 z-[250] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div class="bg-white rounded-2xl p-5 max-w-[360px] w-full max-h-[85vh] overflow-y-auto shadow-2xl">
+            <div class="bg-white rounded-2xl p-5 max-w-[380px] w-full max-h-[85vh] overflow-y-auto shadow-2xl">
                 <div class="text-center mb-3">
                     <div class="inline-block px-3 py-1 rounded-full text-white text-xs font-bold mb-2"
                         :style="{ background: cardTypeColor(getItemCard(cardToUse)?.type) }">
@@ -458,8 +484,8 @@
                     <div class="pd-stat"><span>所在地</span><b>{{ BOARD[selectedPlayer.position]?.name }}</b></div>
                 </div>
                 <div class="pd-sec">
-                    <div class="pd-sec-title">🏠 拥有的地产（{{ selectedPlayer.properties.length }}）</div>
-                    <div v-if="selectedPlayer.properties.length" class="pd-prop-list">
+                    <div class="pd-sec-title">🏠 拥有的地产（{{ selectedPlayer?.properties?.length || 0 }}）</div>
+                    <div v-if="selectedPlayer?.properties?.length" class="pd-prop-list">
                         <div v-for="id in selectedPlayer.properties" :key="id" class="pd-prop">
                             <span class="pd-prop-dot" :style="{ background: tileById(id) ? (GROUPS[tileById(id).group]?.color || '#999') : '#999' }"></span>
                             <span class="pd-prop-name">{{ tileById(id)?.name }}</span>
@@ -469,8 +495,8 @@
                     <div v-else class="pd-empty">暂无地产</div>
                 </div>
                 <div class="pd-sec">
-                    <div class="pd-sec-title">🎴 道具卡（{{ selectedPlayer.itemCards.length }}/5）</div>
-                    <div v-if="selectedPlayer.itemCards.length" class="pd-card-list">
+                    <div class="pd-sec-title">🎴 道具卡（{{ selectedPlayer?.itemCards?.length || 0 }}/5）</div>
+                    <div v-if="selectedPlayer?.itemCards?.length" class="pd-card-list">
                         <div v-for="cid in selectedPlayer.itemCards" :key="cid" class="pd-card">
                             <img v-if="getItemCard(cid)?.image" :src="getItemCard(cid).image" class="pd-card-img" />
                             <span v-else class="pd-card-ico">🎴</span>
@@ -527,6 +553,7 @@ const selectedTarget = ref(null)
 const selectedDiceValue = ref(null)
 const cardBursting = ref(false)
 const logOpen = ref(true)
+const logBody = ref(null)
 // 顶部玩家栏点击选中的玩家（详情弹层）
 const selectedPlayer = ref(null)
 // 操作视觉特效层（纯视觉，不阻塞逻辑）
@@ -538,6 +565,27 @@ const chatOpen = ref(false)
 const unreadCount = ref(0)
 const chatScroll = ref(null)
 let lastChatLen = 0
+
+// 聊天输入
+const chatInput = ref('')
+const chatSending = ref(false)
+const chatQuickReplies = ['快点掷骰啊~', '好穷啊救命', '哈哈哈', '这把稳了']
+async function sendChat() {
+    const text = chatInput.value.trim()
+    if (!text || chatSending.value) return
+    chatInput.value = ''
+    chatSending.value = true
+    try {
+        await monopolyStore.sendGameChat(text)
+    } catch (e) {
+        console.warn('[Monopoly] sendChat error:', e)
+    } finally {
+        chatSending.value = false
+    }
+    nextTick(() => {
+        if (chatScroll.value) chatScroll.value.scrollTop = chatScroll.value.scrollHeight
+    })
+}
 
 // 操作气泡（棋盘顶部逐个飘出，排队不冲突）
 const currentBubble = ref(null)
@@ -648,6 +696,7 @@ const ranking = computed(() => [...players.value].sort((a, b) => monopolyStore.n
 const isImg = (a) => !!a && (a.startsWith('/') || a.startsWith('data:image') || a.startsWith('http'))
 const tileOwner = (id) => monopolyStore.ownerOf(id)
 const netWorth = (p) => monopolyStore.netWorth(p)
+const tileById = (id) => monopolyStore.tileById(id)
 const houseCount = (id) => {
     const o = tileOwner(id)
     return o ? (o.houses?.[id] || 0) : 0
@@ -660,8 +709,8 @@ const houseLevelName = (id) => {
     const h = houseCount(id)
     const owner = tileOwner(id)
     if (h === 0) {
-        // 有地主但 0 级：显示"未盖房"；无地主：显示"空地"
-        return owner ? '未盖房（0级）' : '空地'
+        // 有地主但 0 级：显示"已购地·待盖房"；无地主：显示"空地"
+        return owner ? '已购地·待盖房（0级）' : '空地'
     }
     // 盖房后显示"等级·名称"，如"1级·小帐篷"
     return `${h}级·${HOUSE_LEVELS[h]?.name || '空地'}`
@@ -743,6 +792,8 @@ function confirmUseCard() {
     const card = getItemCard(cardToUse.value)
     if (!card) return
     const target = isForceDice(card) ? selectedDiceValue.value : selectedTarget.value
+    // 播放道具卡使用音效
+    playSound('useCard')
     // 先播放缩放+光晕动画，再关闭弹窗并执行卡牌效果（配合任务要求 400~600ms 等待）
     cardBursting.value = true
     setTimeout(() => {
@@ -772,6 +823,20 @@ const userBuildList = computed(() => {
         list.push({ id, name: t.name, houses: p.houses[id] || 0, cost: houseCostOf(t) })
     }
     return list
+})
+
+// 当前选中格子是否可以被当前用户升级房屋
+const canUpgradeSelectedTile = computed(() => {
+    const t = selectedTileObj.value
+    if (!t || t.type !== 'property') return false
+    const p = currentPlayer.value
+    if (!p?.isUser) return false
+    if (!selectedOwner.value || selectedOwner.value.id !== p.id) return false
+    const h = houseCount(t.id)
+    if (h >= 5) return false
+    if (!monopolyStore.ownsFullGroup(p, t.group)) return false
+    if (p.activeEffects.blockBuild) return false
+    return true
 })
 
 function nameColor(name) {
@@ -894,17 +959,40 @@ function startMoveAnimation() {
     }
     animating = true
     const pid = mv.playerId
-    // 安全保底：动画开始后 6s 若仍停在 moving（卡住/未收尾），强制结算推进回合
+    // 安全保底：动画开始后 6s 若仍停在 moving（卡住/未收尾），强制结算推进回合。
+    // 注意：applyMove 要求 pendingMove 非空；若动画已完成但 resolveTile/applyCard 的
+    // 延迟回调丢失（如 chance/chest 的 700ms setTimeout 未触发或 afterResolve 遗漏），
+    // pendingMove 已被清空导致 applyMove 直接 return。此时必须强制推进。
     const safetyTimer = setTimeout(() => {
         const gg = monopolyStore.gameState
-        if (gg && gg.phase === 'moving') monopolyStore.applyMove()
+        if (!gg || gg.phase !== 'moving') return
+        if (gg.pendingMove) {
+            // 还有未消费的移动数据：正常路径兜底
+            monopolyStore.applyMove()
+        } else {
+            // pendingMove 已清空但 phase 仍停在 moving：强制推进（避免永久卡死）
+            console.warn('[Monopoly] Safety timeout: forcing phase advance (pendingMove already consumed)')
+            const cp = gg.players[gg.currentTurn]
+            if (cp?.isAI) {
+                // AI：直接结束回合
+                monopolyStore.endTurn()
+            } else {
+                // 用户：切回 action 让用户操作
+                gg.phase = 'action'
+                gg.awaitingEnd = true
+            }
+        }
     }, 6000)
     if (!mv.path || !mv.path.length) {
         displayPos[pid] = mv.finalPos
         animating = false
         clearTimeout(safetyTimer)
-        monopolyStore.applyMove()
+        // 传送/惩罚：先让 Vue 渲染新位置（避免闪现到下次交互才更新），
+        // 再执行落格结算。200ms 足够一帧渲染。
         syncToken(pid)
+        nextTick(() => {
+            setTimeout(() => { monopolyStore.applyMove() }, 200)
+        })
         return
     }
     let i = 0
@@ -979,9 +1067,15 @@ watch(() => gs.value?.log?.length, (n) => {
             else if (txt.includes('买下')) playSound('buy')
             else if (txt.includes('升级为') || txt.includes('盖房')) playSound('build')
             else if (txt.includes('抽到') || txt.includes('获得道具卡')) playSound('drawCard')
+            else if (txt.includes('使用了') && txt.includes('🎴')) playSound('useCard')
         }
     }
     lastLogLen = len
+    // 自动滚动日志到底部
+    nextTick(() => {
+        const el = logBody.value
+        if (el) el.scrollTop = el.scrollHeight
+    })
 })
 
 // ===== 操作视觉特效（纯视觉，不阻塞逻辑）=====
@@ -1165,7 +1259,7 @@ function confirmLeave() {
 /* ===== 顶部 HUD ===== */
 .game-hud {
     height: 40px;
-    background: linear-gradient(180deg, #4aa3df 0%, #2e86c1 100%);
+    background: linear-gradient(180deg, #4aa3df 0%, #5BA3C9 100%);
     border-bottom: 2px solid rgba(0, 0, 0, 0.12);
     box-shadow: 0 4px 12px rgba(46, 134, 193, 0.35);
 }
@@ -1206,7 +1300,7 @@ function confirmLeave() {
     position: absolute; top: -4px; right: -4px;
     min-width: 16px; height: 16px; padding: 0 3px;
     background: #e74c3c; color: #fff; font-size: 9px; font-weight: 900;
-    border-radius: 999px; border: 2px solid #2e86c1;
+    border-radius: 999px; border: 2px solid #5BA3C9;
     display: flex; align-items: center; justify-content: center;
 }
 
@@ -1235,8 +1329,8 @@ function confirmLeave() {
 }
 .player-item:active { transform: translateY(2px); }
 .player-item.active {
-    border-color: #f4d03f;
-    box-shadow: 0 0 0 2px #f4d03f, 0 3px 8px rgba(244, 208, 63, 0.35);
+    border-color: #7ECEC0;
+    box-shadow: 0 0 0 2px #7ECEC0, 0 3px 8px rgba(126, 206, 192, 0.35);
 }
 .player-item.bankrupt { filter: grayscale(0.7); opacity: 0.7; }
 .pi-avatar {
@@ -1251,7 +1345,7 @@ function confirmLeave() {
 .pi-avatar span { font-size: 18px; }
 .pi-dead { position: absolute; bottom: -2px; right: -2px; font-size: 13px; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3)); }
 .pi-name { font-size: 10px; font-weight: 800; color: #1a2634; max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pi-name em { font-style: normal; font-size: 8px; color: #2e86c1; background: #d6ecfa; border-radius: 4px; padding: 0 3px; }
+.pi-name em { font-style: normal; font-size: 8px; color: #5BA3C9; background: #d6ecfa; border-radius: 4px; padding: 0 3px; }
 .pi-cash { font-size: 9px; font-weight: 900; color: #b45309; }
 
 /* ===== 玩家详情弹层 ===== */
@@ -1266,7 +1360,7 @@ function confirmLeave() {
     position: relative;
     width: 100%; max-width: 340px; max-height: 86vh; overflow-y: auto;
     background: linear-gradient(180deg, #ffffff 0%, #f0f9ff 100%);
-    border: 3px solid #f4d03f;
+    border: 3px solid #7ECEC0;
     border-radius: 22px;
     padding: 18px 16px 16px;
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.38), inset 0 2px 0 rgba(255, 255, 255, 0.8);
@@ -1282,7 +1376,7 @@ function confirmLeave() {
     display: flex; align-items: center; justify-content: center;
     background: rgba(255, 255, 255, 0.95);
     border: 1px solid rgba(93, 173, 226, 0.45);
-    color: #2e86c1; font-size: 13px; font-weight: 900;
+    color: #5BA3C9; font-size: 13px; font-weight: 900;
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.14);
     z-index: 4;
 }
@@ -1297,8 +1391,8 @@ function confirmLeave() {
 .pd-portrait span { font-size: 30px; padding-bottom: 4px; }
 .pd-id { min-width: 0; flex: 1; }
 .pd-name { font-size: 18px; font-weight: 900; color: #1a2634; display: flex; align-items: center; gap: 5px; }
-.pd-you { font-size: 10px; background: #5dade2; color: #fff; border-radius: 6px; padding: 1px 5px; }
-.pd-species { font-size: 11px; color: #5dade2; font-weight: 700; margin-top: 2px; }
+.pd-you { font-size: 10px; background: #7EC8E3; color: #fff; border-radius: 6px; padding: 1px 5px; }
+.pd-species { font-size: 11px; color: #7EC8E3; font-weight: 700; margin-top: 2px; }
 .pd-bankrupt { display: inline-block; margin-top: 4px; font-size: 10px; font-weight: 800; color: #fff; background: #e74c3c; border-radius: 6px; padding: 1px 7px; }
 .pd-stats { display: flex; gap: 6px; margin-bottom: 12px; }
 .pd-stat {
@@ -1328,66 +1422,58 @@ function confirmLeave() {
     padding: 4px 8px; border-radius: 10px;
     background: linear-gradient(180deg, #fff 0%, #e8f6fc 100%);
     border: 1.5px solid #aed6f1;
-    font-size: 10px; font-weight: 700; color: #1f618d;
+    font-size: 10px; font-weight: 700; color: #4A90B8;
 }
 .pd-card-img { width: 18px; height: 22px; object-fit: cover; border-radius: 4px; }
 .pd-card-ico { font-size: 14px; }
 .pd-eff {
     align-self: flex-start;
     padding: 3px 10px; border-radius: 999px;
-    background: linear-gradient(180deg, #fde68a 0%, #f4d03f 100%);
-    color: #7a5c06; font-size: 10px; font-weight: 800;
-    box-shadow: 0 2px 4px rgba(244, 208, 63, 0.3);
+    background: linear-gradient(180deg, #B8F0D9 0%, #7ECEC0 100%);
+    color: #1A6B5A; font-size: 10px; font-weight: 800;
+    box-shadow: 0 2px 4px rgba(126, 206, 192, 0.3);
 }
 .pd-empty { font-size: 10px; color: #94a3b8; padding: 4px 2px; }
 
-/* ===== 棋盘舞台（2.5D） ===== */
+/* ===== 棋盘舞台（正俯视，无透视） ===== */
 .board-stage {
-    perspective: 1300px;
-    perspective-origin: 50% 45%;
-    padding: 1px;
+    padding: 4px 8px;
 }
 .board-table {
     position: relative;
-    width: min(100%, 520px);
+    width: min(100%, 580px);
     margin: 0 auto;
-    transform-style: preserve-3d;
-    transform: rotateX(5deg);
 }
 .board-rim {
     position: absolute;
     inset: -8px;
     border-radius: 22px;
-    background: linear-gradient(145deg, #5dade2, #2e86c1);
+    background: linear-gradient(145deg, #7EC8E3, #5BA3C9);
     box-shadow:
         0 28px 55px rgba(0, 0, 0, 0.32),
         0 10px 20px rgba(0, 0, 0, 0.2),
         inset 0 2px 0 rgba(255, 255, 255, 0.3),
         inset 0 -4px 0 rgba(0, 0, 0, 0.12);
-    transform: translateZ(-14px);
 }
 .mono-board {
     background:
         radial-gradient(circle at 30% 30%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0) 55%),
         linear-gradient(135deg, #a8d8ea 0%, #8bcbe6 50%, #a8d8ea 100%);
-    border: 2px solid #1f618d;
+    border: 2px solid #4A90B8;
     border-radius: 12px;
     box-shadow:
         inset 0 0 0 2px rgba(255, 255, 255, 0.4),
         inset 0 10px 28px rgba(255, 255, 255, 0.3),
         inset 0 -10px 28px rgba(0, 0, 0, 0.08),
         0 24px 48px rgba(0, 0, 0, 0.28);
-    transform-style: preserve-3d;
 }
 
-/* ===== 地块 2.5D 盒子 ===== */
+/* ===== 地块（扁平卡片风格） ===== */
 .tile {
     position: relative;
-    transform-style: preserve-3d;
     cursor: pointer;
     min-width: 0; min-height: 0;
-    transform: translateZ(4px);
-    transition: transform 0.15s;
+    transition: transform 0.15s, box-shadow 0.15s;
 }
 .tile-face {
     position: absolute; inset: 0;
@@ -1396,39 +1482,42 @@ function confirmLeave() {
     border: 1px solid rgba(255, 255, 255, 0.9);
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.95),
-        inset 0 -3px 0 rgba(174, 214, 241, 0.5),
-        0 3px 0 #6baed6,
-        0 6px 8px rgba(0, 0, 0, 0.12);
+        inset 0 -2px 0 rgba(174, 214, 241, 0.4),
+        0 2px 0 #89CFF0,
+        0 4px 6px rgba(0, 0, 0, 0.10);
     overflow: hidden;
     display: flex; flex-direction: column;
-    transform: translateZ(5px);
 }
 .tile:active .tile-face,
 .tile.sel .tile-face {
-    transform: translateZ(10px);
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.95),
-        0 5px 0 #6baed6,
-        0 0 0 2px #f4d03f,
-        0 10px 16px rgba(0, 0, 0, 0.18);
+        0 3px 0 #89CFF0,
+        0 0 0 2px #7ECEC0,
+        0 6px 12px rgba(0, 0, 0, 0.16);
+    transform: scale(1.04);
 }
 .tile-side {
     position: absolute;
     background: #4a90b8;
     border-radius: 2px;
+    /* 3D 侧边在无透视模式下隐藏 */
+    display: none;
 }
 .tile-side-b {
     left: 1px; right: 1px; bottom: -6px; height: 6px;
     transform-origin: top;
     transform: rotateX(-90deg) translateZ(0px);
-    background: linear-gradient(180deg, #5dade2 0%, #1f618d 100%);
+    background: linear-gradient(180deg, #7EC8E3 0%, #4A90B8 100%);
     box-shadow: 0 5px 8px rgba(0,0,0,0.18);
+    display: none;
 }
 .tile-side-r {
     top: 1px; bottom: 1px; right: -6px; width: 6px;
     transform-origin: left;
     transform: rotateY(90deg) translateZ(0px);
-    background: linear-gradient(90deg, #5dade2 0%, #1f618d 100%);
+    background: linear-gradient(90deg, #7EC8E3 0%, #4A90B8 100%);
+    display: none;
 }
 
 /* 角格更大更厚 */
@@ -1443,11 +1532,11 @@ function confirmLeave() {
         0 4px 0 #5da1c9,
         0 8px 12px rgba(0, 0, 0, 0.16);
 }
-.tile.t-go .tile-face { background: linear-gradient(180deg, #fef9e7 0%, #fde68a 100%); }
+.tile.t-go .tile-face { background: linear-gradient(180deg, #E8F8F3 0%, #B8F0D9 100%); }
 .tile.t-jail .tile-face, .tile.t-gotojail .tile-face { background: linear-gradient(180deg, #fee2e2 0%, #fecaca 100%); }
 .tile.t-parking .tile-face { background: linear-gradient(180deg, #dcfce7 0%, #bbf7d0 100%); }
 .tile.t-chance .tile-face { background: linear-gradient(180deg, #dbeafe 0%, #bfdbfe 100%); }
-.tile.t-chest .tile-face { background: linear-gradient(180deg, #fef3c7 0%, #fde68a 100%); }
+.tile.t-chest .tile-face { background: linear-gradient(180deg, #EDF9F4 0%, #B8F0D9 100%); }
 .tile.t-tax .tile-face { background: linear-gradient(180deg, #ffedd5 0%, #fed7aa 100%); }
 
 .tile-img {
@@ -1483,7 +1572,7 @@ function confirmLeave() {
 .tile-name.sm { font-size: 5.5px; line-height: 1.05; max-height: 2.1em; }
 .tile-price {
     position: absolute; top: 20%; right: 2px;
-    font-size: 5.5px; color: #1f618d; font-weight: 900;
+    font-size: 5.5px; color: #4A90B8; font-weight: 900;
     background: rgba(255,255,255,0.92);
     padding: 0 2px; border-radius: 3px;
     box-shadow: 0 1px 1px rgba(0,0,0,0.08); z-index: 3;
@@ -1500,7 +1589,7 @@ function confirmLeave() {
 /* 已购未盖房：业主色小圆底托 + 小房子图标，区别于纯点 */
 .tile-house.owned {
     width: 17px; height: 17px;
-    background: var(--owner-color, #5dade2);
+    background: var(--owner-color, #7EC8E3);
     box-shadow: 0 0 0 1.5px #fff, 0 2px 4px rgba(0,0,0,0.3);
     padding: 0;
 }
@@ -1556,8 +1645,8 @@ function confirmLeave() {
     position: absolute;
     left: 50%; bottom: 15%;
     transform: translateX(-50%);
-    max-width: 82%;
-    max-height: 76%;
+    max-width: 62%;
+    max-height: 58%;
     width: auto; height: auto;
     object-fit: contain; object-position: bottom center;
     filter: drop-shadow(0 8px 14px rgba(0,0,0,0.2));
@@ -1580,7 +1669,7 @@ function confirmLeave() {
     white-space: nowrap;
 }
 .center-you {
-    font-size: 9px; background: #5dade2; color: #fff;
+    font-size: 9px; background: #7EC8E3; color: #fff;
     border-radius: 6px; padding: 0 4px; margin-left: 3px;
 }
 .center-dice {
@@ -1588,7 +1677,7 @@ function confirmLeave() {
     margin-top: 5px;
     display: flex; align-items: center; gap: 3px;
     padding: 3px 10px;
-    background: linear-gradient(180deg, #5dade2 0%, #2e86c1 100%);
+    background: linear-gradient(180deg, #7EC8E3 0%, #5BA3C9 100%);
     border-radius: 12px;
     color: #fff;
     box-shadow: 0 4px 8px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.3);
@@ -1653,7 +1742,7 @@ function confirmLeave() {
     display: flex; align-items: center; justify-content: center;
     background: rgba(255,255,255,0.92);
     border: 1px solid rgba(93, 173, 226, 0.4);
-    color: #2e86c1; font-size: 12px; font-weight: 900;
+    color: #5BA3C9; font-size: 12px; font-weight: 900;
     pointer-events: auto;
     box-shadow: 0 2px 4px rgba(0,0,0,0.14);
     z-index: 4;
@@ -1686,7 +1775,7 @@ function confirmLeave() {
     font-weight: 700;
     line-height: 1.3;
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.30);
-    border: 2px solid var(--bub-color, #5dade2);
+    border: 2px solid var(--bub-color, #7EC8E3);
     text-align: left;
     word-break: break-word;
 }
@@ -1707,25 +1796,22 @@ function confirmLeave() {
 /* ===== 站立式棋子（全身立绘） ===== */
 .token {
     position: absolute;
-    width: 34px; height: 48px;
-    /* translateZ 抬高到 40px，确保在 board-table rotateX(5deg) + tile translateZ(4~5px) 之上 */
-    transform: translate(-50%, -100%) translateZ(40px);
-    transform-style: preserve-3d;
-    /* z-index 提到 50，压过 board-center-scene(z:8) 和所有 tile 内容 */
+    width: 38px; height: 52px;
+    /* 无透视模式：用普通 2D 定位 */
+    transform: translate(-50%, -100%);
     z-index: 50;
     transition: left 0.15s linear, top 0.15s linear;
-    filter: drop-shadow(0 6px 7px rgba(0,0,0,0.3));
-    /* 确保 token 不被任何父级 overflow 裁剪 */
+    filter: drop-shadow(0 5px 6px rgba(0,0,0,0.3));
     pointer-events: auto;
 }
 .token.active {
     z-index: 51;
-    transform: translate(-50%, -100%) translateZ(48px);
-    filter: drop-shadow(0 0 9px #f4d03f) drop-shadow(0 6px 9px rgba(0,0,0,0.32));
+    /* 不再缩放，用金色光晕表示"轮到你了" */
+    filter: drop-shadow(0 0 8px #7ECEC0) drop-shadow(0 0 14px rgba(126,206,192,0.5)) drop-shadow(0 5px 6px rgba(0,0,0,0.32));
 }
 .token-base {
     position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
-    width: 24px; height: 10px;
+    width: 28px; height: 11px;
     border-radius: 50%;
     box-shadow: 0 3px 6px rgba(0,0,0,0.32);
     border: 1.5px solid #fff;
@@ -1733,7 +1819,7 @@ function confirmLeave() {
 .token-stand {
     /* bottom 降到 2px，让角色 feet 更贴近 token-base（落在底台上） */
     position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%);
-    width: 32px; height: 46px;
+    width: 34px; height: 48px;
     display: flex; align-items: flex-end; justify-content: center;
 }
 .token-stand img {
@@ -1741,7 +1827,7 @@ function confirmLeave() {
     object-fit: contain; object-position: bottom center;
     filter: drop-shadow(0 2px 2px rgba(0,0,0,0.2));
 }
-.token-stand span { font-size: 22px; }
+.token-stand span { font-size: 20px; }
 .tok-dead { position: absolute; bottom: 0; font-size: 16px; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.3)); }
 
 /* ===== AI 思考气泡 ===== */
@@ -1765,7 +1851,7 @@ function confirmLeave() {
 .hero-card {
     display: flex; gap: 8px;
     padding: 8px;
-    background: linear-gradient(145deg, #fefefe 0%, #ebf5fb 100%);
+    background: linear-gradient(145deg, #fefefe 0%, #E3F2FA 100%);
     border: 2px solid #aed6f1;
     border-radius: 14px;
     box-shadow: 0 5px 14px rgba(0, 0, 0, 0.08);
@@ -1800,22 +1886,23 @@ function confirmLeave() {
     display: flex; align-items: center; gap: 4px;
 }
 .hero-you {
-    font-size: 9px; background: #5dade2; color: #fff;
+    font-size: 9px; background: #7EC8E3; color: #fff;
     border-radius: 5px; padding: 1px 4px;
 }
-.hero-species { font-size: 10px; color: #5dade2; font-weight: 700; }
+.hero-species { font-size: 10px; color: #7EC8E3; font-weight: 700; }
 .hero-status { font-size: 10px; font-weight: 800; }
 .status-jail { color: #e74c3c; }
-.status-thinking { color: #2e86c1; }
+.status-thinking { color: #5BA3C9; }
+.status-switch { color: #7ECEC0; animation: pulse 1.2s ease-in-out infinite; }
 .status-turn { color: #27ae60; }
 .hero-dice { display: flex; gap: 5px; margin-top: 2px; }
 .die {
     width: 26px; height: 26px;
-    background: linear-gradient(145deg, #fff, #ebf5fb);
-    border: 1.5px solid #5dade2;
+    background: linear-gradient(145deg, #fff, #E3F2FA);
+    border: 1.5px solid #7EC8E3;
     border-radius: 7px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 18px; color: #2e86c1;
+    font-size: 18px; color: #5BA3C9;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1), inset 0 -2px 0 rgba(46, 134, 193, 0.1);
 }
 .die.rolling { animation: diceroll 0.4s infinite; }
@@ -1843,6 +1930,21 @@ function confirmLeave() {
 }
 .tile-card-name .dot { width: 9px; height: 9px; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,0.15); }
 .tile-card-line { font-size: 10px; color: #6b7280; line-height: 1.4; margin-top: 2px; }
+.tile-upgrade-btn {
+    width: 100%; margin-top: 8px; padding: 8px 10px;
+    border-radius: 10px; font-size: 12px; font-weight: 800;
+    background: linear-gradient(180deg, #7ECEC0 0%, #4DB6A0 100%);
+    color: #fff; border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+    box-shadow: 0 3px 0 #38A891, 0 4px 8px rgba(77,182,160,0.25);
+    transition: all 0.12s;
+}
+.tile-upgrade-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #38A891; }
+.tile-upgrade-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.tile-upgrade-cost { font-size: 10px; opacity: 0.9; }
+.tile-upgrade-hint {
+    margin-top: 6px; font-size: 10px; color: #9ca3af; text-align: center;
+}
 
 /* ===== 操作按钮区 ===== */
 .action-deck {
@@ -1872,21 +1974,46 @@ function confirmLeave() {
         inset 0 1px 0 rgba(255,255,255,0.3);
 }
 .game-btn:disabled { opacity: 0.5; filter: grayscale(0.4); }
-.game-btn.blue { background: linear-gradient(180deg, #5dade2 0%, #2e86c1 100%); box-shadow: 0 5px 0 #1a5276, 0 6px 10px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3); }
+.game-btn.blue { background: linear-gradient(180deg, #7EC8E3 0%, #5BA3C9 100%); box-shadow: 0 5px 0 #1a5276, 0 6px 10px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3); }
 .game-btn.blue:active { box-shadow: 0 1px 0 #1a5276, 0 2px 4px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3); }
-.game-btn.yellow { background: linear-gradient(180deg, #f4d03f 0%, #d4ac0d 100%); box-shadow: 0 5px 0 #9a7d0a, 0 6px 10px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3); color: #4a3b05; }
-.game-btn.yellow:active { box-shadow: 0 1px 0 #9a7d0a, 0 2px 4px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3); }
+.game-btn.yellow { background: linear-gradient(180deg, #7ECEC0 0%, #4DB6A0 100%); box-shadow: 0 5px 0 #38A891, 0 6px 10px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3); color: #1A6B5A; }
+.game-btn.yellow:active { box-shadow: 0 1px 0 #38A891, 0 2px 4px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3); }
 .game-btn.green { background: linear-gradient(180deg, #52be80 0%, #27ae60 100%); box-shadow: 0 5px 0 #1e8449, 0 6px 10px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3); }
 .game-btn.green:active { box-shadow: 0 1px 0 #1e8449, 0 2px 4px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3); }
-.game-btn.sky { background: linear-gradient(180deg, #85c1e9 0%, #5dade2 100%); box-shadow: 0 5px 0 #2874a6, 0 6px 10px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3); }
+.game-btn.sky { background: linear-gradient(180deg, #85c1e9 0%, #7EC8E3 100%); box-shadow: 0 5px 0 #2874a6, 0 6px 10px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3); }
 .game-btn.gray { background: linear-gradient(180deg, #bdc3c7 0%, #95a5a6 100%); box-shadow: 0 5px 0 #6c7a7d, 0 6px 10px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.3); }
 .roll-btn {
     font-size: 17px; padding: 14px;
-    background: linear-gradient(180deg, #f4d03f 0%, #d4ac0d 100%);
-    color: #4a3b05;
-    box-shadow: 0 5px 0 #9a7d0a, 0 7px 14px rgba(0,0,0,0.16), inset 0 1px 0 rgba(255,255,255,0.4);
+    /* 磨砂玻璃立体质感 */
+    background: linear-gradient(
+        135deg,
+        rgba(126, 206, 192, 0.75) 0%,
+        rgba(77, 182, 160, 0.65) 40%,
+        rgba(126, 206, 192, 0.55) 100%
+    );
+    backdrop-filter: blur(16px) saturate(1.8);
+    -webkit-backdrop-filter: blur(16px) saturate(1.8);
+    color: #0D4F43;
+    border: 1.5px solid rgba(255, 255, 255, 0.55);
+    box-shadow:
+        /* 外部立体阴影 */
+        0 6px 0 #38A891,
+        0 8px 20px rgba(56, 168, 145, 0.25),
+        /* 内部高光（顶部） */
+        inset 0 1px 0 rgba(255, 255, 255, 0.5),
+        inset 0 -2px 6px rgba(0, 0, 0, 0.06);
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
 }
-.roll-btn:active { box-shadow: 0 1px 0 #9a7d0a, 0 2px 5px rgba(0,0,0,0.1), inset 0 1px 0 rgba(255,255,255,0.4); }
+.roll-btn:active {
+    box-shadow:
+        0 2px 0 #38A891,
+        0 3px 8px rgba(56, 168, 145, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4),
+        inset 0 0 8px rgba(0, 0, 0, 0.08);
+    transform: translateY(3px);
+}
 .waiting-text {
     text-align: center; color: #94a3b8; font-size: 12px; font-weight: 700;
     padding: 12px 0;
@@ -1901,12 +2028,12 @@ function confirmLeave() {
     padding: 5px 8px;
     background: linear-gradient(180deg, #fefefe 0%, #e8f6fc 100%);
     border: 1.5px solid #aed6f1; border-radius: 10px;
-    font-size: 10px; color: #1f618d; min-width: 68px;
+    font-size: 10px; color: #4A90B8; min-width: 68px;
     box-shadow: 0 3px 0 #8ecae6, 0 4px 6px rgba(0,0,0,0.06);
     transition: transform 0.1s;
 }
 .build-chip:active { transform: translateY(2px); box-shadow: 0 1px 0 #8ecae6, 0 2px 4px rgba(0,0,0,0.06); }
-.build-chip.full { background: linear-gradient(180deg, #fef9e7 0%, #fde68a 100%); border-color: #f4d03f; color: #9a7d0a; box-shadow: 0 3px 0 #d4ac0d, 0 4px 6px rgba(0,0,0,0.06); }
+.build-chip.full { background: linear-gradient(180deg, #E8F8F3 0%, #B8F0D9 100%); border-color: #7ECEC0; color: #1A6B5A; box-shadow: 0 3px 0 #4DB6A0, 0 4px 6px rgba(0,0,0,0.06); }
 .build-chip:disabled { opacity: 0.5; box-shadow: none; }
 .build-chip-img { width: 16px; height: 16px; object-fit: contain; }
 
@@ -1923,7 +2050,7 @@ function confirmLeave() {
     position: relative;
     flex: 0 0 66px; height: 90px;
     background: white;
-    border: 2px solid #5dade2;
+    border: 2px solid #7EC8E3;
     border-radius: 9px;
     overflow: hidden;
     text-align: center;
@@ -1938,11 +2065,13 @@ function confirmLeave() {
 
 /* ===== 日志面板 ===== */
 .log-panel {
-    background: rgba(255, 255, 255, 0.9);
+    background: rgba(255, 255, 255, 0.95);
     border: 2px solid rgba(174, 214, 241, 0.5);
     border-radius: 12px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
     overflow: hidden;
+    /* 正常流排列在侧栏底部，不做 sticky 浮层避免遮挡兄弟元素 */
+    flex-shrink: 0;
 }
 .log-head {
     display: flex; align-items: center; justify-content: space-between;
@@ -1973,12 +2102,23 @@ function confirmLeave() {
 }
 .card-anim-box {
     background: white;
-    border: 3px solid #5dade2;
+    border: 3px solid #7EC8E3;
     border-radius: 18px;
-    padding: 20px 28px;
+    padding: 16px 24px;
     text-align: center;
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.3);
     animation: cardPop 1.5s ease-out forwards;
+    max-width: 280px;
+    width: 85%;
+}
+.card-anim-img {
+    width: 120px; height: auto;
+    object-fit: contain;
+    border-radius: 12px;
+    margin: 0 auto 10px;
+    border: 2px solid #e8f4fc;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    background: linear-gradient(180deg, #f8fbff 0%, #eef6ff 100%);
 }
 .card-anim-type {
     display: inline-block; padding: 3px 12px; border-radius: 10px;
@@ -1987,13 +2127,13 @@ function confirmLeave() {
 .card-anim-name { font-size: 20px; font-weight: 900; color: #1a2634; }
 .card-anim-desc { font-size: 12px; color: #64748b; margin-top: 6px; }
 .card-anim-player { font-size: 11px; color: #94a3b8; margin-top: 10px; }
-.card-pop-img { width: 120px; height: 160px; object-fit: cover; border-radius: 12px; margin: 0 auto 10px; border: 2px solid #fff; box-shadow: 0 6px 16px rgba(0,0,0,0.18); }
+.card-pop-img { width: 140px; height: 186px; object-fit: contain; border-radius: 12px; margin: 0 auto 10px; border: 2px solid #e0f2fe; box-shadow: 0 4px 14px rgba(0,0,0,0.12), inset 0 0 0 1px rgba(255,255,255,0.6); background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); padding: 4px; }
 /* 道具卡使用：点击"使用"后缩放 + 光晕扩散动画 */
 .card-burst { animation: card-burst 0.5s ease-out; }
 @keyframes card-burst {
-    0% { transform: scale(1); filter: drop-shadow(0 0 0 rgba(244, 208, 63, 0.9)); }
-    50% { transform: scale(1.12); filter: drop-shadow(0 0 22px rgba(244, 208, 63, 0.95)); }
-    100% { transform: scale(1); filter: drop-shadow(0 0 0 rgba(244, 208, 63, 0)); }
+    0% { transform: scale(1); filter: drop-shadow(0 0 0 rgba(126, 206, 192, 0.9)); }
+    50% { transform: scale(1.12); filter: drop-shadow(0 0 22px rgba(126, 206, 192, 0.95)); }
+    100% { transform: scale(1); filter: drop-shadow(0 0 0 rgba(126, 206, 192, 0)); }
 }
 @keyframes cardPop {
     0% { transform: scale(0.5) rotate(-10deg) translateY(40px); opacity: 0; }
@@ -2011,8 +2151,8 @@ function confirmLeave() {
     border-radius: 18px; border: 1px solid rgba(255, 255, 255, 0.8);
     box-shadow: 0 18px 44px rgba(0, 0, 0, 0.22); padding: 12px;
 }
-.fc-close { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #7fb3d5; transition: all 0.15s; }
-.fc-close:hover { background: #ebf5fb; color: #2e86c1; }
+.fc-close { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center;     color: #9ED5E8; transition: all 0.15s; }
+.fc-close:hover { background: #E3F2FA; color: #5BA3C9; }
 .chat-row { display: flex; flex-direction: column; align-items: flex-start; }
 .chat-row.me { align-items: flex-end; }
 .chat-name { font-size: 9px; color: #64748b; margin-bottom: 1px; padding: 0 2px; }
@@ -2022,19 +2162,74 @@ function confirmLeave() {
     background: #f1f5f9; color: #1a2634;
     box-shadow: 0 1px 2px rgba(0,0,0,0.06); word-break: break-word;
 }
-.chat-row.me .chat-bubble { background: #5dade2; color: #fff; }
+.chat-row.me .chat-bubble { background: #7EC8E3; color: #fff; }
+
+/* 聊天输入区 */
+.chat-input-area {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    background: linear-gradient(180deg, #f8fbff 0%, #eef4fc 100%);
+    border-radius: 14px;
+    padding: 10px;
+    border: 1px solid #E3F2FA;
+}
+.chat-text-input {
+    width: 100%;
+    border: 1.5px solid #B5DFF0;
+    border-radius: 12px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: #1a2634;
+    background: #fff;
+    outline: none;
+    transition: border-color 0.2s;
+    box-sizing: border-box;
+}
+.chat-text-input:focus { border-color: #9ED5E8; }
+.chat-text-input::placeholder { color: #a0b4c8; }
+.chat-send-btn {
+    width: 100%;
+    padding: 8px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #9ED5E8 0%, #7EC8E3 100%);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    transition: all 0.15s;
+    box-shadow: 0 2px 6px rgba(93, 173, 226, 0.3);
+}
+.chat-send-btn:hover:not(:disabled) { transform: scale(1.02); box-shadow: 0 3px 10px rgba(93, 173, 226, 0.4); }
+.chat-quick-btns { display: flex; gap: 5px; flex-wrap: wrap; justify-content: center; }
+.quick-chip {
+    font-size: 9px;
+    color: #9ED5E8;
+    background: #fff;
+    border: 1px solid #D0E8F5;
+    border-radius: 10px;
+    padding: 3px 9px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.quick-chip:hover { color: #fff; background: #9ED5E8; border-color: #9ED5E8; }
 
 /* ===== 胜利结算 ===== */
 .result-card {
     background: linear-gradient(180deg, #ffffff 0%, #f0f9ff 100%);
-    border: 3px solid #f4d03f;
+    border: 3px solid #7ECEC0;
     border-radius: 24px;
     width: 100%; max-width: 380px; padding: 24px;
     box-shadow: 0 24px 60px rgba(0,0,0,0.35), inset 0 2px 0 rgba(255,255,255,0.8);
     text-align: center;
 }
 .result-crown { font-size: 56px; margin-bottom: 4px; filter: drop-shadow(0 4px 4px rgba(0,0,0,0.15)); }
-.result-winner { font-size: 24px; font-weight: 900; color: #2e86c1; margin-bottom: 4px; }
+.result-winner { font-size: 24px; font-weight: 900; color: #5BA3C9; margin-bottom: 4px; }
 .result-species { font-size: 13px; color: #94a3b8; margin-bottom: 16px; }
 .result-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
 .result-row {
@@ -2048,11 +2243,11 @@ function confirmLeave() {
     display: flex; align-items: center; justify-content: center; margin-right: 10px;
 }
 .result-name { flex: 1; min-width: 0; text-align: left; font-weight: 800; color: #1a2634; }
-.result-you { color: #2e86c1; margin-left: 3px; }
+.result-you { color: #5BA3C9; margin-left: 3px; }
 .result-worth { font-weight: 900; color: #b45309; }
 .result-btn {
     width: 100%; padding: 14px;
-    background: linear-gradient(180deg, #5dade2 0%, #2e86c1 100%);
+    background: linear-gradient(180deg, #7EC8E3 0%, #5BA3C9 100%);
     color: #fff; font-weight: 900; font-size: 15px;
     border-radius: 14px;
     border: 1px solid rgba(0,0,0,0.08);
@@ -2073,12 +2268,15 @@ function confirmLeave() {
     .landscape\:min-h-0 { min-height: 0; }
 
     .game-body { flex: 1 1 0%; min-height: 0; flex-direction: row; }
-    .board-stage { flex: 1 1 0%; padding: 16px 8px 8px; }
-    .board-table { width: min(100%, calc(100vh - 60px)); }
+    .board-stage { flex: 1 1 0%; padding: 12px 8px 4px; }
+    .board-table { width: min(100%, calc(100vh - 48px)); }
 
     .side-col {
         max-width: 360px;
         padding: 8px 10px;
+        /* 独立层叠上下文 + 裁剪绘制溢出 */
+        isolation: isolate;
+        contain: layout style paint;
     }
     .hero-card { padding: 8px; }
     .hero-avatar { width: 56px; height: 64px; }
@@ -2102,15 +2300,13 @@ function confirmLeave() {
         width: 100%;
         position: static;
         height: auto;
-        /* 高度上限：给下方 side-col（日志+操作）留 ~200px 空间，
-           否则 flex:none 会把棋盘撑满、side-col 被压成 0 高度导致日志消失 */
-        max-height: calc(100vh - 296px);
-        padding: 52px 8px 12px;
+        /* 高度上限：给下方 side-col（日志+操作）留空间 */
+        max-height: calc(100vh - 280px);
+        padding: 52px 8px 8px;
         overflow: visible;
     }
-    /* 棋盘尺寸约束（board-table 是正方形，高度 = 宽度 + padding 64px；
-       100vh - 360 保证 side-col 至少有 ~184px） */
-    .board-table { width: min(100%, calc(100vh - 360px)); }
+    /* 棋盘尺寸约束：尽量填满可用宽度，格子更大更清晰 */
+    .board-table { width: min(100%, calc(100vh - 320px)); }
 
     /* 信息栏占据剩余空间并独立滚动 —— 这是唯一可滚动的区域 */
     .side-col {
@@ -2119,6 +2315,9 @@ function confirmLeave() {
         max-width: none;
         overflow-y: auto;
         overflow-x: hidden;
+        /* 独立层叠上下文 + 裁剪绘制溢出（防止内容穿模到棋盘区域） */
+        isolation: isolate;
+        contain: layout style paint;
         /* 双指滚动反馈 */
         -webkit-overflow-scrolling: touch;
     }
@@ -2198,8 +2397,8 @@ function confirmLeave() {
 .fx-glow {
     position: absolute;
     border-radius: 8px;
-    background: radial-gradient(circle, rgba(244,208,63,0.85) 0%, rgba(244,208,63,0.0) 70%);
-    box-shadow: 0 0 18px 6px rgba(244, 208, 63, 0.7);
+    background: radial-gradient(circle, rgba(126,206,192,0.85) 0%, rgba(126,206,192,0.0) 70%);
+    box-shadow: 0 0 18px 6px rgba(126, 206, 192, 0.7);
     animation: fxGlow 0.5s ease-out forwards;
     pointer-events: none;
 }

@@ -1016,7 +1016,7 @@ ${charContexts.map((c, i) => `### 角色 ${i + 1}: 【${c.name}】(${c.position}
     const exitRoom = () => {
         currentRoom.value = null
         gameState.value = null
-        if (!settingsStore.gameChatMemory.value.enabled) {
+        if (!settingsStore.gameChatMemory?.value?.enabled) {
             // 仅保留当局：退出即清空聊天与历史
             gameChatMessages.value = []
             clearGameChat('mahjong')

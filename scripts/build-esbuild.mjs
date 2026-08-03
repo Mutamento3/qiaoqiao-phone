@@ -31,7 +31,10 @@ if (fs.existsSync(srcVersionPath)) {
 
 // 准备 dist 目录
 if (fs.existsSync(distDir)) {
-  fs.rmSync(distDir, { recursive: true, force: true })
+  try { fs.rmSync(distDir, { recursive: true, force: true }) } catch (e) {
+    // safe-delete 拦截或 EBUSY 时忽略（dist 已提前清空或被锁）
+    console.log('[build-esbuild] rmSync skipped (safe-delete/EBUSY):', e.message?.slice(0, 80))
+  }
 }
 fs.mkdirSync(path.join(distDir, 'assets'), { recursive: true })
 fs.mkdirSync(path.join(distDir, 'functions'), { recursive: true })

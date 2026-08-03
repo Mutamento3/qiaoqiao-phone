@@ -36,13 +36,17 @@
         <div class="px-4 mb-4">
             <div class="flex items-center justify-between mb-3">
                 <label class="text-sm font-bold text-gray-700">选择你的角色</label>
-                <span class="text-xs text-gray-400">{{ selectedChar?.emoji }} {{ selectedChar?.name }}</span>
+                <span class="text-xs text-gray-400 flex items-center gap-1">
+                    <img v-if="selectedChar?.avatar" :src="selectedChar.avatar" class="w-5 h-5 rounded-full object-cover" />
+                    {{ selectedChar?.name }}
+                </span>
             </div>
             <div class="grid grid-cols-4 gap-2">
                 <button v-for="char in CHARACTERS" :key="char.id" @click="userCharacterId = char.id"
                     class="char-card flex flex-col items-center py-2 rounded-xl border-2 transition-all"
                     :class="userCharacterId === char.id ? 'border-sky-400 bg-sky-50 scale-105' : 'border-gray-200 bg-gray-50'">
-                    <span class="text-2xl mb-1">{{ char.emoji }}</span>
+                    <img v-if="char.avatar" :src="char.avatar" class="char-avatar-img" :alt="char.name" />
+                    <span v-else class="text-2xl mb-1">{{ char.emoji }}</span>
                     <span class="text-[11px] font-bold text-gray-700">{{ char.name }}</span>
                     <span class="text-[9px] text-gray-400">{{ char.species }}</span>
                 </button>
@@ -50,7 +54,8 @@
             <!-- 选中角色技能 -->
             <div v-if="selectedChar" class="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-xl">
                 <div class="flex items-center gap-2 mb-1">
-                    <span class="text-lg">{{ selectedChar.emoji }}</span>
+                    <img v-if="selectedChar.avatar" :src="selectedChar.avatar" class="w-7 h-7 rounded-full object-cover" />
+                    <span v-else class="text-lg">{{ selectedChar.emoji }}</span>
                     <span class="text-sm font-bold text-gray-700">{{ selectedChar.skill.name }}</span>
                 </div>
                 <p class="text-xs text-gray-500">{{ selectedChar.skill.desc }}</p>
@@ -225,6 +230,19 @@ const returnToGame = () => {
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 
+/* 大厅根容器：允许纵向滚动 */
+.mono-lobby {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
 .char-card { box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04); }
 .char-card:active { transform: scale(0.95); }
+.char-avatar-img {
+    width: 44px; height: 44px;
+    object-fit: cover; object-position: top center;
+    border-radius: 12px;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
 </style>

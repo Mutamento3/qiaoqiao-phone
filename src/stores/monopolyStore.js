@@ -26,6 +26,7 @@ import {
 import { loadGameChat, saveGameChat, clearGameChat } from '../utils/gameChatMemory.js'
 import { useChatStore } from './chatStore.js'
 import { useSettingsStore } from './settingsStore.js'
+import { generateReply } from '../utils/aiService.js'
 
 const STORAGE_KEY = 'monopoly_current'
 const MAX_HAND_SIZE = 5
@@ -127,7 +128,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         actionBubbles.value = []
         _bubbleSeq = 0
         try { localStorage.removeItem(STORAGE_KEY) } catch (e) { /* ignore */ }
-        if (!useSettingsStore().gameChatMemory.enabled) clearGameChat('monopoly')
+        if (!useSettingsStore().gameChatMemory?.enabled) clearGameChat('monopoly')
     }
 
     // ---------- 房间 ----------
@@ -287,6 +288,97 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         gameState.value.chat.push(msg)
         if (gameState.value.chat.length > 300) gameState.value.chat.shift()
         saveGameChat('monopoly', gameState.value.chat, useSettingsStore().gameChatMemory)
+    }
+
+    // ---------- 用户主动聊天（输入框发送 + AI 回复）----------
+    async function sendGameChat(text) {
+        if (!text?.trim() || !currentRoom.value || !gameState.value) return
+        const settingsStore = useSettingsStore()
+        const userName = settingsStore.personalization?.userProfile?.name || '我'
+        pushChat({ role: 'user', name: userName, content: text })
+
+        const allAIs = currentRoom.value.players.filter((p) => p.isAI)
+        if (allAIs.length === 0) return
+
+        // 构建角色上下文（参考 UNO 的 batch prompt 模式）
+        const chatStore = useChatStore()
+        const userPersona = settingsStore.personalization?.userProfile?.persona || ''
+        const charContexts = allAIs.map((ai) => {
+            const aiId = String(ai.id || '')
+            let chatChar = null
+            if (chatStore?.chats) {
+                chatChar = chatStore.chats[aiId]
+                if (!chatChar && ai.name) {
+                    chatChar = Object.values(chatStore.chats).find((c) => c.name === ai.name || c.remark === ai.name)
+                }
+            }
+            const char = getCharacter(ai.characterId)
+            const isMainChar = !aiId.startsWith('npc_')
+            const persona = chatChar?.prompt || char?.personality || (isMainChar ? `一只爱玩大富翁的${char?.species || '萌宠'}` : `一个名叫${ai.name}的大富翁玩家`)
+            const specificUserPersona = chatChar?.userPersona || userPersona
+            const pIdx = currentRoom.value.players.indexOf(ai)
+            const cash = gameState.value.players[pIdx]?.cash ?? 0
+            const tileCount = (gameState.value.players[pIdx]?.properties || []).length
+            return { name: ai.name, species: char?.species || '', isMainChar, persona, userPersona: specificUserPersona, relationship: ai.relationship || '好友', cash, tileCount }
+        })
+
+        const gs = gameState.value
+        const currentPlayerName = gs.players[gs.currentPlayerIndex]?.name || '?'
+        const phaseText = { dice:'掷骰中', moving:'移动中', resolving:'结算中', ended:'已结束' }[gs.phase] || gs.phase
+
+        const batchPrompt = `
+# 帕瓦小镇大富翁 · 局内对话系统
+你是 AI 角色互动调度器。根据用户发言和局势，决定哪些角色回应。
+
+## 当前发言
+- 发言人：${userName}（用户）
+- 内容："${text}"
+
+## 当前局势
+- 回合：${currentPlayerName} 的回合（${phaseText}）
+- 玩家：${currentRoom.value.players.map(p => `${p.name}(¥${gs.players[currentRoom.value.players.indexOf(p)]?.cash ?? '?'})`).join('，')}
+
+## 角色设定
+${charContexts.map((c, i) => `### ${c.name}（${c.species}）
+- 性格：${c.persona}
+- 对用户关系：${c.userPersona || '普通好友'}
+- 关系类型：${c.relationship}
+- 资产：¥${c.cash} / ${c.tileCount}块地
+- 行动：以角色身份自然回应，符合性格和关系。`).join('\n\n')}
+
+## 输出要求（严格 JSON）
+返回 JSON 数组，1-2 个角色回应即可：
+[{"name":"角色名","content":"回复(30字内，口语化可爱)"}]
+只返回 JSON，不要解释。`.trim()
+
+        try {
+            const msgs = [
+                { role: 'system', content: batchPrompt },
+                ...gameState.value.chat.slice(-8).map(m => ({
+                    role: m.role === 'user' ? 'user' : 'assistant',
+                    content: m.role === 'user' ? `${m.name}: ${m.content}` : `${m.name}: ${m.content}`
+                }))
+            ]
+            const res = await generateReply(msgs, { name: 'MonopolyChatManager' }, null, {
+                overrideConfig: settingsStore.gameCenterConfig
+            })
+            if (!res?.content) return
+            const jsonMatch = res.content.match(/\[[\s\S]*\]/)
+            if (!jsonMatch) return
+            const replies = JSON.parse(jsonMatch[0])
+            for (const r of replies) {
+                if (r?.name && r?.content) {
+                    pushChat({ role: 'ai', name: r.name, content: r.content })
+                }
+            }
+        } catch (e) {
+            console.warn('[Monopoly] sendGameChat error:', e.message)
+            // 降级：用本地模板回复
+            for (const ai of allAIs.slice(0, 1)) {
+                const fallback = generateAiChat(ai.characterId, 'goodCard')
+                if (fallback) pushChat({ role: 'ai', name: ai.name, content: fallback })
+            }
+        }
     }
 
     // ---------- 操作气泡事件队列（棋盘中央飘出，逐个排队）----------
@@ -469,7 +561,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         // 移除卡牌
         p.itemCards.splice(cardIdx, 1)
         gs.lastUsedCard = cardId
-        gs.cardAnimation = { cardId: card.id, playerName: p.name, cardName: card.name, cardDesc: card.desc, cardType: card.type }
+        gs.cardAnimation = { cardId: card.id, playerName: p.name, cardName: card.name, cardDesc: card.desc, cardType: card.type, cardImage: card.image }
         logEvent(`🎴 ${p.name} 使用了 ${card.name}！`)
         saveState()
         // 1.5s 后自动清掉卡牌动画遮罩，避免卡屏
@@ -920,7 +1012,18 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         // 因此这里跳过这两类落点，否则会与后续 applyCard 的 afterResolve 重复推进。
         if (gameState.value && gameState.value.phase === 'moving') {
             const ft = tileById(mv.finalPos)
-            if (ft.type !== 'chance' && ft.type !== 'chest') afterResolve(p)
+            if (ft.type !== 'chance' && ft.type !== 'chest') {
+                afterResolve(p)
+            } else {
+                // chance/chest 二次兜底：若 3 秒后仍在 moving（applyCard 的 setTimeout 回调丢失/报错），
+                // 强制推进回合。比 Vue 层的 6s safetyTimer 更早触发。
+                setTimeout(() => {
+                    if (gameState.value && gameState.value.phase === 'moving') {
+                        console.warn('[Monopoly] Card resolve timeout: forcing advance for', ft.name)
+                        afterResolve(p)
+                    }
+                }, 3000)
+            }
         }
     }
 
@@ -951,7 +1054,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
                         aiDecideBuy(tile, p)
                         afterResolve(p)
                     } else {
-                        // AI 买地决策前停顿 800~1200ms，并显示“正在行动”
+                        // AI 买地决策前停顿 1.2~1.6s，并显示"正在行动"
                         gs.phase = 'action'
                         logEvent(`🏠 ${p.name} 停在 ${tile.name}（¥${tile.price}），思考中…`)
                         // 保持 aiBuyDeferring=true 直到 afterResolve 执行完，避免 afterResolve 再次延迟结束回合
@@ -961,7 +1064,7 @@ export const useMonopolyStore = defineStore('monopoly', () => {
                             aiDecideBuy(tile, p)
                             afterResolve(p)
                             aiBuyDeferring = false
-                        }, 900 + Math.random() * 300)
+                        }, 1200 + Math.random() * 400)
                     }
                 } else if (owner.id === p.id) {
                     logEvent(`🏠 ${p.name} 回到自己的 ${tile.name}。`)
@@ -1450,10 +1553,10 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         if (reroll) {
             gs.phase = 'rolling'
         } else if (p.isAI && !aiBuyDeferring && !nestedCardResolution) {
-            // AI 结束回合决策前停顿 800~1200ms（买地分支已等待过 / 嵌套结算需同步，此处不重复延迟）
+            // AI 结束回合决策前停顿 1.5~2s（给玩家看清买地/盖房/付租结果）
             setTimeout(() => {
                 if (gameState.value && gameState.value.phase !== 'ended') endTurn()
-            }, 900 + Math.random() * 300)
+            }, 1500 + Math.random() * 500)
         } else {
             endTurn()
         }
@@ -1500,8 +1603,18 @@ export const useMonopolyStore = defineStore('monopoly', () => {
             drawItemCard(newPlayer.id)
         }
         if (activePlayers().length <= 1) { finishGame(); return }
-        gs.phase = 'rolling'
+
+        // ★ 换人呼吸感：先进入 brief 'turnEnd' 状态，让界面显示"换人中"，
+        //   延迟 1000~1500ms 后再切到 rolling 触发下一玩家 scheduleAI
+        gs.phase = 'turnEnd'
         saveState()
+        setTimeout(() => {
+            const g2 = gameState.value
+            if (g2 && g2.phase === 'turnEnd') {
+                g2.phase = 'rolling'
+                saveState()
+            }
+        }, 1000 + Math.random() * 500)
     }
 
     function userEndTurn() {
@@ -1598,5 +1711,9 @@ export const useMonopolyStore = defineStore('monopoly', () => {
         tileById, ownerOf, ownsFullGroup, computeRent, netWorth, baseRentOf, houseCostOf,
         getCharacterOf, triggerSkill,
         GROUPS, HOUSE_LEVELS, CHARACTERS, ITEM_CARD_TYPES, clearState,
+        // chat
+        pushChat, sendGameChat,
+        // turn
+        endTurn,
     }
 })

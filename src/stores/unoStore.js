@@ -915,7 +915,7 @@ ${charContexts.map((c) => `### ${c.name}
     function returnToLobby() {
         currentRoom.value = null
         gameState.value = null
-        if (!settingsStore.gameChatMemory.value.enabled) {
+        if (!settingsStore.gameChatMemory?.value?.enabled) {
             // 仅保留当局：退出即清空聊天与历史
             gameChatMessages.value = []
             clearGameChat('uno')
@@ -933,7 +933,7 @@ ${charContexts.map((c) => `### ${c.name}
         }
         // 保留当前房间与玩家，仅重置牌局状态开始下一回合/再一局
         // 启用了记忆时不清空聊天（永久留存）；未启用时才清空当局
-        if (!settingsStore.gameChatMemory.value.enabled) {
+        if (!settingsStore.gameChatMemory?.value?.enabled) {
             gameChatMessages.value = []
             clearGameChat('uno')
         }

@@ -72,9 +72,10 @@ onMounted(() => {
     }, 660)
 
     // 演出结束（落在中央四方格上方→回弹后），通知父组件继续流程
+    // 延迟到 1500ms：让玩家看清点数（660翻面+ settling + 840 点数停留）
     doneTimer = setTimeout(() => {
       if (!finished) { finished = true; emit('done') }
-    }, 900)
+    }, 1500)
   })
 })
 
@@ -118,7 +119,7 @@ onBeforeUnmount(() => {
   box-shadow:
     inset 0 2px 0 rgba(255, 255, 255, 0.9),
     inset 0 -3px 0 rgba(212, 172, 13, 0.12),
-    0 6px 0 #F4D03F,
+    0 6px 0 #4DB6A0,
     0 10px 18px rgba(0, 0, 0, 0.18),
     0 0 0 1.5px rgba(0, 0, 0, 0.06);
   display: grid;
